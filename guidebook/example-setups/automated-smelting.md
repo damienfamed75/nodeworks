@@ -15,6 +15,18 @@ to the original network.
 <GameScene zoom="4" interactive={true} paddingLeft="30" paddingRight="30">
   <ImportStructure src="../assets/assemblies/automated_smelting.snbt" />
   <IsometricCamera yaw="190" pitch="10" />
+  <BlockAnnotation x="7" y="4">
+  ![](../assets/images/automated_smelting_export_raw.png)
+  </BlockAnnotation>
+  <BlockAnnotation x="7" y="3">
+  ![](../assets/images/automated_smelting_import_raw.png)
+  </BlockAnnotation>
+  <BlockAnnotation x="5" y="3">
+  ![](../assets/images/automated_smelting_export_cooked.png)
+  </BlockAnnotation>
+  <BlockAnnotation x="5" y="4">
+  ![](../assets/images/automated_smelting_import_cooked.png)
+  </BlockAnnotation>
   <DiamondAnnotation pos="7.5 4 0.5" color="#ff0000">
     Export Chest from the storage Network has items pushing Down set in its GUI.
 

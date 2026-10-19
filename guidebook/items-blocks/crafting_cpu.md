@@ -21,6 +21,8 @@ A Crafting CPU is the brain of the autocrafting system. It reads recipes out of
 and pulls ingredients out of the network, runs the craft, and puts the result back.
 For how to actually *use* a built CPU to run crafts, see [Auto Crafting](../nodeworks-mechanics/autocrafting.md).
 
+> Requires a <ItemLink id="network_controller" /> to use
+
 ## Forming the CPU
 
 A CPU always has exactly one <ItemLink id="crafting_core" /> at its heart. The

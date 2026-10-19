@@ -15,6 +15,8 @@ item_ids:
 The Craft Requester starts an autocrafting job when it receives a redstone
 signal. Configure it with the item to craft and the batch size.
 
+> Requires a <ItemLink id="network_controller" /> to use
+
 <GameScene interactive={true} zoom="5" paddingLeft="40" paddingRight="40">
   <ImportStructure src="../assets/assemblies/craft_requester_door.snbt" />
   <DiamondAnnotation pos="3.5 0.5 1.5">

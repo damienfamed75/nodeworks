@@ -106,6 +106,9 @@ class StorageMeterBlock(properties: Properties) : BaseEntityBlock(properties), W
         if (handItem is NetworkWrenchItem || handItem is DiagnosticToolItem) return InteractionResult.PASS
         if (level.isClientSide) return InteractionResult.SUCCESS
         val entity = level.getBlockEntity(pos) as? StorageMeterBlockEntity ?: return InteractionResult.PASS
+        if (!damien.nodeworks.network.ControllerRequired.check(level as net.minecraft.server.level.ServerLevel, pos, player)) {
+            return InteractionResult.SUCCESS
+        }
         val serverPlayer = player as ServerPlayer
         PlatformServices.menu.openExtendedMenu(
             serverPlayer,
@@ -146,6 +149,9 @@ class StorageMeterBlock(properties: Properties) : BaseEntityBlock(properties), W
         if (level.isClientSide) return InteractionResult.SUCCESS
         val entity = level.getBlockEntity(pos) as? StorageMeterBlockEntity
             ?: return InteractionResult.TRY_WITH_EMPTY_HAND
+        if (!damien.nodeworks.network.ControllerRequired.check(level as net.minecraft.server.level.ServerLevel, pos, player)) {
+            return InteractionResult.SUCCESS
+        }
         if (net.minecraft.world.item.ItemStack.isSameItemSameComponents(stack, entity.target)) {
             return InteractionResult.TRY_WITH_EMPTY_HAND
         }

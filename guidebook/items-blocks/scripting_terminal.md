@@ -14,6 +14,8 @@ item_ids:
 
 The Scripting Terminal is where you write and run Lua scripts that control a network.
 
+> Requires a <ItemLink id="network_controller" /> to use
+
 <BlockImage scale="6" id="terminal" />
 
 ## Opening the Editor

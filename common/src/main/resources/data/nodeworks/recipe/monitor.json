@@ -9,7 +9,7 @@
     "D": "minecraft:deepslate",
     "N": "nodeworks:node",
     "F": "minecraft:item_frame",
-    "G": "minecraft:glowstone"
+    "G": "minecraft:redstone_torch"
   },
   "result": {
     "id": "nodeworks:monitor",

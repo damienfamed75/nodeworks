@@ -2,7 +2,7 @@
   "type": "minecraft:crafting_shapeless",
   "ingredients": [
     "nodeworks:blank_card",
-    "minecraft:cyan_dye",
+    "minecraft:light_blue_dye",
     "minecraft:dropper"
   ],
   "result": {

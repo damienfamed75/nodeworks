@@ -34,6 +34,8 @@ The left side has buttons for:
 - Filtering by (storage, recipes, or both)
 - The kind (items, fluids, or both)
 - Auto-focus search toggle
+- Toggle to sync JEI search with the terminal
+- Channel filtered view
 
 And in the center is a collapsible crafting grid with buttons to:
 

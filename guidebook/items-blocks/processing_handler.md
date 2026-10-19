@@ -18,6 +18,8 @@ the network, bind it to a recipe, and the
 [Crafting CPU](./crafting_cpu.md) will route the recipe's ingredients
 into your machine and pull the outputs back without you writing any Lua.
 
+> Requires a <ItemLink id="network_controller" /> to use
+
 <GameScene zoom="5" interactive={true} paddingLeft="30" paddingRight="30">
   <IsometricCamera yaw="160" roll="0" pitch="10" />
   <ImportStructure src="../assets/assemblies/basic_processing_handler.snbt" />

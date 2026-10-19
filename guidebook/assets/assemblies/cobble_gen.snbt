@@ -55,6 +55,10 @@
             state: "minecraft:stone_stairs{facing:east,half:bottom,shape:straight,waterlogged:true}"
         },
         {
+            pos: [2, 1, 0],
+            state: "minecraft:air"
+        },
+        {
             pos: [2, 1, 2],
             state: "minecraft:lava{level:0}"
         },
@@ -65,33 +69,8 @@
                 components: {},
                 Items: [
                     {
-                        count: 64,
-                        Slot: 0b,
-                        id: "minecraft:cobblestone"
-                    },
-                    {
-                        count: 64,
-                        Slot: 1b,
-                        id: "minecraft:cobblestone"
-                    },
-                    {
-                        count: 64,
+                        count: 5,
                         Slot: 2b,
-                        id: "minecraft:cobblestone"
-                    },
-                    {
-                        count: 64,
-                        Slot: 3b,
-                        id: "minecraft:cobblestone"
-                    },
-                    {
-                        count: 64,
-                        Slot: 4b,
-                        id: "minecraft:cobblestone"
-                    },
-                    {
-                        count: 3,
-                        Slot: 5b,
                         id: "minecraft:cobblestone"
                     }
                 ],
@@ -100,7 +79,7 @@
         },
         {
             pos: [1, 1, 0],
-            state: "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:true,pipe_up:false,pipe_west:false}",
+            state: "nodeworks:node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:true,pipe_up:false,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
                 Items: [
@@ -110,46 +89,26 @@
                         id: "nodeworks:storage_card"
                     }
                 ],
-                networkId: "95219519-bc8d-41c4-b9e7-57589ead0ae1",
-                id: "nodeworks:node"
+                networkId: "83c1db60-6b37-4443-ba06-3b98bfb68758",
+                id: "nodeworks:node",
+                permanentId: "83c1db60-6b37-4443-ba06-3b98bfb68758"
             }
         },
         {
             pos: [1, 1, 1],
-            state: "nodeworks:breaker{facing:south}",
+            state: "nodeworks:breaker{facing:south,waterlogged:false}",
             nbt: {
-                breakProgress: 17,
+                breakProgress: 11,
                 breakDurationTicks: 30,
                 components: {},
                 ownerUuid: "380df991-f603-344c-a090-369bad2a924a",
                 previewArea: 0b,
                 channel: 0,
                 filterRule: "minecraft:cobblestone",
-                networkId: "95219519-bc8d-41c4-b9e7-57589ead0ae1",
+                networkId: "83c1db60-6b37-4443-ba06-3b98bfb68758",
                 id: "nodeworks:breaker",
                 deviceName: "",
                 redstoneMode: 1
-            }
-        },
-        {
-            pos: [2, 1, 0],
-            state: "nodeworks:network_controller",
-            nbt: {
-                components: {},
-                networkName: "",
-                handlerRetryLimit: 50,
-                nodeGlowStyle: 0,
-                laserMode: 0,
-                chunkLoadingEnabled: 0b,
-                laserEnabled: 1b,
-                networkId: "95219519-bc8d-41c4-b9e7-57589ead0ae1",
-                id: "nodeworks:network_controller",
-                permanentId: "95219519-bc8d-41c4-b9e7-57589ead0ae1",
-                redstoneMode: 0,
-                connections: [
-                    [I; 2, 1, 0]
-                ],
-                networkColor: 6282847
             }
         }
     ],
@@ -162,8 +121,7 @@
         "minecraft:stone_stairs{facing:east,half:bottom,shape:straight,waterlogged:true}",
         "minecraft:lava{level:0}",
         "minecraft:barrel{facing:up,open:false}",
-        "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:true,pipe_up:false,pipe_west:false}",
-        "nodeworks:breaker{facing:south}",
-        "nodeworks:network_controller"
+        "nodeworks:node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:true,pipe_up:false,pipe_west:false,waterlogged:false}",
+        "nodeworks:breaker{facing:south,waterlogged:false}"
     ]
 }

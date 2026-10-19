@@ -1,6 +1,6 @@
 {
     DataVersion: 4790,
-    size: [4, 2, 1],
+    size: [3, 2, 1],
     data: [
         {
             pos: [0, 1, 0],
@@ -8,10 +8,6 @@
         },
         {
             pos: [1, 1, 0],
-            state: "minecraft:air"
-        },
-        {
-            pos: [2, 1, 0],
             state: "minecraft:air"
         },
         {
@@ -34,7 +30,7 @@
         },
         {
             pos: [2, 0, 0],
-            state: "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false}",
+            state: "nodeworks:node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
                 Items: [
@@ -44,35 +40,18 @@
                         id: "nodeworks:storage_card"
                     }
                 ],
-                networkId: "fb5314b7-6f2e-481f-953b-4e368dd196cc",
-                id: "nodeworks:node"
+                networkId: "7900b766-d3aa-4005-b982-1f5b7ff0cc90",
+                id: "nodeworks:node",
+                permanentId: "7900b766-d3aa-4005-b982-1f5b7ff0cc90"
             }
         },
         {
-            pos: [3, 0, 0],
-            state: "nodeworks:network_controller",
-            nbt: {
-                chunkLoadingEnabled: 0b,
-                components: {},
-                laserEnabled: 1b,
-                networkName: "",
-                handlerRetryLimit: 50,
-                networkId: "fb5314b7-6f2e-481f-953b-4e368dd196cc",
-                nodeGlowStyle: 0,
-                id: "nodeworks:network_controller",
-                permanentId: "fb5314b7-6f2e-481f-953b-4e368dd196cc",
-                laserMode: 0,
-                redstoneMode: 0,
-                networkColor: 7732201
-            }
-        },
-        {
-            pos: [3, 1, 0],
+            pos: [2, 1, 0],
             state: "nodeworks:inventory_terminal{facing:north}",
             nbt: {
                 components: {},
                 layoutIndex: 0,
-                networkId: "fb5314b7-6f2e-481f-953b-4e368dd196cc",
+                networkId: "7900b766-d3aa-4005-b982-1f5b7ff0cc90",
                 id: "nodeworks:inventory_terminal"
             }
         }
@@ -82,8 +61,7 @@
         "minecraft:air",
         "minecraft:chest{facing:north,type:left,waterlogged:false}",
         "minecraft:chest{facing:north,type:right,waterlogged:false}",
-        "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false}",
-        "nodeworks:network_controller",
+        "nodeworks:node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
         "nodeworks:inventory_terminal{facing:north}"
     ]
 }

@@ -3,7 +3,7 @@
   "ingredients": [
     "nodeworks:blank_card",
     "minecraft:red_dye",
-    "minecraft:observer"
+    "minecraft:repeater"
   ],
   "result": {
     "id": "nodeworks:redstone_card",

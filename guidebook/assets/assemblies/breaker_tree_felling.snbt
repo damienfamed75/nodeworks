@@ -1,6 +1,6 @@
 {
     DataVersion: 4790,
-    size: [6, 8, 5],
+    size: [5, 8, 5],
     data: [
         {
             pos: [0, 0, 0],
@@ -52,7 +52,7 @@
         },
         {
             pos: [2, 0, 2],
-            state: "minecraft:dirt"
+            state: "minecraft:podzol{snowy:false}"
         },
         {
             pos: [2, 0, 3],
@@ -103,26 +103,6 @@
             state: "minecraft:sandstone"
         },
         {
-            pos: [5, 0, 0],
-            state: "minecraft:sandstone"
-        },
-        {
-            pos: [5, 0, 1],
-            state: "minecraft:sandstone"
-        },
-        {
-            pos: [5, 0, 2],
-            state: "minecraft:sandstone"
-        },
-        {
-            pos: [5, 0, 3],
-            state: "minecraft:sandstone"
-        },
-        {
-            pos: [5, 0, 4],
-            state: "minecraft:sandstone"
-        },
-        {
             pos: [2, 1, 2],
             state: "minecraft:oak_log{axis:y}"
         },
@@ -149,6 +129,10 @@
         {
             pos: [0, 4, 3],
             state: "minecraft:oak_leaves{distance:3,persistent:false,waterlogged:false}"
+        },
+        {
+            pos: [0, 4, 4],
+            state: "minecraft:oak_leaves{distance:4,persistent:false,waterlogged:false}"
         },
         {
             pos: [1, 4, 0],
@@ -211,6 +195,10 @@
             state: "minecraft:oak_leaves{distance:3,persistent:false,waterlogged:false}"
         },
         {
+            pos: [4, 4, 0],
+            state: "minecraft:oak_leaves{distance:4,persistent:false,waterlogged:false}"
+        },
+        {
             pos: [4, 4, 1],
             state: "minecraft:oak_leaves{distance:3,persistent:false,waterlogged:false}"
         },
@@ -223,44 +211,52 @@
             state: "minecraft:oak_leaves{distance:3,persistent:false,waterlogged:false}"
         },
         {
+            pos: [0, 5, 0],
+            state: "minecraft:oak_leaves{distance:5,persistent:false,waterlogged:false}"
+        },
+        {
             pos: [0, 5, 1],
-            state: "minecraft:oak_leaves{distance:3,persistent:false,waterlogged:false}"
+            state: "minecraft:oak_leaves{distance:4,persistent:false,waterlogged:false}"
         },
         {
             pos: [0, 5, 2],
-            state: "minecraft:oak_leaves{distance:2,persistent:false,waterlogged:false}"
+            state: "minecraft:oak_leaves{distance:3,persistent:false,waterlogged:false}"
         },
         {
             pos: [0, 5, 3],
-            state: "minecraft:oak_leaves{distance:3,persistent:false,waterlogged:false}"
+            state: "minecraft:oak_leaves{distance:4,persistent:false,waterlogged:false}"
+        },
+        {
+            pos: [0, 5, 4],
+            state: "minecraft:oak_leaves{distance:5,persistent:false,waterlogged:false}"
         },
         {
             pos: [1, 5, 0],
-            state: "minecraft:oak_leaves{distance:3,persistent:false,waterlogged:false}"
+            state: "minecraft:oak_leaves{distance:4,persistent:false,waterlogged:false}"
         },
         {
             pos: [1, 5, 1],
-            state: "minecraft:oak_leaves{distance:2,persistent:false,waterlogged:false}"
-        },
-        {
-            pos: [1, 5, 2],
-            state: "minecraft:oak_leaves{distance:1,persistent:false,waterlogged:false}"
-        },
-        {
-            pos: [1, 5, 3],
-            state: "minecraft:oak_leaves{distance:2,persistent:false,waterlogged:false}"
-        },
-        {
-            pos: [1, 5, 4],
             state: "minecraft:oak_leaves{distance:3,persistent:false,waterlogged:false}"
         },
         {
-            pos: [2, 5, 0],
+            pos: [1, 5, 2],
             state: "minecraft:oak_leaves{distance:2,persistent:false,waterlogged:false}"
         },
         {
+            pos: [1, 5, 3],
+            state: "minecraft:oak_leaves{distance:3,persistent:false,waterlogged:false}"
+        },
+        {
+            pos: [1, 5, 4],
+            state: "minecraft:oak_leaves{distance:4,persistent:false,waterlogged:false}"
+        },
+        {
+            pos: [2, 5, 0],
+            state: "minecraft:oak_leaves{distance:3,persistent:false,waterlogged:false}"
+        },
+        {
             pos: [2, 5, 1],
-            state: "minecraft:oak_leaves{distance:1,persistent:false,waterlogged:false}"
+            state: "minecraft:oak_leaves{distance:2,persistent:false,waterlogged:false}"
         },
         {
             pos: [2, 5, 2],
@@ -268,55 +264,51 @@
         },
         {
             pos: [2, 5, 3],
-            state: "minecraft:oak_leaves{distance:1,persistent:false,waterlogged:false}"
+            state: "minecraft:oak_leaves{distance:2,persistent:false,waterlogged:false}"
         },
         {
             pos: [2, 5, 4],
-            state: "minecraft:oak_leaves{distance:2,persistent:false,waterlogged:false}"
+            state: "minecraft:oak_leaves{distance:3,persistent:false,waterlogged:false}"
         },
         {
             pos: [3, 5, 0],
-            state: "minecraft:oak_leaves{distance:3,persistent:false,waterlogged:false}"
+            state: "minecraft:oak_leaves{distance:4,persistent:false,waterlogged:false}"
         },
         {
             pos: [3, 5, 1],
-            state: "minecraft:oak_leaves{distance:2,persistent:false,waterlogged:false}"
-        },
-        {
-            pos: [3, 5, 2],
-            state: "minecraft:oak_leaves{distance:1,persistent:false,waterlogged:false}"
-        },
-        {
-            pos: [3, 5, 3],
-            state: "minecraft:oak_leaves{distance:2,persistent:false,waterlogged:false}"
-        },
-        {
-            pos: [3, 5, 4],
             state: "minecraft:oak_leaves{distance:3,persistent:false,waterlogged:false}"
         },
         {
-            pos: [4, 5, 0],
+            pos: [3, 5, 2],
+            state: "minecraft:oak_leaves{distance:2,persistent:false,waterlogged:false}"
+        },
+        {
+            pos: [3, 5, 3],
+            state: "minecraft:oak_leaves{distance:3,persistent:false,waterlogged:false}"
+        },
+        {
+            pos: [3, 5, 4],
             state: "minecraft:oak_leaves{distance:4,persistent:false,waterlogged:false}"
         },
         {
             pos: [4, 5, 1],
-            state: "minecraft:oak_leaves{distance:3,persistent:false,waterlogged:false}"
+            state: "minecraft:oak_leaves{distance:4,persistent:false,waterlogged:false}"
         },
         {
             pos: [4, 5, 2],
-            state: "minecraft:oak_leaves{distance:2,persistent:false,waterlogged:false}"
-        },
-        {
-            pos: [4, 5, 3],
             state: "minecraft:oak_leaves{distance:3,persistent:false,waterlogged:false}"
         },
         {
-            pos: [4, 5, 4],
+            pos: [4, 5, 3],
             state: "minecraft:oak_leaves{distance:4,persistent:false,waterlogged:false}"
         },
         {
             pos: [1, 6, 2],
             state: "minecraft:oak_leaves{distance:1,persistent:false,waterlogged:false}"
+        },
+        {
+            pos: [1, 6, 3],
+            state: "minecraft:oak_leaves{distance:2,persistent:false,waterlogged:false}"
         },
         {
             pos: [2, 6, 1],
@@ -333,10 +325,6 @@
         {
             pos: [3, 6, 2],
             state: "minecraft:oak_leaves{distance:1,persistent:false,waterlogged:false}"
-        },
-        {
-            pos: [3, 6, 3],
-            state: "minecraft:oak_leaves{distance:2,persistent:false,waterlogged:false}"
         },
         {
             pos: [1, 7, 2],
@@ -379,10 +367,6 @@
             state: "minecraft:air"
         },
         {
-            pos: [1, 1, 0],
-            state: "minecraft:air"
-        },
-        {
             pos: [1, 1, 1],
             state: "minecraft:air"
         },
@@ -396,14 +380,6 @@
         },
         {
             pos: [1, 1, 4],
-            state: "minecraft:air"
-        },
-        {
-            pos: [2, 1, 0],
-            state: "minecraft:air"
-        },
-        {
-            pos: [2, 1, 1],
             state: "minecraft:air"
         },
         {
@@ -423,6 +399,10 @@
             state: "minecraft:air"
         },
         {
+            pos: [3, 1, 2],
+            state: "minecraft:air"
+        },
+        {
             pos: [3, 1, 3],
             state: "minecraft:air"
         },
@@ -439,27 +419,15 @@
             state: "minecraft:air"
         },
         {
+            pos: [4, 1, 2],
+            state: "minecraft:air"
+        },
+        {
             pos: [4, 1, 3],
             state: "minecraft:air"
         },
         {
             pos: [4, 1, 4],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 1, 0],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 1, 1],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 1, 3],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 1, 4],
             state: "minecraft:air"
         },
         {
@@ -559,26 +527,6 @@
             state: "minecraft:air"
         },
         {
-            pos: [5, 2, 0],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 2, 1],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 2, 2],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 2, 3],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 2, 4],
-            state: "minecraft:air"
-        },
-        {
             pos: [0, 3, 0],
             state: "minecraft:air"
         },
@@ -675,83 +623,15 @@
             state: "minecraft:air"
         },
         {
-            pos: [5, 3, 0],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 3, 1],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 3, 2],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 3, 3],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 3, 4],
-            state: "minecraft:air"
-        },
-        {
-            pos: [0, 4, 4],
-            state: "minecraft:air"
-        },
-        {
-            pos: [4, 4, 0],
-            state: "minecraft:air"
-        },
-        {
             pos: [4, 4, 4],
             state: "minecraft:air"
         },
         {
-            pos: [5, 4, 0],
+            pos: [4, 5, 0],
             state: "minecraft:air"
         },
         {
-            pos: [5, 4, 1],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 4, 2],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 4, 3],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 4, 4],
-            state: "minecraft:air"
-        },
-        {
-            pos: [0, 5, 0],
-            state: "minecraft:air"
-        },
-        {
-            pos: [0, 5, 4],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 5, 0],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 5, 1],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 5, 2],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 5, 3],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 5, 4],
+            pos: [4, 5, 4],
             state: "minecraft:air"
         },
         {
@@ -783,10 +663,6 @@
             state: "minecraft:air"
         },
         {
-            pos: [1, 6, 3],
-            state: "minecraft:air"
-        },
-        {
             pos: [1, 6, 4],
             state: "minecraft:air"
         },
@@ -804,6 +680,10 @@
         },
         {
             pos: [3, 6, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 6, 3],
             state: "minecraft:air"
         },
         {
@@ -828,26 +708,6 @@
         },
         {
             pos: [4, 6, 4],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 6, 0],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 6, 1],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 6, 2],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 6, 3],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 6, 4],
             state: "minecraft:air"
         },
         {
@@ -931,28 +791,65 @@
             state: "minecraft:air"
         },
         {
-            pos: [5, 7, 0],
-            state: "minecraft:air"
+            pos: [1, 1, 0],
+            state: "minecraft:barrel{facing:up,open:false}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        count: 24,
+                        Slot: 0b,
+                        id: "minecraft:oak_log"
+                    },
+                    {
+                        count: 18,
+                        Slot: 1b,
+                        id: "minecraft:oak_sapling"
+                    },
+                    {
+                        count: 28,
+                        Slot: 2b,
+                        id: "minecraft:spruce_log"
+                    },
+                    {
+                        count: 12,
+                        Slot: 3b,
+                        id: "minecraft:spruce_sapling"
+                    },
+                    {
+                        count: 25,
+                        Slot: 4b,
+                        id: "minecraft:stick"
+                    },
+                    {
+                        count: 1,
+                        Slot: 5b,
+                        id: "minecraft:apple"
+                    }
+                ],
+                id: "minecraft:barrel"
+            }
         },
         {
-            pos: [5, 7, 1],
-            state: "minecraft:air"
+            pos: [2, 1, 0],
+            state: "nodeworks:node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:true,pipe_up:false,pipe_west:false,waterlogged:false}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        count: 1,
+                        Slot: 36b,
+                        id: "nodeworks:storage_card"
+                    }
+                ],
+                networkId: "de05bb7d-0160-415a-a9f8-563640578754",
+                id: "nodeworks:node",
+                permanentId: "de05bb7d-0160-415a-a9f8-563640578754"
+            }
         },
         {
-            pos: [5, 7, 2],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 7, 3],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 7, 4],
-            state: "minecraft:air"
-        },
-        {
-            pos: [3, 1, 2],
-            state: "nodeworks:breaker{facing:west}",
+            pos: [2, 1, 1],
+            state: "nodeworks:breaker{facing:south,waterlogged:false}",
             nbt: {
                 breakProgress: 0,
                 breakDurationTicks: 0,
@@ -961,52 +858,26 @@
                 previewArea: 0b,
                 channel: 0,
                 filterRule: "",
-                networkId: "b353e6d4-1fa5-45d3-9642-e89ba1373b02",
+                networkId: "de05bb7d-0160-415a-a9f8-563640578754",
                 id: "nodeworks:breaker",
                 deviceName: "",
                 redstoneMode: 0
-            }
-        },
-        {
-            pos: [4, 1, 2],
-            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
-            nbt: {
-                components: {},
-                networkId: "b353e6d4-1fa5-45d3-9642-e89ba1373b02",
-                id: "nodeworks:pipe"
-            }
-        },
-        {
-            pos: [5, 1, 2],
-            state: "nodeworks:network_controller",
-            nbt: {
-                chunkLoadingEnabled: 0b,
-                components: {},
-                laserEnabled: 1b,
-                networkName: "",
-                handlerRetryLimit: 50,
-                networkId: "b353e6d4-1fa5-45d3-9642-e89ba1373b02",
-                nodeGlowStyle: 0,
-                id: "nodeworks:network_controller",
-                permanentId: "b353e6d4-1fa5-45d3-9642-e89ba1373b02",
-                laserMode: 0,
-                redstoneMode: 0,
-                networkColor: 14896627
             }
         }
     ],
     entities: [],
     palette: [
         "minecraft:sandstone",
-        "minecraft:dirt",
+        "minecraft:podzol{snowy:false}",
         "minecraft:oak_log{axis:y}",
         "minecraft:oak_leaves{distance:4,persistent:false,waterlogged:false}",
         "minecraft:oak_leaves{distance:3,persistent:false,waterlogged:false}",
         "minecraft:oak_leaves{distance:2,persistent:false,waterlogged:false}",
         "minecraft:oak_leaves{distance:1,persistent:false,waterlogged:false}",
+        "minecraft:oak_leaves{distance:5,persistent:false,waterlogged:false}",
         "minecraft:air",
-        "nodeworks:breaker{facing:west}",
-        "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
-        "nodeworks:network_controller"
+        "minecraft:barrel{facing:up,open:false}",
+        "nodeworks:node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:true,pipe_up:false,pipe_west:false,waterlogged:false}",
+        "nodeworks:breaker{facing:south,waterlogged:false}"
     ]
 }

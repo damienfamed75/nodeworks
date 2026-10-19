@@ -1,0 +1,60 @@
+{
+    DataVersion: 4790,
+    size: [3, 1, 1],
+    data: [
+        {
+            pos: [0, 0, 0],
+            state: "minecraft:chest{facing:north,type:single,waterlogged:false}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        count: 64,
+                        Slot: 0b,
+                        id: "minecraft:cobblestone"
+                    }
+                ],
+                id: "minecraft:chest"
+            }
+        },
+        {
+            pos: [1, 0, 0],
+            state: "nodeworks:node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false,waterlogged:false}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        count: 1,
+                        Slot: 36b,
+                        id: "nodeworks:storage_card"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {}
+                        },
+                        count: 1,
+                        Slot: 45b,
+                        id: "nodeworks:transfer_card"
+                    }
+                ],
+                networkId: "02707a39-920f-405a-b02e-cced3046b52c",
+                id: "nodeworks:node",
+                permanentId: "02707a39-920f-405a-b02e-cced3046b52c"
+            }
+        },
+        {
+            pos: [2, 0, 0],
+            state: "minecraft:chest{facing:north,type:single,waterlogged:false}",
+            nbt: {
+                components: {},
+                Items: [],
+                id: "minecraft:chest"
+            }
+        }
+    ],
+    entities: [],
+    palette: [
+        "minecraft:chest{facing:north,type:single,waterlogged:false}",
+        "nodeworks:node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false,waterlogged:false}"
+    ]
+}

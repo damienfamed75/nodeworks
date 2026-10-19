@@ -575,6 +575,10 @@
             state: "minecraft:air"
         },
         {
+            pos: [7, 2, 3],
+            state: "minecraft:air"
+        },
+        {
             pos: [7, 2, 4],
             state: "minecraft:air"
         },
@@ -668,7 +672,7 @@
         },
         {
             pos: [3, 3, 4],
-            state: "nodeworks:large_celestine_bud{facing:south,waterlogged:false}"
+            state: "nodeworks:celestine_cluster{facing:south,waterlogged:false}"
         },
         {
             pos: [4, 3, 0],
@@ -868,7 +872,7 @@
         },
         {
             pos: [3, 4, 3],
-            state: "nodeworks:large_celestine_bud{facing:up,waterlogged:false}"
+            state: "nodeworks:celestine_cluster{facing:up,waterlogged:false}"
         },
         {
             pos: [3, 4, 4],
@@ -1416,142 +1420,142 @@
         },
         {
             pos: [0, 0, 3],
-            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [1, 0, 3],
-            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [2, 0, 3],
-            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [3, 0, 0],
-            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:true,pipe_up:true,pipe_west:false}",
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:true,pipe_up:true,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [3, 0, 1],
-            state: "nodeworks:pipe{pipe_axis:z,pipe_down:false,pipe_east:false,pipe_north:true,pipe_south:true,pipe_up:false,pipe_west:false}",
+            state: "nodeworks:pipe{pipe_axis:z,pipe_down:false,pipe_east:false,pipe_north:true,pipe_south:true,pipe_up:false,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [3, 0, 2],
-            state: "nodeworks:pipe{pipe_axis:z,pipe_down:false,pipe_east:false,pipe_north:true,pipe_south:true,pipe_up:false,pipe_west:false}",
+            state: "nodeworks:pipe{pipe_axis:z,pipe_down:false,pipe_east:false,pipe_north:true,pipe_south:true,pipe_up:false,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [3, 0, 3],
-            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:true,pipe_north:true,pipe_south:true,pipe_up:true,pipe_west:true}",
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:true,pipe_north:true,pipe_south:true,pipe_up:true,pipe_west:true,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [3, 0, 4],
-            state: "nodeworks:pipe{pipe_axis:z,pipe_down:false,pipe_east:false,pipe_north:true,pipe_south:true,pipe_up:false,pipe_west:false}",
+            state: "nodeworks:pipe{pipe_axis:z,pipe_down:false,pipe_east:false,pipe_north:true,pipe_south:true,pipe_up:false,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [3, 0, 5],
-            state: "nodeworks:pipe{pipe_axis:z,pipe_down:false,pipe_east:false,pipe_north:true,pipe_south:true,pipe_up:false,pipe_west:false}",
+            state: "nodeworks:pipe{pipe_axis:z,pipe_down:false,pipe_east:false,pipe_north:true,pipe_south:true,pipe_up:false,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [3, 0, 6],
-            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:false,pipe_north:true,pipe_south:false,pipe_up:true,pipe_west:false}",
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:false,pipe_north:true,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [4, 0, 3],
-            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [5, 0, 3],
-            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [6, 0, 3],
-            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:true}",
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:true,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [0, 1, 3],
-            state: "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
+            state: "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [3, 1, 0],
-            state: "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
+            state: "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [3, 1, 3],
-            state: "nodeworks:breaker{facing:up}",
+            state: "nodeworks:breaker{facing:up,waterlogged:false}",
             nbt: {
                 breakProgress: 0,
                 breakDurationTicks: 0,
@@ -1560,7 +1564,7 @@
                 previewArea: 0b,
                 channel: 0,
                 filterRule: "",
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:breaker",
                 deviceName: "",
                 redstoneMode: 0
@@ -1568,91 +1572,70 @@
         },
         {
             pos: [3, 1, 6],
-            state: "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
+            state: "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [6, 1, 3],
-            state: "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
+            state: "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [0, 2, 3],
-            state: "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
+            state: "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [3, 2, 0],
-            state: "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
+            state: "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [3, 2, 6],
-            state: "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
+            state: "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [6, 2, 3],
-            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
+            state: "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:pipe"
             }
         },
         {
-            pos: [7, 2, 3],
-            state: "nodeworks:network_controller",
-            nbt: {
-                components: {},
-                networkName: "",
-                handlerRetryLimit: 50,
-                nodeGlowStyle: 0,
-                laserMode: 1,
-                chunkLoadingEnabled: 0b,
-                laserEnabled: 1b,
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
-                id: "nodeworks:network_controller",
-                permanentId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
-                redstoneMode: 0,
-                connections: [
-                    [I; 7, 2, 3]
-                ],
-                networkColor: 8385767
-            }
-        },
-        {
             pos: [0, 3, 3],
-            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false}",
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [1, 3, 3],
-            state: "nodeworks:breaker{facing:east}",
+            state: "nodeworks:breaker{facing:east,waterlogged:false}",
             nbt: {
                 breakProgress: 0,
                 breakDurationTicks: 0,
@@ -1661,7 +1644,7 @@
                 previewArea: 0b,
                 channel: 0,
                 filterRule: "",
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:breaker",
                 deviceName: "",
                 redstoneMode: 0
@@ -1669,16 +1652,16 @@
         },
         {
             pos: [3, 3, 0],
-            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:true,pipe_up:false,pipe_west:false}",
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:true,pipe_up:false,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [3, 3, 1],
-            state: "nodeworks:breaker{facing:south}",
+            state: "nodeworks:breaker{facing:south,waterlogged:false}",
             nbt: {
                 breakProgress: 0,
                 breakDurationTicks: 0,
@@ -1687,7 +1670,7 @@
                 previewArea: 0b,
                 channel: 0,
                 filterRule: "",
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:breaker",
                 deviceName: "",
                 redstoneMode: 0
@@ -1695,7 +1678,7 @@
         },
         {
             pos: [3, 3, 5],
-            state: "nodeworks:breaker{facing:north}",
+            state: "nodeworks:breaker{facing:north,waterlogged:false}",
             nbt: {
                 breakProgress: 0,
                 breakDurationTicks: 0,
@@ -1704,7 +1687,7 @@
                 previewArea: 0b,
                 channel: 0,
                 filterRule: "",
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:breaker",
                 deviceName: "",
                 redstoneMode: 0
@@ -1712,16 +1695,16 @@
         },
         {
             pos: [3, 3, 6],
-            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:true,pipe_south:false,pipe_up:false,pipe_west:false}",
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:true,pipe_south:false,pipe_up:false,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [5, 3, 3],
-            state: "nodeworks:breaker{facing:west}",
+            state: "nodeworks:breaker{facing:west,waterlogged:false}",
             nbt: {
                 breakProgress: 0,
                 breakDurationTicks: 0,
@@ -1730,7 +1713,7 @@
                 previewArea: 0b,
                 channel: 0,
                 filterRule: "",
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:breaker",
                 deviceName: "",
                 redstoneMode: 0
@@ -1738,7 +1721,7 @@
         },
         {
             pos: [6, 3, 3],
-            state: "nodeworks:node{pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:true}",
+            state: "nodeworks:node{pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:true,waterlogged:false}",
             nbt: {
                 components: {},
                 Items: [
@@ -1748,8 +1731,9 @@
                         id: "nodeworks:storage_card"
                     }
                 ],
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
-                id: "nodeworks:node"
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
+                id: "nodeworks:node",
+                permanentId: "c5b15f22-3b40-4247-8df3-0436e99ec907"
             }
         },
         {
@@ -1784,16 +1768,16 @@
         },
         {
             pos: [6, 4, 3],
-            state: "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
+            state: "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [3, 5, 3],
-            state: "nodeworks:breaker{facing:down}",
+            state: "nodeworks:breaker{facing:down,waterlogged:false}",
             nbt: {
                 breakProgress: 0,
                 breakDurationTicks: 0,
@@ -1802,7 +1786,7 @@
                 previewArea: 0b,
                 channel: 0,
                 filterRule: "",
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:breaker",
                 deviceName: "",
                 redstoneMode: 0
@@ -1810,46 +1794,46 @@
         },
         {
             pos: [6, 5, 3],
-            state: "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
+            state: "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [3, 6, 3],
-            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false}",
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [4, 6, 3],
-            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [5, 6, 3],
-            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [6, 6, 3],
-            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "c5cb7b1b-9c23-4644-8b20-db67690481ae",
+                networkId: "c5b15f22-3b40-4247-8df3-0436e99ec907",
                 id: "nodeworks:pipe"
             }
         }
@@ -1861,30 +1845,28 @@
         "nodeworks:celestine_cluster{facing:down,waterlogged:false}",
         "nodeworks:celestine_cluster{facing:west,waterlogged:false}",
         "nodeworks:celestine_cluster{facing:north,waterlogged:false}",
-        "nodeworks:large_celestine_bud{facing:south,waterlogged:false}",
+        "nodeworks:celestine_cluster{facing:south,waterlogged:false}",
         "nodeworks:celestine_cluster{facing:east,waterlogged:false}",
-        "nodeworks:large_celestine_bud{facing:up,waterlogged:false}",
-        "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
-        "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
-        "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:true,pipe_up:true,pipe_west:false}",
-        "nodeworks:pipe{pipe_axis:z,pipe_down:false,pipe_east:false,pipe_north:true,pipe_south:true,pipe_up:false,pipe_west:false}",
-        "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:true,pipe_north:true,pipe_south:true,pipe_up:true,pipe_west:true}",
-        "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:false,pipe_north:true,pipe_south:false,pipe_up:true,pipe_west:false}",
-        "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:true}",
-        "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
-        "nodeworks:breaker{facing:up}",
-        "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
-        "nodeworks:network_controller",
-        "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false}",
-        "nodeworks:breaker{facing:east}",
-        "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:true,pipe_up:false,pipe_west:false}",
-        "nodeworks:breaker{facing:south}",
-        "nodeworks:breaker{facing:north}",
-        "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:true,pipe_south:false,pipe_up:false,pipe_west:false}",
-        "nodeworks:breaker{facing:west}",
-        "nodeworks:node{pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:true}",
+        "nodeworks:celestine_cluster{facing:up,waterlogged:false}",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
+        "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:true,pipe_up:true,pipe_west:false,waterlogged:false}",
+        "nodeworks:pipe{pipe_axis:z,pipe_down:false,pipe_east:false,pipe_north:true,pipe_south:true,pipe_up:false,pipe_west:false,waterlogged:false}",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:true,pipe_north:true,pipe_south:true,pipe_up:true,pipe_west:true,waterlogged:false}",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:false,pipe_north:true,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:true,waterlogged:false}",
+        "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
+        "nodeworks:breaker{facing:up,waterlogged:false}",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false,waterlogged:false}",
+        "nodeworks:breaker{facing:east,waterlogged:false}",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:true,pipe_up:false,pipe_west:false,waterlogged:false}",
+        "nodeworks:breaker{facing:south,waterlogged:false}",
+        "nodeworks:breaker{facing:north,waterlogged:false}",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:true,pipe_south:false,pipe_up:false,pipe_west:false,waterlogged:false}",
+        "nodeworks:breaker{facing:west,waterlogged:false}",
+        "nodeworks:node{pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:true,waterlogged:false}",
         "minecraft:chest{facing:north,type:single,waterlogged:false}",
-        "nodeworks:breaker{facing:down}",
-        "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}"
+        "nodeworks:breaker{facing:down,waterlogged:false}",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}"
     ]
 }

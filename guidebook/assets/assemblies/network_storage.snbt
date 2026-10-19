@@ -3,6 +3,10 @@
     size: [4, 2, 1],
     data: [
         {
+            pos: [3, 0, 0],
+            state: "minecraft:stripped_dark_oak_log{axis:y}"
+        },
+        {
             pos: [0, 0, 0],
             state: "minecraft:chest{facing:north,type:left,waterlogged:false}",
             nbt: {
@@ -22,7 +26,7 @@
         },
         {
             pos: [2, 0, 0],
-            state: "nodeworks:node",
+            state: "nodeworks:node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
                 Items: [
@@ -32,30 +36,9 @@
                         id: "nodeworks:storage_card"
                     }
                 ],
-                networkId: "f721b04e-9bd9-45f2-b4fc-ebf15c285cab",
+                networkId: "399a3b9b-e642-44ff-96d6-13dfb616dc68",
                 id: "nodeworks:node",
-                connections: [
-                    [I; 2, 1, 0],
-                    [I; 3, 0, 0]
-                ]
-            }
-        },
-        {
-            pos: [3, 0, 0],
-            state: "nodeworks:network_controller",
-            nbt: {
-                chunkLoadingEnabled: 0b,
-                components: {},
-                networkName: "",
-                handlerRetryLimit: 50,
-                networkId: "f721b04e-9bd9-45f2-b4fc-ebf15c285cab",
-                nodeGlowStyle: 0,
-                id: "nodeworks:network_controller",
-                redstoneMode: 0,
-                connections: [
-                    [I; 2, 0, 0]
-                ],
-                networkColor: 6413532
+                permanentId: "399a3b9b-e642-44ff-96d6-13dfb616dc68"
             }
         },
         {
@@ -78,7 +61,7 @@
         },
         {
             pos: [2, 1, 0],
-            state: "nodeworks:node",
+            state: "nodeworks:node{pipe_down:true,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
                 Items: [
@@ -88,12 +71,9 @@
                         id: "nodeworks:storage_card"
                     }
                 ],
-                networkId: "f721b04e-9bd9-45f2-b4fc-ebf15c285cab",
+                networkId: "399a3b9b-e642-44ff-96d6-13dfb616dc68",
                 id: "nodeworks:node",
-                connections: [
-                    [I; 2, 0, 0],
-                    [I; 3, 1, 0]
-                ]
+                permanentId: "2c93d554-2a2c-4d31-8962-b2f620a9c113"
             }
         },
         {
@@ -102,20 +82,18 @@
             nbt: {
                 components: {},
                 layoutIndex: 0,
-                networkId: "f721b04e-9bd9-45f2-b4fc-ebf15c285cab",
-                id: "nodeworks:inventory_terminal",
-                connections: [
-                    [I; 2, 1, 0]
-                ]
+                networkId: "399a3b9b-e642-44ff-96d6-13dfb616dc68",
+                id: "nodeworks:inventory_terminal"
             }
         }
     ],
     entities: [],
     palette: [
+        "minecraft:stripped_dark_oak_log{axis:y}",
         "minecraft:chest{facing:north,type:left,waterlogged:false}",
         "minecraft:chest{facing:north,type:right,waterlogged:false}",
-        "nodeworks:node",
-        "nodeworks:network_controller",
+        "nodeworks:node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
+        "nodeworks:node{pipe_down:true,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false,waterlogged:false}",
         "nodeworks:inventory_terminal{facing:north}"
     ]
 }

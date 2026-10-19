@@ -544,7 +544,7 @@
         },
         {
             pos: [3, 2, 3],
-            state: "nodeworks:medium_celestine_bud{facing:down,waterlogged:false}"
+            state: "nodeworks:celestine_cluster{facing:down,waterlogged:false}"
         },
         {
             pos: [3, 2, 4],
@@ -627,6 +627,10 @@
             state: "minecraft:air"
         },
         {
+            pos: [6, 2, 3],
+            state: "minecraft:air"
+        },
+        {
             pos: [6, 2, 4],
             state: "minecraft:air"
         },
@@ -648,6 +652,10 @@
         },
         {
             pos: [7, 2, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [7, 2, 3],
             state: "minecraft:air"
         },
         {
@@ -724,7 +732,7 @@
         },
         {
             pos: [2, 3, 3],
-            state: "nodeworks:medium_celestine_bud{facing:west,waterlogged:false}"
+            state: "nodeworks:celestine_cluster{facing:west,waterlogged:false}"
         },
         {
             pos: [2, 3, 4],
@@ -740,11 +748,11 @@
         },
         {
             pos: [3, 3, 2],
-            state: "nodeworks:large_celestine_bud{facing:north,waterlogged:false}"
+            state: "nodeworks:celestine_cluster{facing:north,waterlogged:false}"
         },
         {
             pos: [3, 3, 4],
-            state: "nodeworks:medium_celestine_bud{facing:south,waterlogged:false}"
+            state: "nodeworks:celestine_cluster{facing:south,waterlogged:false}"
         },
         {
             pos: [4, 3, 0],
@@ -760,7 +768,7 @@
         },
         {
             pos: [4, 3, 3],
-            state: "nodeworks:medium_celestine_bud{facing:east,waterlogged:false}"
+            state: "nodeworks:celestine_cluster{facing:east,waterlogged:false}"
         },
         {
             pos: [4, 3, 4],
@@ -944,7 +952,7 @@
         },
         {
             pos: [3, 4, 3],
-            state: "nodeworks:medium_celestine_bud{facing:up,waterlogged:false}"
+            state: "nodeworks:celestine_cluster{facing:up,waterlogged:false}"
         },
         {
             pos: [3, 4, 4],
@@ -1512,12 +1520,13 @@
         },
         {
             pos: [3, 0, 3],
-            state: "nodeworks:focus_node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
+            state: "nodeworks:focus_node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
                 Items: [],
-                networkId: "a8564dc9-67a6-4e0c-baba-6741a458ca05",
+                networkId: "8b1d064f-669e-47b5-9a30-1833739fe48f",
                 id: "nodeworks:focus_node",
+                permanentId: "dd8fb3de-1a7d-4cee-90b4-51315f07225e",
                 connections: [
                     [I; 6, 3, 3],
                     [I; 0, 3, 3],
@@ -1528,7 +1537,7 @@
         },
         {
             pos: [3, 1, 3],
-            state: "nodeworks:breaker{facing:up}",
+            state: "nodeworks:breaker{facing:up,waterlogged:false}",
             nbt: {
                 breakProgress: 0,
                 breakDurationTicks: 0,
@@ -1537,47 +1546,21 @@
                 previewArea: 0b,
                 channel: 0,
                 filterRule: "",
-                networkId: "a8564dc9-67a6-4e0c-baba-6741a458ca05",
+                networkId: "8b1d064f-669e-47b5-9a30-1833739fe48f",
                 id: "nodeworks:breaker",
                 deviceName: "",
                 redstoneMode: 0
             }
         },
         {
-            pos: [6, 2, 3],
-            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
-            nbt: {
-                components: {},
-                networkId: "a8564dc9-67a6-4e0c-baba-6741a458ca05",
-                id: "nodeworks:pipe"
-            }
-        },
-        {
-            pos: [7, 2, 3],
-            state: "nodeworks:network_controller",
-            nbt: {
-                chunkLoadingEnabled: 0b,
-                components: {},
-                laserEnabled: 1b,
-                networkName: "",
-                handlerRetryLimit: 50,
-                networkId: "a8564dc9-67a6-4e0c-baba-6741a458ca05",
-                nodeGlowStyle: 0,
-                id: "nodeworks:network_controller",
-                permanentId: "a8564dc9-67a6-4e0c-baba-6741a458ca05",
-                laserMode: 0,
-                redstoneMode: 0,
-                networkColor: 16660423
-            }
-        },
-        {
             pos: [0, 3, 3],
-            state: "nodeworks:focus_node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false}",
+            state: "nodeworks:focus_node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
                 Items: [],
-                networkId: "a8564dc9-67a6-4e0c-baba-6741a458ca05",
+                networkId: "8b1d064f-669e-47b5-9a30-1833739fe48f",
                 id: "nodeworks:focus_node",
+                permanentId: "8b1d064f-669e-47b5-9a30-1833739fe48f",
                 connections: [
                     [I; 3, 0, 3]
                 ]
@@ -1585,7 +1568,7 @@
         },
         {
             pos: [1, 3, 3],
-            state: "nodeworks:breaker{facing:east}",
+            state: "nodeworks:breaker{facing:east,waterlogged:false}",
             nbt: {
                 breakProgress: 0,
                 breakDurationTicks: 0,
@@ -1594,7 +1577,7 @@
                 previewArea: 0b,
                 channel: 0,
                 filterRule: "",
-                networkId: "a8564dc9-67a6-4e0c-baba-6741a458ca05",
+                networkId: "8b1d064f-669e-47b5-9a30-1833739fe48f",
                 id: "nodeworks:breaker",
                 deviceName: "",
                 redstoneMode: 0
@@ -1602,12 +1585,13 @@
         },
         {
             pos: [3, 3, 0],
-            state: "nodeworks:focus_node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:true,pipe_up:false,pipe_west:false}",
+            state: "nodeworks:focus_node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:true,pipe_up:false,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
                 Items: [],
-                networkId: "a8564dc9-67a6-4e0c-baba-6741a458ca05",
+                networkId: "8b1d064f-669e-47b5-9a30-1833739fe48f",
                 id: "nodeworks:focus_node",
+                permanentId: "13ed603a-e303-4c74-b86b-428978f4ea63",
                 connections: [
                     [I; 3, 0, 3]
                 ]
@@ -1615,7 +1599,7 @@
         },
         {
             pos: [3, 3, 1],
-            state: "nodeworks:breaker{facing:south}",
+            state: "nodeworks:breaker{facing:south,waterlogged:false}",
             nbt: {
                 breakProgress: 0,
                 breakDurationTicks: 0,
@@ -1624,7 +1608,7 @@
                 previewArea: 0b,
                 channel: 0,
                 filterRule: "",
-                networkId: "a8564dc9-67a6-4e0c-baba-6741a458ca05",
+                networkId: "8b1d064f-669e-47b5-9a30-1833739fe48f",
                 id: "nodeworks:breaker",
                 deviceName: "",
                 redstoneMode: 0
@@ -1632,7 +1616,7 @@
         },
         {
             pos: [3, 3, 5],
-            state: "nodeworks:breaker{facing:north}",
+            state: "nodeworks:breaker{facing:north,waterlogged:false}",
             nbt: {
                 breakProgress: 0,
                 breakDurationTicks: 0,
@@ -1641,7 +1625,7 @@
                 previewArea: 0b,
                 channel: 0,
                 filterRule: "",
-                networkId: "a8564dc9-67a6-4e0c-baba-6741a458ca05",
+                networkId: "8b1d064f-669e-47b5-9a30-1833739fe48f",
                 id: "nodeworks:breaker",
                 deviceName: "",
                 redstoneMode: 0
@@ -1649,12 +1633,13 @@
         },
         {
             pos: [3, 3, 6],
-            state: "nodeworks:focus_node{pipe_down:false,pipe_east:false,pipe_north:true,pipe_south:false,pipe_up:false,pipe_west:false}",
+            state: "nodeworks:focus_node{pipe_down:false,pipe_east:false,pipe_north:true,pipe_south:false,pipe_up:false,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
                 Items: [],
-                networkId: "a8564dc9-67a6-4e0c-baba-6741a458ca05",
+                networkId: "8b1d064f-669e-47b5-9a30-1833739fe48f",
                 id: "nodeworks:focus_node",
+                permanentId: "9a68a837-8625-4998-955d-017675467576",
                 connections: [
                     [I; 3, 0, 3]
                 ]
@@ -1662,7 +1647,7 @@
         },
         {
             pos: [5, 3, 3],
-            state: "nodeworks:breaker{facing:west}",
+            state: "nodeworks:breaker{facing:west,waterlogged:false}",
             nbt: {
                 breakProgress: 0,
                 breakDurationTicks: 0,
@@ -1671,7 +1656,7 @@
                 previewArea: 0b,
                 channel: 0,
                 filterRule: "",
-                networkId: "a8564dc9-67a6-4e0c-baba-6741a458ca05",
+                networkId: "8b1d064f-669e-47b5-9a30-1833739fe48f",
                 id: "nodeworks:breaker",
                 deviceName: "",
                 redstoneMode: 0
@@ -1679,7 +1664,7 @@
         },
         {
             pos: [6, 3, 3],
-            state: "nodeworks:focus_node{pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            state: "nodeworks:focus_node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}",
             nbt: {
                 components: {},
                 Items: [
@@ -1689,8 +1674,9 @@
                         id: "nodeworks:storage_card"
                     }
                 ],
-                networkId: "a8564dc9-67a6-4e0c-baba-6741a458ca05",
+                networkId: "8b1d064f-669e-47b5-9a30-1833739fe48f",
                 id: "nodeworks:focus_node",
+                permanentId: "f787a0c1-f74f-4879-b1c2-4ad6a8680d4f",
                 connections: [
                     [I; 3, 0, 3],
                     [I; 3, 6, 3]
@@ -1708,7 +1694,7 @@
         },
         {
             pos: [3, 5, 3],
-            state: "nodeworks:breaker{facing:down}",
+            state: "nodeworks:breaker{facing:down,waterlogged:false}",
             nbt: {
                 breakProgress: 0,
                 breakDurationTicks: 0,
@@ -1717,7 +1703,7 @@
                 previewArea: 0b,
                 channel: 0,
                 filterRule: "",
-                networkId: "a8564dc9-67a6-4e0c-baba-6741a458ca05",
+                networkId: "8b1d064f-669e-47b5-9a30-1833739fe48f",
                 id: "nodeworks:breaker",
                 deviceName: "",
                 redstoneMode: 0
@@ -1725,12 +1711,13 @@
         },
         {
             pos: [3, 6, 3],
-            state: "nodeworks:focus_node{pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false}",
+            state: "nodeworks:focus_node{pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
                 Items: [],
-                networkId: "a8564dc9-67a6-4e0c-baba-6741a458ca05",
+                networkId: "8b1d064f-669e-47b5-9a30-1833739fe48f",
                 id: "nodeworks:focus_node",
+                permanentId: "a92494a0-2f91-4393-8149-917ef5acbfe8",
                 connections: [
                     [I; 6, 3, 3]
                 ]
@@ -1741,26 +1728,24 @@
     palette: [
         "nodeworks:budding_celestine",
         "minecraft:air",
-        "nodeworks:medium_celestine_bud{facing:down,waterlogged:false}",
-        "nodeworks:medium_celestine_bud{facing:west,waterlogged:false}",
-        "nodeworks:large_celestine_bud{facing:north,waterlogged:false}",
-        "nodeworks:medium_celestine_bud{facing:south,waterlogged:false}",
-        "nodeworks:medium_celestine_bud{facing:east,waterlogged:false}",
-        "nodeworks:medium_celestine_bud{facing:up,waterlogged:false}",
-        "nodeworks:focus_node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
-        "nodeworks:breaker{facing:up}",
-        "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
-        "nodeworks:network_controller",
-        "nodeworks:focus_node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false}",
-        "nodeworks:breaker{facing:east}",
-        "nodeworks:focus_node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:true,pipe_up:false,pipe_west:false}",
-        "nodeworks:breaker{facing:south}",
-        "nodeworks:breaker{facing:north}",
-        "nodeworks:focus_node{pipe_down:false,pipe_east:false,pipe_north:true,pipe_south:false,pipe_up:false,pipe_west:false}",
-        "nodeworks:breaker{facing:west}",
-        "nodeworks:focus_node{pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+        "nodeworks:celestine_cluster{facing:down,waterlogged:false}",
+        "nodeworks:celestine_cluster{facing:west,waterlogged:false}",
+        "nodeworks:celestine_cluster{facing:north,waterlogged:false}",
+        "nodeworks:celestine_cluster{facing:south,waterlogged:false}",
+        "nodeworks:celestine_cluster{facing:east,waterlogged:false}",
+        "nodeworks:celestine_cluster{facing:up,waterlogged:false}",
+        "nodeworks:focus_node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
+        "nodeworks:breaker{facing:up,waterlogged:false}",
+        "nodeworks:focus_node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false,waterlogged:false}",
+        "nodeworks:breaker{facing:east,waterlogged:false}",
+        "nodeworks:focus_node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:true,pipe_up:false,pipe_west:false,waterlogged:false}",
+        "nodeworks:breaker{facing:south,waterlogged:false}",
+        "nodeworks:breaker{facing:north,waterlogged:false}",
+        "nodeworks:focus_node{pipe_down:false,pipe_east:false,pipe_north:true,pipe_south:false,pipe_up:false,pipe_west:false,waterlogged:false}",
+        "nodeworks:breaker{facing:west,waterlogged:false}",
+        "nodeworks:focus_node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}",
         "minecraft:chest{facing:north,type:single,waterlogged:false}",
-        "nodeworks:breaker{facing:down}",
-        "nodeworks:focus_node{pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false}"
+        "nodeworks:breaker{facing:down,waterlogged:false}",
+        "nodeworks:focus_node{pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false,waterlogged:false}"
     ]
 }

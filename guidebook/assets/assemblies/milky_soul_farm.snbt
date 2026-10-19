@@ -3,6 +3,10 @@
     size: [6, 6, 3],
     data: [
         {
+            pos: [5, 0, 1],
+            state: "minecraft:sandstone"
+        },
+        {
             pos: [0, 0, 0],
             state: "minecraft:air"
         },
@@ -52,6 +56,10 @@
         },
         {
             pos: [4, 0, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 0, 1],
             state: "minecraft:air"
         },
         {
@@ -371,41 +379,9 @@
             state: "minecraft:air"
         },
         {
-            pos: [4, 0, 1],
-            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
-            nbt: {
-                components: {},
-                networkId: "bfa852c1-6e06-4803-aa8d-ad52eac0bd23",
-                id: "nodeworks:pipe"
-            }
-        },
-        {
-            pos: [5, 0, 1],
-            state: "nodeworks:network_controller",
-            nbt: {
-                chunkLoadingEnabled: 0b,
-                components: {},
-                laserEnabled: 1b,
-                networkName: "",
-                handlerRetryLimit: 50,
-                networkId: "bfa852c1-6e06-4803-aa8d-ad52eac0bd23",
-                nodeGlowStyle: 0,
-                id: "nodeworks:network_controller",
-                permanentId: "bfa852c1-6e06-4803-aa8d-ad52eac0bd23",
-                laserMode: 0,
-                redstoneMode: 0,
-                networkColor: 6350758
-            }
-        },
-        {
             pos: [3, 1, 1],
-            state: "nodeworks:user{facing:west}",
+            state: "nodeworks:user{facing:west,waterlogged:false}",
             nbt: {
-                pendingFireMode: "INSTANT",
-                heldStack: {
-                    count: 1,
-                    id: "minecraft:bucket"
-                },
                 components: {},
                 ownerUuid: "380df991-f603-344c-a090-369bad2a924a",
                 channel: 0,
@@ -414,16 +390,16 @@
                 previewArea: 0b,
                 animEndTick: -9223372036854775808L,
                 filterRule: "minecraft:bucket",
-                animStartTick: 2857205L,
-                networkId: "bfa852c1-6e06-4803-aa8d-ad52eac0bd23",
+                animStartTick: 5194664L,
+                networkId: "db9aa64c-dca0-4636-b648-3b583d8fe23b",
                 id: "nodeworks:user",
                 redstoneMode: 1,
-                pendingFireTick: 2857215L
+                pendingFireTick: -9223372036854775808L
             }
         },
         {
             pos: [4, 1, 1],
-            state: "nodeworks:node{pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:true}",
+            state: "nodeworks:node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:true,waterlogged:false}",
             nbt: {
                 components: {},
                 Items: [
@@ -433,8 +409,9 @@
                         id: "nodeworks:storage_card"
                     }
                 ],
-                networkId: "bfa852c1-6e06-4803-aa8d-ad52eac0bd23",
-                id: "nodeworks:node"
+                networkId: "db9aa64c-dca0-4636-b648-3b583d8fe23b",
+                id: "nodeworks:node",
+                permanentId: "db9aa64c-dca0-4636-b648-3b583d8fe23b"
             }
         },
         {
@@ -469,14 +446,89 @@
                         id: "nodeworks:milky_soul_ball"
                     },
                     {
-                        count: 8,
+                        count: 16,
                         Slot: 5b,
                         id: "nodeworks:milky_soul_ball"
                     },
                     {
-                        count: 21,
-                        Slot: 26b,
-                        id: "minecraft:soul_sand"
+                        count: 16,
+                        Slot: 6b,
+                        id: "nodeworks:milky_soul_ball"
+                    },
+                    {
+                        count: 16,
+                        Slot: 7b,
+                        id: "nodeworks:milky_soul_ball"
+                    },
+                    {
+                        count: 16,
+                        Slot: 8b,
+                        id: "nodeworks:milky_soul_ball"
+                    },
+                    {
+                        count: 16,
+                        Slot: 9b,
+                        id: "nodeworks:milky_soul_ball"
+                    },
+                    {
+                        count: 16,
+                        Slot: 10b,
+                        id: "nodeworks:milky_soul_ball"
+                    },
+                    {
+                        count: 16,
+                        Slot: 11b,
+                        id: "nodeworks:milky_soul_ball"
+                    },
+                    {
+                        count: 16,
+                        Slot: 12b,
+                        id: "nodeworks:milky_soul_ball"
+                    },
+                    {
+                        count: 16,
+                        Slot: 13b,
+                        id: "nodeworks:milky_soul_ball"
+                    },
+                    {
+                        count: 16,
+                        Slot: 14b,
+                        id: "nodeworks:milky_soul_ball"
+                    },
+                    {
+                        count: 16,
+                        Slot: 15b,
+                        id: "nodeworks:milky_soul_ball"
+                    },
+                    {
+                        count: 16,
+                        Slot: 16b,
+                        id: "nodeworks:milky_soul_ball"
+                    },
+                    {
+                        count: 16,
+                        Slot: 17b,
+                        id: "nodeworks:milky_soul_ball"
+                    },
+                    {
+                        count: 16,
+                        Slot: 18b,
+                        id: "nodeworks:milky_soul_ball"
+                    },
+                    {
+                        count: 16,
+                        Slot: 19b,
+                        id: "nodeworks:milky_soul_ball"
+                    },
+                    {
+                        count: 16,
+                        Slot: 20b,
+                        id: "nodeworks:milky_soul_ball"
+                    },
+                    {
+                        count: 12,
+                        Slot: 21b,
+                        id: "nodeworks:milky_soul_ball"
                     }
                 ],
                 id: "minecraft:chest"
@@ -484,41 +536,41 @@
         },
         {
             pos: [4, 2, 1],
-            state: "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
+            state: "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "bfa852c1-6e06-4803-aa8d-ad52eac0bd23",
+                networkId: "db9aa64c-dca0-4636-b648-3b583d8fe23b",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [4, 3, 1],
-            state: "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
+            state: "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "bfa852c1-6e06-4803-aa8d-ad52eac0bd23",
+                networkId: "db9aa64c-dca0-4636-b648-3b583d8fe23b",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [0, 4, 1],
-            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "bfa852c1-6e06-4803-aa8d-ad52eac0bd23",
+                networkId: "db9aa64c-dca0-4636-b648-3b583d8fe23b",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [1, 4, 1],
-            state: "nodeworks:placer{facing:east}",
+            state: "nodeworks:placer{facing:east,waterlogged:false}",
             nbt: {
                 components: {},
                 ownerUuid: "380df991-f603-344c-a090-369bad2a924a",
                 previewArea: 0b,
                 channel: 0,
                 filterRule: "minecraft:soul_sand",
-                networkId: "bfa852c1-6e06-4803-aa8d-ad52eac0bd23",
+                networkId: "db9aa64c-dca0-4636-b648-3b583d8fe23b",
                 id: "nodeworks:placer",
                 deviceName: "",
                 redstoneMode: 1
@@ -526,7 +578,7 @@
         },
         {
             pos: [3, 4, 1],
-            state: "nodeworks:user{facing:west}",
+            state: "nodeworks:user{facing:west,waterlogged:false}",
             nbt: {
                 components: {},
                 ownerUuid: "380df991-f603-344c-a090-369bad2a924a",
@@ -536,8 +588,8 @@
                 previewArea: 0b,
                 animEndTick: -9223372036854775808L,
                 filterRule: "minecraft:milk_bucket",
-                animStartTick: 2857182L,
-                networkId: "bfa852c1-6e06-4803-aa8d-ad52eac0bd23",
+                animStartTick: 5194783L,
+                networkId: "db9aa64c-dca0-4636-b648-3b583d8fe23b",
                 id: "nodeworks:user",
                 redstoneMode: 1,
                 pendingFireTick: -9223372036854775808L
@@ -545,55 +597,55 @@
         },
         {
             pos: [4, 4, 1],
-            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:true}",
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:true,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "bfa852c1-6e06-4803-aa8d-ad52eac0bd23",
+                networkId: "db9aa64c-dca0-4636-b648-3b583d8fe23b",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [0, 5, 1],
-            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false}",
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "bfa852c1-6e06-4803-aa8d-ad52eac0bd23",
+                networkId: "db9aa64c-dca0-4636-b648-3b583d8fe23b",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [1, 5, 1],
-            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "bfa852c1-6e06-4803-aa8d-ad52eac0bd23",
+                networkId: "db9aa64c-dca0-4636-b648-3b583d8fe23b",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [2, 5, 1],
-            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "bfa852c1-6e06-4803-aa8d-ad52eac0bd23",
+                networkId: "db9aa64c-dca0-4636-b648-3b583d8fe23b",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [3, 5, 1],
-            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "bfa852c1-6e06-4803-aa8d-ad52eac0bd23",
+                networkId: "db9aa64c-dca0-4636-b648-3b583d8fe23b",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [4, 5, 1],
-            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "bfa852c1-6e06-4803-aa8d-ad52eac0bd23",
+                networkId: "db9aa64c-dca0-4636-b648-3b583d8fe23b",
                 id: "nodeworks:pipe"
             }
         }
@@ -601,28 +653,303 @@
     entities: [
         {
             nbt: {
-                Motion: [0.0d, 0.0d, 2.2829544881283865e-44d],
-                Health: 5s,
+                AgeLocked: 0b,
+                Brain: {
+                    memories: {}
+                },
+                HurtByTimestamp: 0,
                 Invulnerable: 0b,
+                FallFlying: 0b,
+                ForcedAge: 0,
+                sound_variant: "minecraft:classic",
+                PortalCooldown: 0,
+                AbsorptionAmount: 0.0f,
+                InLove: 0,
+                DeathTime: 0s,
+                variant: "minecraft:warm",
+                PersistenceRequired: 0b,
+                id: "minecraft:cow",
+                UUID: [I; 205160024, 229196394, -1489084744, 569606737],
+                Age: 0,
+                Motion: [0.14868701852067867d, -0.0784000015258789d, -0.27658634171926305d],
+                Health: 10.0f,
+                LeftHanded: 0b,
                 fall_distance: 0.0d,
                 Air: 300s,
                 OnGround: 1b,
-                PortalCooldown: 0,
-                Rotation: [261.2252197265625f, 0.0f],
-                Item: {
-                    count: 1,
-                    id: "minecraft:milk_bucket"
-                },
-                Pos: [22.125d, 56.0d, 13.736227134313031d],
-                PickupDelay: 0s,
+                Rotation: [-14.372039794921875f, 0.0f],
+                current_impulse_context_reset_grace_time: 0,
+                "neoforge:spawn_type": "SPAWN_ITEM_USE",
+                Pos: [20.55000001192093d, 56.0d, 13.074999988079071d],
                 Fire: 0s,
-                id: "minecraft:item",
-                UUID: [I; 1646107344, 1681475421, -1114279706, -2068201155],
-                Lifespan: 6000,
-                Age: 727s
+                CanPickUpLoot: 0b,
+                attributes: [
+                    {
+                        id: "minecraft:movement_speed",
+                        base: 0.20000000298023224d
+                    },
+                    {
+                        id: "minecraft:follow_range",
+                        modifiers: [
+                            {
+                                amount: -0.0012223970860242846d,
+                                id: "minecraft:random_spawn_bonus",
+                                operation: "add_multiplied_base"
+                            }
+                        ],
+                        base: 16.0d
+                    },
+                    {
+                        id: "minecraft:oxygen_bonus",
+                        base: 0.0d
+                    }
+                ],
+                HurtTime: 0s
             },
-            blockPos: [4, 0, 1],
-            pos: [4.125d, 0.0d, 1.7362271343130313d]
+            blockPos: [2, 0, 1],
+            pos: [2.550000011920929d, 0.0d, 1.074999988079071d]
+        },
+        {
+            nbt: {
+                AgeLocked: 0b,
+                Brain: {
+                    memories: {}
+                },
+                HurtByTimestamp: 0,
+                Invulnerable: 0b,
+                FallFlying: 0b,
+                ForcedAge: 0,
+                sound_variant: "minecraft:classic",
+                PortalCooldown: 0,
+                AbsorptionAmount: 0.0f,
+                InLove: 0,
+                DeathTime: 0s,
+                variant: "minecraft:warm",
+                PersistenceRequired: 0b,
+                id: "minecraft:cow",
+                UUID: [I; 386044240, 361318641, -2046400665, -2139938219],
+                Age: 0,
+                Motion: [-0.23839717330152266d, -0.0784000015258789d, 0.32268406533914024d],
+                Health: 10.0f,
+                LeftHanded: 0b,
+                fall_distance: 0.0d,
+                Air: 300s,
+                OnGround: 1b,
+                Rotation: [247.24658203125f, 0.0f],
+                current_impulse_context_reset_grace_time: 0,
+                Pos: [20.07499998807907d, 56.0d, 13.925000011920929d],
+                Fire: 0s,
+                CanPickUpLoot: 0b,
+                attributes: [
+                    {
+                        id: "minecraft:movement_speed",
+                        base: 0.20000000298023224d
+                    },
+                    {
+                        id: "minecraft:oxygen_bonus",
+                        base: 0.0d
+                    }
+                ],
+                HurtTime: 0s
+            },
+            blockPos: [2, 0, 1],
+            pos: [2.074999988079071d, 0.0d, 1.925000011920929d]
+        },
+        {
+            nbt: {
+                AgeLocked: 0b,
+                Brain: {
+                    memories: {}
+                },
+                HurtByTimestamp: 0,
+                Invulnerable: 0b,
+                FallFlying: 0b,
+                ForcedAge: 0,
+                sound_variant: "minecraft:classic",
+                PortalCooldown: 0,
+                AbsorptionAmount: 0.0f,
+                InLove: 0,
+                DeathTime: 0s,
+                variant: "minecraft:warm",
+                PersistenceRequired: 0b,
+                id: "minecraft:cow",
+                UUID: [I; 1453976519, -1024243014, -1223634999, 608348244],
+                Age: 0,
+                Motion: [0.12292652533912687d, -0.0784000015258789d, -0.23048861809938587d],
+                Health: 10.0f,
+                LeftHanded: 0b,
+                fall_distance: 0.0d,
+                Air: 300s,
+                OnGround: 1b,
+                Rotation: [-94.55694580078125f, 0.0f],
+                current_impulse_context_reset_grace_time: 0,
+                "neoforge:spawn_type": "SPAWN_ITEM_USE",
+                Pos: [20.55000001192093d, 56.0d, 13.074999988079071d],
+                Fire: 0s,
+                CanPickUpLoot: 0b,
+                attributes: [
+                    {
+                        id: "minecraft:movement_speed",
+                        base: 0.20000000298023224d
+                    },
+                    {
+                        id: "minecraft:follow_range",
+                        modifiers: [
+                            {
+                                amount: 0.0051320524185895925d,
+                                id: "minecraft:random_spawn_bonus",
+                                operation: "add_multiplied_base"
+                            }
+                        ],
+                        base: 16.0d
+                    },
+                    {
+                        id: "minecraft:oxygen_bonus",
+                        base: 0.0d
+                    }
+                ],
+                HurtTime: 0s
+            },
+            blockPos: [2, 0, 1],
+            pos: [2.550000011920929d, 0.0d, 1.074999988079071d]
+        },
+        {
+            nbt: {
+                AgeLocked: 0b,
+                Brain: {
+                    memories: {}
+                },
+                HurtByTimestamp: 0,
+                Invulnerable: 0b,
+                FallFlying: 0b,
+                ForcedAge: 0,
+                sound_variant: "minecraft:classic",
+                PortalCooldown: 0,
+                AbsorptionAmount: 0.0f,
+                InLove: 0,
+                DeathTime: 0s,
+                variant: "minecraft:warm",
+                PersistenceRequired: 0b,
+                id: "minecraft:cow",
+                UUID: [I; -138043806, -1575468142, -1430015704, -1247689066],
+                Age: 0,
+                Motion: [-0.21263668011997083d, -0.0784000015258789d, -0.23048861809938587d],
+                Health: 10.0f,
+                LeftHanded: 0b,
+                fall_distance: 0.0d,
+                Air: 300s,
+                OnGround: 1b,
+                Rotation: [285.57049560546875f, 0.0f],
+                current_impulse_context_reset_grace_time: 0,
+                Pos: [20.07499998807907d, 56.0d, 13.074999988079071d],
+                Fire: 0s,
+                CanPickUpLoot: 0b,
+                attributes: [
+                    {
+                        id: "minecraft:movement_speed",
+                        base: 0.20000000298023224d
+                    },
+                    {
+                        id: "minecraft:oxygen_bonus",
+                        base: 0.0d
+                    }
+                ],
+                HurtTime: 0s
+            },
+            blockPos: [2, 0, 1],
+            pos: [2.074999988079071d, 0.0d, 1.074999988079071d]
+        },
+        {
+            nbt: {
+                AgeLocked: 0b,
+                Brain: {
+                    memories: {}
+                },
+                HurtByTimestamp: 0,
+                Invulnerable: 0b,
+                FallFlying: 0b,
+                ForcedAge: 0,
+                sound_variant: "minecraft:classic",
+                PortalCooldown: 0,
+                AbsorptionAmount: 0.0f,
+                InLove: 0,
+                DeathTime: 0s,
+                variant: "minecraft:warm",
+                PersistenceRequired: 0b,
+                id: "minecraft:cow",
+                UUID: [I; 1148942134, -1004715457, -1414663429, 115923023],
+                Age: 0,
+                Motion: [-0.21263668011997083d, -0.0784000015258789d, -0.23048861809938587d],
+                Health: 10.0f,
+                LeftHanded: 0b,
+                fall_distance: 0.0d,
+                Air: 300s,
+                OnGround: 1b,
+                Rotation: [316.27423095703125f, 0.0f],
+                current_impulse_context_reset_grace_time: 0,
+                Pos: [20.07499998807907d, 56.0d, 13.074999988079071d],
+                Fire: 0s,
+                CanPickUpLoot: 0b,
+                attributes: [
+                    {
+                        id: "minecraft:movement_speed",
+                        base: 0.20000000298023224d
+                    },
+                    {
+                        id: "minecraft:oxygen_bonus",
+                        base: 0.0d
+                    }
+                ],
+                HurtTime: 0s
+            },
+            blockPos: [2, 0, 1],
+            pos: [2.074999988079071d, 0.0d, 1.074999988079071d]
+        },
+        {
+            nbt: {
+                AgeLocked: 0b,
+                Brain: {
+                    memories: {}
+                },
+                HurtByTimestamp: 0,
+                Invulnerable: 0b,
+                FallFlying: 0b,
+                ForcedAge: 0,
+                sound_variant: "minecraft:classic",
+                PortalCooldown: 0,
+                AbsorptionAmount: 0.0f,
+                InLove: 0,
+                DeathTime: 0s,
+                variant: "minecraft:warm",
+                PersistenceRequired: 0b,
+                id: "minecraft:cow",
+                UUID: [I; -1406039645, -504280692, -1457477703, -1198106865],
+                Age: 0,
+                Motion: [0.24020487621836778d, -0.0784000015258789d, 0.18439089447950868d],
+                Health: 10.0f,
+                LeftHanded: 0b,
+                fall_distance: 0.0d,
+                Air: 300s,
+                OnGround: 1b,
+                Rotation: [121.09140014648438f, 0.0f],
+                current_impulse_context_reset_grace_time: 0,
+                Pos: [20.92500001192093d, 56.000001d, 13.925000011920929d],
+                Fire: 0s,
+                CanPickUpLoot: 0b,
+                attributes: [
+                    {
+                        id: "minecraft:movement_speed",
+                        base: 0.20000000298023224d
+                    },
+                    {
+                        id: "minecraft:oxygen_bonus",
+                        base: 0.0d
+                    }
+                ],
+                HurtTime: 0s
+            },
+            blockPos: [2, 0, 1],
+            pos: [2.925000011920929d, 9.999999974752427e-07d, 1.925000011920929d]
         },
         {
             nbt: {
@@ -642,18 +969,18 @@
                 variant: "minecraft:warm",
                 PersistenceRequired: 0b,
                 id: "minecraft:cow",
-                UUID: [I; -116338850, 1190020648, -1747699881, 801480502],
+                UUID: [I; -653644773, -1749073456, -1226938340, 1806590840],
                 Age: 0,
-                Motion: [0.0d, -0.0784000015258789d, 0.0d],
+                Motion: [0.05536248738061728d, -0.0784000015258789d, 0.18439089447950868d],
                 Health: 10.0f,
                 LeftHanded: 0b,
                 fall_distance: 0.0d,
                 Air: 300s,
                 OnGround: 1b,
-                Rotation: [-137.8668975830078f, -27.970497131347656f],
+                Rotation: [218.95936584472656f, 0.0f],
                 current_impulse_context_reset_grace_time: 0,
                 "neoforge:spawn_type": "SPAWN_ITEM_USE",
-                Pos: [20.5d, 56.0d, 13.5d],
+                Pos: [20.55000001192093d, 56.0d, 13.925000011920929d],
                 Fire: 0s,
                 CanPickUpLoot: 0b,
                 attributes: [
@@ -665,129 +992,26 @@
                         id: "minecraft:follow_range",
                         modifiers: [
                             {
-                                amount: 0.09263269506643992d,
+                                amount: 0.04652585341781378d,
                                 id: "minecraft:random_spawn_bonus",
                                 operation: "add_multiplied_base"
                             }
                         ],
                         base: 16.0d
-                    }
-                ],
-                HurtTime: 0s
-            },
-            blockPos: [2, 0, 1],
-            pos: [2.5d, 0.0d, 1.5d]
-        },
-        {
-            nbt: {
-                AgeLocked: 0b,
-                Brain: {
-                    memories: {}
-                },
-                HurtByTimestamp: 0,
-                Invulnerable: 0b,
-                FallFlying: 0b,
-                ForcedAge: 0,
-                sound_variant: "minecraft:classic",
-                PortalCooldown: 0,
-                AbsorptionAmount: 0.0f,
-                InLove: 0,
-                DeathTime: 0s,
-                variant: "minecraft:warm",
-                PersistenceRequired: 0b,
-                id: "minecraft:cow",
-                UUID: [I; -1596279256, -1739175470, -2082375661, -1428448933],
-                Age: 0,
-                Motion: [0.0d, -0.0784000015258789d, 0.0d],
-                Health: 10.0f,
-                LeftHanded: 0b,
-                fall_distance: 0.0d,
-                Air: 300s,
-                OnGround: 1b,
-                Rotation: [-90.15493774414062f, 0.0f],
-                current_impulse_context_reset_grace_time: 0,
-                "neoforge:spawn_type": "SPAWN_ITEM_USE",
-                Pos: [20.5d, 56.0d, 13.5d],
-                Fire: 0s,
-                CanPickUpLoot: 0b,
-                attributes: [
-                    {
-                        id: "minecraft:movement_speed",
-                        base: 0.20000000298023224d
                     },
                     {
-                        id: "minecraft:follow_range",
-                        modifiers: [
-                            {
-                                amount: -0.1054874581091106d,
-                                id: "minecraft:random_spawn_bonus",
-                                operation: "add_multiplied_base"
-                            }
-                        ],
-                        base: 16.0d
+                        id: "minecraft:oxygen_bonus",
+                        base: 0.0d
                     }
                 ],
                 HurtTime: 0s
             },
             blockPos: [2, 0, 1],
-            pos: [2.5d, 0.0d, 1.5d]
-        },
-        {
-            nbt: {
-                AgeLocked: 0b,
-                Brain: {
-                    memories: {}
-                },
-                HurtByTimestamp: 0,
-                Invulnerable: 0b,
-                FallFlying: 0b,
-                ForcedAge: 0,
-                sound_variant: "minecraft:classic",
-                PortalCooldown: 0,
-                AbsorptionAmount: 0.0f,
-                InLove: 0,
-                DeathTime: 0s,
-                variant: "minecraft:warm",
-                PersistenceRequired: 0b,
-                id: "minecraft:cow",
-                UUID: [I; 2004746822, 683364117, -1295391824, 38899705],
-                Age: 0,
-                Motion: [0.0d, -0.0784000015258789d, 0.0d],
-                Health: 10.0f,
-                LeftHanded: 0b,
-                fall_distance: 0.0d,
-                Air: 300s,
-                OnGround: 1b,
-                Rotation: [-98.33184814453125f, -27.909648895263672f],
-                current_impulse_context_reset_grace_time: 0,
-                "neoforge:spawn_type": "SPAWN_ITEM_USE",
-                Pos: [20.5d, 56.0d, 13.5d],
-                Fire: 0s,
-                CanPickUpLoot: 0b,
-                attributes: [
-                    {
-                        id: "minecraft:movement_speed",
-                        base: 0.20000000298023224d
-                    },
-                    {
-                        id: "minecraft:follow_range",
-                        modifiers: [
-                            {
-                                amount: -0.06220275530666113d,
-                                id: "minecraft:random_spawn_bonus",
-                                operation: "add_multiplied_base"
-                            }
-                        ],
-                        base: 16.0d
-                    }
-                ],
-                HurtTime: 0s
-            },
-            blockPos: [2, 0, 1],
-            pos: [2.5d, 0.0d, 1.5d]
+            pos: [2.550000011920929d, 0.0d, 1.925000011920929d]
         }
     ],
     palette: [
+        "minecraft:sandstone",
         "minecraft:air",
         "minecraft:oak_fence{east:true,north:false,south:true,waterlogged:false,west:false}",
         "minecraft:oak_fence{east:false,north:true,south:true,waterlogged:false,west:false}",
@@ -796,16 +1020,15 @@
         "minecraft:oak_fence{east:false,north:false,south:true,waterlogged:false,west:true}",
         "minecraft:oak_fence{east:false,north:true,south:false,waterlogged:false,west:true}",
         "minecraft:soul_sand",
-        "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
-        "nodeworks:network_controller",
-        "nodeworks:user{facing:west}",
-        "nodeworks:node{pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:true}",
+        "nodeworks:user{facing:west,waterlogged:false}",
+        "nodeworks:node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:true,waterlogged:false}",
         "minecraft:chest{facing:north,type:single,waterlogged:false}",
-        "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
-        "nodeworks:placer{facing:east}",
-        "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:true}",
-        "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false}",
-        "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
-        "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}"
+        "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
+        "nodeworks:placer{facing:east,waterlogged:false}",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:true,waterlogged:false}",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false,waterlogged:false}",
+        "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}"
     ]
 }

@@ -1,17 +1,16 @@
 {
   "type": "minecraft:crafting_shaped",
   "pattern": [
-    "HPA",
-    " O ",
+    "GOG",
+    " P ",
     "DND"
   ],
   "key": {
-    "P": "minecraft:diamond_pickaxe",
-    "H": "minecraft:diamond_shovel",
+    "G": "minecraft:diamond",
     "O": "nodeworks:observer_card",
-    "A": "minecraft:diamond_axe",
     "D": "minecraft:deepslate",
-    "N": "nodeworks:device_frame"
+    "N": "nodeworks:device_frame",
+    "P": "nodeworks:pipe"
   },
   "result": {
     "id": "nodeworks:breaker",

@@ -42,7 +42,7 @@
   "container.nodeworks.node_side": "Node, %s",
   "block.nodeworks.terminal": "Scripting Terminal",
   "message.nodeworks.terminal_no_network": "Terminal is not connected to a node network.",
-  "message.nodeworks.terminal_controller_conflict": "Scripting needs a Network Controller on this network, and only one.",
+  "message.nodeworks.terminal_controller_conflict": "This needs a Network Controller on its network, and only one.",
   "tooltip.nodeworks.missing_ingredients": "Missing ingredients in your inventory and network",
   "message.nodeworks.terminal_in_use": "Terminal is already in use by %s.",
   "tooltip.nodeworks.instruction_set.input": "Input:",

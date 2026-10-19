@@ -10,8 +10,27 @@ categories:
 # Moving Items
 
 The simplest task a Nodeworks network can do: pull items from a container into
-network storage. This page walks through two variations, the basic case first then
+network storage. This page walks through a few variations, the basic case first then
 the same setup with filtering.
+
+---
+
+## With Transfer Cards
+
+### Inserting items into your network
+
+<ItemLink id="transfer_card" />s can be used to import and export items to/from [Network Storage](../nodeworks-mechanics/network-storage.md)
+
+<GameScene zoom="5" interactive={true}>
+  <ImportStructure src="../assets/assemblies/moving_items_transfer_card.snbt" />
+  <IsometricCamera yaw="200" pitch="20" />
+  <BoxAnnotation min="1 0.1 0.1" max="1.25 0.9 0.9" color="#AA83E0">
+    <ItemImage id="nodeworks:storage_card" />
+  </BoxAnnotation>
+  <BoxAnnotation min="2 0.1 0.1" max="1.75 0.9 0.9" color="#668df0">
+    <ItemImage id="nodeworks:transfer_card" /> can be set to import or export from [Network Storage](../nodeworks-mechanics/network-storage.md)
+  </BoxAnnotation>
+</GameScene>
 
 ---
 
@@ -27,7 +46,7 @@ Anything placed inside an <ItemLink id="import_chest"/> will be inserted into [N
   <BoxAnnotation min="1 0.1 0.1" max="1.25 0.9 0.9" color="#AA83E0">
     <ItemImage id="nodeworks:storage_card" />
   </BoxAnnotation>
-  <BlockAnnotation x="4">
+  <BlockAnnotation x="2">
     Items placed inside the Import chest will
     automatically be pulled into the network
   </BlockAnnotation>
@@ -43,7 +62,7 @@ Anything placed inside an <ItemLink id="import_chest"/> will be inserted into [N
   <BoxAnnotation min="1 0.1 0.1" max="1.25 0.9 0.9" color="#AA83E0">
     <ItemImage id="nodeworks:storage_card" />
   </BoxAnnotation>
-  <BlockAnnotation x="4">
+  <BlockAnnotation x="2">
     Items placed inside the Import chest will
     automatically be pulled into the network
   </BlockAnnotation>

@@ -77,8 +77,9 @@ Checks that used to lean on the id being null and now ask for a controller:
   the Core's id setter requests a deferred rescan so that walk never runs mid
   propagation.
 
-Still controller-only: the Scripting Terminal, CPU formation, Storage Meter and
-Craft Requester submissions, and script-driven device handles.
+Still controller-only: the Scripting Terminal, CPU formation, the Storage Meter
+and Craft Requester (their GUIs and quick-config refuse with the Terminal's
+message through `ControllerRequired`), and script-driven device handles.
 
 On the client, the anchoring Node registers its id in
 `AnchoredNetworkClientRegistry` while `networkId == permanentId`, and the settings
@@ -95,6 +96,4 @@ ignore the new key.
 
 ## Known gaps
 
-- The Storage Meter shows a count of zero without a controller because its count
-  and its craft submission share one gate.
 - `message.nodeworks.no_controller` is no longer used.
