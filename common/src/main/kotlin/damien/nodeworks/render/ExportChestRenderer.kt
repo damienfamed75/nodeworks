@@ -149,6 +149,11 @@ open class ExportChestRenderer(context: BlockEntityRendererProvider.Context) :
         state.openness = blockEntity.getOpenNess(partialTicks)
         state.facing = blockEntity.blockState.getValue(ExportChestBlock.FACING)
         state.networkColor = resolveNetworkColor(blockEntity)
+        // Wireless only: no network, but an antenna to send through. Lit in the same
+        // white a controller-less network uses, so it reads as working rather than idle.
+        if (state.networkColor == NodeConnectionRenderer.DEFAULT_NETWORK_COLOR && blockEntity.hasBroadcastAntenna()) {
+            state.networkColor = AnchoredNetworkClientRegistry.ANCHORED_NETWORK_COLOR
+        }
         state.pushFace = blockEntity.pushFace
     }
 

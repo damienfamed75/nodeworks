@@ -5,6 +5,7 @@ navigation:
   title: Recipe Sets
 categories:
   - autocrafting
+  - requires_controller
 description: stores crafting recipes for [autocrafting](../nodeworks-mechanics/autocrafting.md)
 item_ids:
 - nodeworks:instruction_set

@@ -281,6 +281,21 @@ class ExportChestBlockEntity(
 
     /** Find an adjacent Broadcast Antenna whose detected source resolves
      *  back to this chest. Symmetric to [BroadcastAntennaBlockEntity.detectSource]. */
+    /** True when a Broadcast Antenna beside this chest has picked it as its source. Safe
+     *  on the client, where the renderer uses it: a chest with no network of its own but
+     *  an antenna still has somewhere to send, so it lights up. */
+    fun hasBroadcastAntenna(): Boolean {
+        val lvl = level ?: return false
+        for (dir in Direction.entries) {
+            val neighborPos = worldPosition.relative(dir)
+            if (!lvl.isLoaded(neighborPos)) continue
+            val be = lvl.getBlockEntity(neighborPos) as? BroadcastAntennaBlockEntity ?: continue
+            val source = be.detectSource() ?: continue
+            if (source.first == damien.nodeworks.item.BroadcastSourceKind.EXPORT_CHEST && source.second == worldPosition) return true
+        }
+        return false
+    }
+
     private fun adjacentBroadcastAntenna(level: ServerLevel): BroadcastAntennaBlockEntity? {
         for (dir in Direction.entries) {
             val neighborPos = worldPosition.relative(dir)

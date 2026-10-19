@@ -5,6 +5,7 @@ navigation:
   title: Storage Meter
 categories:
   - device
+  - requires_controller
 description: tracks the amount of items/fluids its configured to watch
 item_ids:
 - nodeworks:storage_meter

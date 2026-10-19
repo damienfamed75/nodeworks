@@ -138,6 +138,11 @@ open class ImportChestRenderer(context: BlockEntityRendererProvider.Context) :
         state.openness = blockEntity.getOpenNess(partialTicks)
         state.facing = blockEntity.blockState.getValue(ImportChestBlock.FACING)
         state.networkColor = resolveNetworkColor(blockEntity)
+        // Wireless only: no network, but a receiver above feeding it. Lit in the same
+        // white a controller-less network uses, so it reads as working rather than idle.
+        if (state.networkColor == NodeConnectionRenderer.DEFAULT_NETWORK_COLOR && blockEntity.hasReceiverAntenna()) {
+            state.networkColor = AnchoredNetworkClientRegistry.ANCHORED_NETWORK_COLOR
+        }
     }
 
     override fun submitConnectable(

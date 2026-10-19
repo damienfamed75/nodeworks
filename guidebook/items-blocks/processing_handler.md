@@ -5,6 +5,7 @@ navigation:
   title: Processing Handler
 categories:
   - autocrafting
+  - requires_controller
 description: registers a processing set handler using a micro-network
 item_ids:
 - nodeworks:processing_handler

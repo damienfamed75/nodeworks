@@ -5,6 +5,7 @@ navigation:
   title: Crafting CPU
 categories:
   - autocrafting
+  - requires_controller
 description: the brain of the autocrafting system in a network
 item_ids:
 - nodeworks:crafting_core

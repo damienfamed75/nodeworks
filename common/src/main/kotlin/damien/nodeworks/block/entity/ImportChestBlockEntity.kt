@@ -159,6 +159,15 @@ class ImportChestBlockEntity(
         level?.sendBlockUpdated(worldPosition, blockState, blockState, Block.UPDATE_ALL)
     }
 
+    /** True when a Receiver Antenna sits on top of this chest, the spot a receiver
+     *  delivers into. Safe on the client, where the renderer uses it: a chest with no
+     *  network of its own but a receiver above still has somewhere to be fed from, so
+     *  it lights up. */
+    fun hasReceiverAntenna(): Boolean {
+        val lvl = level ?: return false
+        return lvl.getBlockEntity(worldPosition.above()) is ReceiverAntennaBlockEntity
+    }
+
     /** Server tick. Caller (block ticker) checks the level is server-side. */
     fun serverTick(level: ServerLevel) {
         // Recheck every tick so disconnected players don't strand the lid open.

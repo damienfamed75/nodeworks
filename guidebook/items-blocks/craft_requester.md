@@ -5,6 +5,7 @@ navigation:
   title: Craft Requester
 categories:
   - device
+  - requires_controller
 description: starts an autocrafting job given a redstone signal
 item_ids:
 - nodeworks:craft_requester
