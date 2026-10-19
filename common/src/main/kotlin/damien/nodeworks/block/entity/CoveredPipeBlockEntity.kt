@@ -122,7 +122,7 @@ class CoveredPipeBlockEntity(
             val block = parsed?.let { BuiltInRegistries.BLOCK.getValue(it) }
             if (block != null) camoBlockState = block.defaultBlockState()
         }
-        damien.nodeworks.network.NetworkSettingsRegistry.notifyConnectableChanged(networkId)
+        if (level != null) damien.nodeworks.network.NetworkSettingsRegistry.notifyBlockSynced(worldPosition)
     }
 
     override fun getUpdateTag(registries: HolderLookup.Provider): CompoundTag =

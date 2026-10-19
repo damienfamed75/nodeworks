@@ -26,6 +26,9 @@ object NodeConnectionRenderer {
         Collections.newSetFromMap(ConcurrentHashMap())
     private val flushScheduled = java.util.concurrent.atomic.AtomicBoolean(false)
 
+    /** Render sections with one synced block awaiting a tint refresh, as [SectionPos] longs. */
+    private val pendingDirtySections: MutableSet<Long> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+
     /** Default network color (RGB, no alpha). Used as fallback when no controller is found. */
     const val DEFAULT_NETWORK_COLOR = 0x888888
 
@@ -135,6 +138,20 @@ object NodeConnectionRenderer {
                 Minecraft.getInstance().execute { flushDirtyNetworks() }
             }
         }
+        // One synced block dirties one section. The whole-network walk above is for
+        // settings changes, where every member really does need a new tint.
+        damien.nodeworks.network.NetworkSettingsRegistry.onBlockChanged = { pos ->
+            pendingDirtySections.add(
+                net.minecraft.core.SectionPos.asLong(
+                    net.minecraft.core.SectionPos.blockToSectionCoord(pos.x),
+                    net.minecraft.core.SectionPos.blockToSectionCoord(pos.y),
+                    net.minecraft.core.SectionPos.blockToSectionCoord(pos.z),
+                )
+            )
+            if (flushScheduled.compareAndSet(false, true)) {
+                Minecraft.getInstance().execute { flushDirtyNetworks() }
+            }
+        }
 
         PlatformServices.clientEvents.onWorldRender { poseStack, consumers, cameraPos ->
             if (poseStack != null && consumers != null) {
@@ -153,11 +170,22 @@ object NodeConnectionRenderer {
         flushScheduled.set(false)
         val networks = HashSet(pendingDirtyNetworks)
         pendingDirtyNetworks.clear()
-        if (networks.isEmpty()) return
+        val sections = HashSet(pendingDirtySections)
+        pendingDirtySections.clear()
+        if (networks.isEmpty() && sections.isEmpty()) return
         val mc = Minecraft.getInstance()
         val level = mc.level ?: return
         val renderer = mc.levelRenderer
         val dirtied = java.util.HashSet<Long>()
+        for (key in sections) {
+            if (!dirtied.add(key)) continue
+            renderer.setSectionDirty(
+                net.minecraft.core.SectionPos.x(key),
+                net.minecraft.core.SectionPos.y(key),
+                net.minecraft.core.SectionPos.z(key),
+            )
+        }
+        if (networks.isEmpty()) return
         for (pos in knownNodes) {
             if (!level.isLoaded(pos)) continue
             val be = level.getBlockEntity(pos) as? damien.nodeworks.network.Connectable ?: continue

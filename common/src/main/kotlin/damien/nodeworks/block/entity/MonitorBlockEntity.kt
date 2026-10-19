@@ -128,7 +128,7 @@ class MonitorBlockEntity(
         // same tick the BE loads, matching every other Connectable BE in the mod.
         // Without this the Monitor's glow could stay stale-grey until the next
         // network topology change pushed a new color.
-        damien.nodeworks.network.NetworkSettingsRegistry.notifyConnectableChanged(networkId)
+        if (level != null) damien.nodeworks.network.NetworkSettingsRegistry.notifyBlockSynced(worldPosition)
         trackedItemId = input.getStringOrNull("trackedItem")?.takeIf { it.isNotEmpty() }
         displayCount = input.getLongOrNull("count") ?: 0L
     }

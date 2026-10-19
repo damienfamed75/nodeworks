@@ -1164,7 +1164,7 @@ class CraftingCoreBlockEntity(
         networkId = input.getStringOrNull("networkId")?.takeIf { it.isNotEmpty() }?.let {
             try { UUID.fromString(it) } catch (_: Exception) { null }
         }
-        damien.nodeworks.network.NetworkSettingsRegistry.notifyConnectableChanged(networkId)
+        if (level != null) damien.nodeworks.network.NetworkSettingsRegistry.notifyBlockSynced(worldPosition)
 
         // [level] isn't set yet during loadAdditional (Vanilla calls
         // [setLevel] AFTER load), but [ValueInput.lookup] carries the

@@ -426,7 +426,7 @@ class StorageMeterBlockEntity(
         networkId = input.getStringOrNull("networkId")?.takeIf { it.isNotEmpty() }?.let {
             try { UUID.fromString(it) } catch (_: Exception) { null }
         }
-        NetworkSettingsRegistry.notifyConnectableChanged(networkId)
+        if (level != null) NetworkSettingsRegistry.notifyBlockSynced(worldPosition)
         target = input.read("target", ItemStack.OPTIONAL_CODEC).orElse(ItemStack.EMPTY)
         threshold = input.getIntOr("threshold", 0)
         channel = ChannelFilter.fromNbtInt(input.getIntOr("channel", -1))

@@ -276,7 +276,7 @@ class TerminalBlockEntity(
             }
         }
         lastError = input.getStringOrNull("lastError")?.takeIf { it.isNotEmpty() }
-        damien.nodeworks.network.NetworkSettingsRegistry.notifyConnectableChanged(networkId)
+        if (level != null) damien.nodeworks.network.NetworkSettingsRegistry.notifyBlockSynced(worldPosition)
         connections.clear()
         connections.addAll(input.getBlockPosList("connections"))
     }

@@ -84,7 +84,7 @@ class PipeBlockEntity(
             try { UUID.fromString(it) } catch (_: Exception) { null }
         }
         forcedPipeBlockedMask = input.getIntOr("forcedPipeBlocked", 0) and 0x3F
-        damien.nodeworks.network.NetworkSettingsRegistry.notifyConnectableChanged(networkId)
+        if (level != null) damien.nodeworks.network.NetworkSettingsRegistry.notifyBlockSynced(worldPosition)
     }
 
     override fun getUpdateTag(registries: HolderLookup.Provider): CompoundTag = saveWithoutMetadata(registries)

@@ -38,6 +38,23 @@ object NetworkSettingsRegistry {
      */
     var onChanged: ((UUID?) -> Unit)? = null
 
+    /** Client-side hook for one block whose synced data may have changed its tint.
+     *  Marks only that block's render section dirty. Wired by NeoForgeClientSetup. */
+    var onBlockChanged: ((net.minecraft.core.BlockPos) -> Unit)? = null
+
+    /** Refresh one block's tint after a live sync. Block entity load sites call this
+     *  rather than [notifyConnectableChanged], because a network-wide refresh for
+     *  every synced block re-meshed every section of a large network each time one of
+     *  its blocks loaded, which froze the client as a big build came into view.
+     *  Callers skip it during the initial chunk load, when the section has not been
+     *  meshed yet and will pick the tint up on its first build. */
+    fun notifyBlockSynced(pos: net.minecraft.core.BlockPos) {
+        val cb = onBlockChanged ?: return
+        val mc = net.minecraft.client.Minecraft.getInstance()
+        if (mc.isSameThread) cb.invoke(pos)
+        else mc.execute { cb.invoke(pos) }
+    }
+
     /** Register or update settings for a network. Called by controllers on client sync. */
     fun update(networkId: UUID, settings: NetworkSettings) {
         val prev = registry.put(networkId, settings)

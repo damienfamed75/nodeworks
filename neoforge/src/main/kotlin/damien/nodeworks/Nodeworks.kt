@@ -1072,8 +1072,8 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                     if (!level.isLoaded(pos)) continue
                     val be = level.getBlockEntity(pos) as? damien.nodeworks.network.Connectable ?: continue
                     be.networkId = payload.newId
+                    damien.nodeworks.network.NetworkSettingsRegistry.notifyBlockSynced(pos)
                 }
-                damien.nodeworks.network.NetworkSettingsRegistry.notifyConnectableChanged(payload.newId)
             }
         }
 

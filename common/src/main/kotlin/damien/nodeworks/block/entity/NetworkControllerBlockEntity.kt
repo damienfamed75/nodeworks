@@ -468,7 +468,7 @@ class NetworkControllerBlockEntity(
         )
         // Invalidate the chunk tint cache when membership flipped to/from null but
         // colour settings stayed identical, [update] above doesn't fire onChanged then.
-        damien.nodeworks.network.NetworkSettingsRegistry.notifyConnectableChanged(networkId)
+        if (level != null) damien.nodeworks.network.NetworkSettingsRegistry.notifyBlockSynced(worldPosition)
     }
 
     override fun getUpdateTag(registries: HolderLookup.Provider): CompoundTag {

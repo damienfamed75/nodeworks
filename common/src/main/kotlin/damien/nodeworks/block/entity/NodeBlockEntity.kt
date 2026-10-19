@@ -586,7 +586,7 @@ open class NodeBlockEntity(
         input.getStringOrNull("permanentId")?.let { raw ->
             runCatching { UUID.fromString(raw) }.getOrNull()?.let { permanentId = it }
         }
-        damien.nodeworks.network.NetworkSettingsRegistry.notifyConnectableChanged(networkId)
+        if (level != null) damien.nodeworks.network.NetworkSettingsRegistry.notifyBlockSynced(worldPosition)
         // The id setter ran before permanentId was read, so settle the registration now.
         refreshAnchorRegistration()
         invalidateRenderCache()
