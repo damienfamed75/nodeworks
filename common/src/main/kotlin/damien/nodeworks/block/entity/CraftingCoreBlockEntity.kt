@@ -1004,6 +1004,32 @@ class CraftingCoreBlockEntity(
         setCrafting(false)
     }
 
+    /** Runs when the block is replaced by anything, a player, a mining laser, an
+     *  explosion or a command, and never on chunk or world unload, which does not go
+     *  through a block change. The buffer is dropped here so no removal path can eat
+     *  a running job's ingredients, and never on unload, which used to drop them when
+     *  a player walked away. The component-aware flush keeps potions, dyed armor and
+     *  named items as the exact variants the buffer held. */
+    override fun preRemoveSideEffects(pos: BlockPos, state: BlockState) {
+        super.preRemoveSideEffects(pos, state)
+        val lvl = level ?: return
+        if (lvl.isClientSide) return
+        blockDestroyed = true
+        for ((_, bucket) in clearBufferComponentAware()) {
+            val template = bucket.template
+            if (template.isEmpty) continue
+            val maxStack = template.item.getDefaultMaxStackSize().toLong()
+            var remaining = bucket.count
+            while (remaining > 0L) {
+                val dropCount = minOf(remaining, maxStack).toInt()
+                net.minecraft.world.Containers.dropItemStack(
+                    lvl, pos.x + 0.5, pos.y + 0.5, pos.z + 0.5, template.copyWithCount(dropCount),
+                )
+                remaining -= dropCount.toLong()
+            }
+        }
+    }
+
     override fun setRemoved() {
         damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(level, worldPosition, false)
         val lvl = level

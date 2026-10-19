@@ -6,7 +6,6 @@ import damien.nodeworks.item.NetworkWrenchItem
 import net.minecraft.core.BlockPos
 import net.minecraft.core.particles.DustParticleOptions
 import net.minecraft.util.RandomSource
-import net.minecraft.world.Containers
 import net.minecraft.world.InteractionResult
 import net.minecraft.world.entity.player.Player
 import net.minecraft.world.item.ItemStack
@@ -133,26 +132,9 @@ class CraftingCoreBlock(properties: Properties) : BaseEntityBlock(properties) {
     }
 
     override fun playerWillDestroy(level: Level, pos: BlockPos, state: BlockState, player: Player): BlockState {
-        val entity = level.getBlockEntity(pos) as? CraftingCoreBlockEntity
-        if (entity != null) {
-            entity.blockDestroyed = true
-            // Drop buffer contents as items. Component-aware flush preserves
-            // potions / dyed armor / custom-named items on the drop, so the
-            // player picks up the exact variants the buffer held.
-            if (!level.isClientSide) {
-                for ((_, bucket) in entity.clearBufferComponentAware()) {
-                    val template = bucket.template
-                    if (template.isEmpty) continue
-                    val maxStack = template.item.getDefaultMaxStackSize().toLong()
-                    var remaining = bucket.count
-                    while (remaining > 0L) {
-                        val dropCount = minOf(remaining, maxStack).toInt()
-                        Containers.dropItemStack(level, pos.x + 0.5, pos.y + 0.5, pos.z + 0.5, template.copyWithCount(dropCount))
-                        remaining -= dropCount.toLong()
-                    }
-                }
-            }
-        }
+        // The buffer drop lives in the entity's preRemoveSideEffects so a laser, an
+        // explosion or a command empties it too. This flag only marks the teardown.
+        (level.getBlockEntity(pos) as? CraftingCoreBlockEntity)?.blockDestroyed = true
         return super.playerWillDestroy(level, pos, state, player)
     }
 }
