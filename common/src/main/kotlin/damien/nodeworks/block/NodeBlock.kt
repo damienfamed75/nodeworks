@@ -316,18 +316,6 @@ open class NodeBlock(properties: Properties) : BaseEntityBlock(properties), Simp
         return NodeBlockEntity(pos, state)
     }
 
-    /** Server only. The entity returns at once unless it holds a Transfer Card, so the
-     *  cost for every other Node is one boolean per tick. */
-    override fun <T : BlockEntity> getTicker(
-        level: Level,
-        state: BlockState,
-        blockEntityType: net.minecraft.world.level.block.entity.BlockEntityType<T>,
-    ): net.minecraft.world.level.block.entity.BlockEntityTicker<T>? =
-        if (level.isClientSide) null
-        else net.minecraft.world.level.block.entity.BlockEntityTicker { lvl, _, _, be ->
-            if (be is NodeBlockEntity && lvl is net.minecraft.server.level.ServerLevel) be.serverTick(lvl)
-        }
-
     override fun useWithoutItem(
         state: BlockState,
         level: Level,

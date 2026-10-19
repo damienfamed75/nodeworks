@@ -287,6 +287,10 @@ class NetworkInventoryCache(
             return caches[id.toString()]
         }
 
+        /** The same by id, for a caller that already holds a snapshot and should not walk again. */
+        fun existing(networkId: java.util.UUID?): NetworkInventoryCache? =
+            networkId?.let { caches[it.toString()] }
+
         private const val ORPHAN_CHECK_TICKS = 200L
 
         /** Drops caches whose network now lives under another id. Nothing else removes
@@ -294,10 +298,12 @@ class NetworkInventoryCache(
          *  through [getOrCreate] on its next connection check. One network walk per
          *  cache every ten seconds, served from the per-tick discovery cache. */
         fun evictOrphans(gameTime: Long) {
-            if (gameTime % ORPHAN_CHECK_TICKS != 0L) return
+            // Each cache takes its turn on its own tick, so many networks never walk together.
+            val phase = gameTime % ORPHAN_CHECK_TICKS
             val it = caches.entries.iterator()
             while (it.hasNext()) {
                 val entry = it.next()
+                if ((entry.key.hashCode().toLong() and 0x7FFFFFFFL) % ORPHAN_CHECK_TICKS != phase) continue
                 if (entry.value.isOrphan(entry.key)) it.remove()
             }
         }

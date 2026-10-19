@@ -108,6 +108,17 @@ class TransferCard(properties: Properties) : NodeCard(properties) {
          *  run, the fluid counterpart of nine stacks. */
         const val MAX_FLUID_PER_RUN = 9L * BUCKET_MB
 
+        /** A card reuses the network walk for up to a second. Items it moves do not change
+         *  the network, and anything that does drops the cached walk at once, so an
+         *  interval of one tick costs one walk a second, not one a tick. */
+        const val SNAPSHOT_MAX_AGE_TICKS = 20L
+
+        /** Round robin spreads each stack over at most this many Storage Cards per run,
+         *  starting at the rotation index, and the window moves on next run. Small setups
+         *  fit inside it, large ones are covered a window at a time, and a run never
+         *  touches more cards than this however many the network has. */
+        const val ROUND_ROBIN_WINDOW = 16
+
         /** Import feeds the faced inventory into the network's Storage Cards. Export
          *  pulls rule-matched items from them into the faced inventory. */
         enum class Mode { IMPORT, EXPORT }

@@ -18,11 +18,8 @@ import java.util.concurrent.ConcurrentHashMap
  * counters back to zero when a new tick is observed. No global tick listener
  * needed, no concurrent reset across networks.
  *
- * Memory: budgets are kept in a [ConcurrentHashMap] keyed by UUID. Stale
- * entries (networks that haven't been touched in a long time) just sit
- * there. Each is small (~80 bytes), so even thousands of dead networks
- * don't matter at server scale. If that becomes a concern we can add
- * periodic eviction tied to NetworkSettingsRegistry's existing cleanup.
+ * Memory: budgets are kept in a [ConcurrentHashMap] keyed by UUID and swept by
+ * [evictIdle] once nothing has asked for them in a while.
  */
 object NetworkRateLimits {
     /** Sentinel UUID used when a network has no controller (e.g. mid-revalidation).
@@ -32,14 +29,39 @@ object NetworkRateLimits {
 
     private val budgets: ConcurrentHashMap<UUID, NetworkBudget> = ConcurrentHashMap()
 
+    /** Transfer Cards move under their own clock, see [forTransferCards]. */
+    private val transferBudgets: ConcurrentHashMap<UUID, NetworkBudget> = ConcurrentHashMap()
+
+    /** Share of the per-network move time Transfer Cards may use among themselves. */
+    private const val TRANSFER_CARD_TIME_SHARE = 0.5
+
+    /** A budget nobody has touched for this long is dropped. Node-anchored network ids
+     *  come and go with the Nodes, so without this the maps would only ever grow. */
+    private const val IDLE_TICKS = 20L * 60L * 5L
+    private const val IDLE_SWEEP_TICKS = 20L * 60L
+
     fun forNetwork(networkId: UUID?): NetworkBudget =
         budgets.computeIfAbsent(networkId ?: NO_NETWORK_UUID) { NetworkBudget() }
+
+    /** The budget a network's Transfer Cards share. Separate from [forNetwork] so a card
+     *  stuck on a slow inventory slows other cards on that network and nothing else:
+     *  scripts, chests and crafting keep their full move time. Items still count
+     *  against the shared per-tick item cap through [forNetwork]. */
+    fun forTransferCards(networkId: UUID?): NetworkBudget =
+        transferBudgets.computeIfAbsent(networkId ?: NO_NETWORK_UUID) { NetworkBudget(TRANSFER_CARD_TIME_SHARE) }
+
+    fun evictIdle(tick: Long) {
+        if (tick % IDLE_SWEEP_TICKS != 0L) return
+        budgets.values.removeIf { tick - it.lastSeenTick > IDLE_TICKS }
+        transferBudgets.values.removeIf { tick - it.lastSeenTick > IDLE_TICKS }
+    }
 
     /** Reset all budgets. Used on server stop so the next server start begins
      *  with a clean slate and any leftover state from the prior run doesn't
      *  influence the first tick's accounting. */
     fun clearAll() {
         budgets.clear()
+        transferBudgets.clear()
     }
 }
 
@@ -51,8 +73,14 @@ object NetworkRateLimits {
  *
  * Single-threaded by design (called from the server tick thread). No locks.
  */
-class NetworkBudget {
+class NetworkBudget(
+    /** Fraction of the configured per-network move time this budget may spend. */
+    private val moveTimeShare: Double = 1.0,
+) {
     private var lastTick: Long = -1L
+
+    /** The last tick anything asked this budget, for idle eviction. */
+    val lastSeenTick: Long get() = lastTick
 
     private var itemMoveCalls: Int = 0
     private var itemsMoved: Long = 0L
@@ -160,7 +188,8 @@ class NetworkBudget {
     /** Move time left this tick under [ServerSafetySettings.maxItemMoveMsPerTickPerNetwork]. */
     fun moveTimeLeftNanos(tick: Long): Long {
         ensureCurrentTick(tick)
-        return ServerPolicy.current.maxItemMoveMsPerTickPerNetwork.coerceAtLeast(1L) * 1_000_000L - moveNanos
+        val full = ServerPolicy.current.maxItemMoveMsPerTickPerNetwork.coerceAtLeast(1L) * 1_000_000L
+        return (full * moveTimeShare).toLong().coerceAtLeast(1L) - moveNanos
     }
 
     /** Run a move, charging its wall-clock time to this tick. A best-effort one is also

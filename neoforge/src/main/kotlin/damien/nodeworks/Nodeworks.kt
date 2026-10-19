@@ -1120,7 +1120,9 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
             cache.tick()
         }
         damien.nodeworks.script.NetworkInventoryCache.evictOrphans(tickCount.toLong())
+        damien.nodeworks.script.NetworkRateLimits.evictIdle(tickCount.toLong())
         for (level in event.server.allLevels) {
+            damien.nodeworks.block.entity.TransferCardTicker.tick(level)
             damien.nodeworks.script.MonitorUpdateHelper.tick(level, tickCount)
         }
         tickGrappleSessions(event.server)
@@ -1194,6 +1196,7 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
         // Drop per-network rate-limit budgets so a quit-and-rejoin doesn't carry
         // stale tick counters into the new session.
         damien.nodeworks.script.NetworkRateLimits.clearAll()
+        damien.nodeworks.block.entity.TransferCardTicker.clear()
     }
 
     private fun onPlayerDisconnect(event: net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedOutEvent) {

@@ -84,8 +84,8 @@ interface Connectable {
      *  need a controller check for one on the snapshot, never for an id. Nodes opt in. */
     fun isFallbackAnchor(): Boolean = false
 
-    /** Stable UUID lent by a fallback anchor, persisted so it survives reloads. Null
-     *  for everything that is not one. */
+    /** Id lent by a fallback anchor, derived from its position by [NetworkIds.nodeAnchor]
+     *  so nothing is saved and a clone cannot carry it. Null for everything that is not one. */
     val fallbackAnchorId: UUID?
         get() = null
 

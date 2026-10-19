@@ -52,6 +52,9 @@ open class NodeBlockEntity(
     constructor(pos: BlockPos, state: BlockState) : this(ModBlockEntities.NODE, pos, state)
 
     companion object {
+        /** How often a Transfer Card drops scan cursors for Storage Cards that are gone. */
+        private const val CURSOR_PRUNE_TICKS = 1200L
+
         private val logger = LoggerFactory.getLogger("nodeworks-node")
         const val SLOTS_PER_SIDE = 9
         const val TOTAL_SLOTS = SLOTS_PER_SIDE * 6 // 54 total
@@ -73,15 +76,12 @@ open class NodeBlockEntity(
 
     private val items: NonNullList<ItemStack> = NonNullList.withSize(TOTAL_SLOTS, ItemStack.EMPTY)
 
-    /** Persistent identity this Node lends to a network that has no controller, see
-     *  [damien.nodeworks.network.Connectable.isFallbackAnchor]. Generated once, saved,
-     *  never changed by propagation. A world saved before this field existed gets a
-     *  fresh id on first load and keeps it from the next save on. */
-    var permanentId: UUID = UUID.randomUUID()
-        private set
-
     override fun isFallbackAnchor(): Boolean = true
-    override val fallbackAnchorId: UUID? get() = permanentId
+
+    /** The id this Node lends to a network with no controller, derived from where it
+     *  stands so nothing is saved and a cloned Node cannot carry it along. */
+    override val fallbackAnchorId: UUID?
+        get() = level?.let { damien.nodeworks.network.NetworkIds.nodeAnchor(it, worldPosition) }
 
     /** Client only. The Node renderer keeps its extracted card beams here and rebuilds
      *  them only when [renderCacheVersion] moves, instead of rescanning a dozen block
@@ -342,10 +342,16 @@ open class NodeBlockEntity(
         }
         hasTransferCards = any
         transferScanCursors.keys.removeIf { (slot, _) -> transferConfigs[slot] == null }
+        val serverLevel = level as? net.minecraft.server.level.ServerLevel ?: return
+        // The cards are part of what a network walk reports, so a walk kept for card runs
+        // is stale from here on.
+        networkId?.let { damien.nodeworks.network.NetworkDiscovery.invalidate(it) }
+        if (any) TransferCardTicker.register(serverLevel, worldPosition)
+        else TransferCardTicker.unregister(serverLevel, worldPosition)
     }
 
-    /** Runs every Transfer Card whose interval has elapsed. Discovery is cached per tick
-     *  per network, so a Node with several cards walks the network once. */
+    /** Runs every Transfer Card whose interval has elapsed. Called from
+     *  [TransferCardTicker] for Nodes that hold a card, no other Node is ticked. */
     fun serverTick(level: net.minecraft.server.level.ServerLevel) {
         if (!hasTransferCards) return
         if (networkId == null) return
@@ -365,12 +371,18 @@ open class NodeBlockEntity(
         val itemTarget = damien.nodeworks.platform.PlatformServices.storage.getItemStorage(level, adjacentPos, face)
         val fluidTarget = damien.nodeworks.platform.PlatformServices.storage.getFluidStorage(level, adjacentPos, face)
         if (itemTarget == null && fluidTarget == null) return
-        val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, worldPosition)
-        val budget = damien.nodeworks.script.NetworkRateLimits.forNetwork(networkId)
+        // A walk up to a second old is good enough to move items by, and a card at the
+        // shortest interval then costs one walk a second rather than one a tick.
+        val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(
+            level, worldPosition, damien.nodeworks.card.TransferCard.SNAPSHOT_MAX_AGE_TICKS,
+        )
+        // Time comes from the Transfer Cards' own budget, items from the network's shared cap.
+        val budget = damien.nodeworks.script.NetworkRateLimits.forTransferCards(networkId)
+        val itemCap = damien.nodeworks.script.NetworkRateLimits.forNetwork(networkId)
         val tick = level.gameTime
         // Only an existing cache is kept current, a terminal that is open somewhere.
         // Never create one, a poller on a network nobody looks at is pure cost.
-        val cache = damien.nodeworks.script.NetworkInventoryCache.existing(level, worldPosition)
+        val cache = damien.nodeworks.script.NetworkInventoryCache.existing(snapshot.networkId)
 
         // Any Storage Card facing the same inventory as this card, on this Node's face or
         // another Node's, is neither source nor sink. A chest can then carry a Storage
@@ -382,24 +394,30 @@ open class NodeBlockEntity(
         // The other half of a double chest is the same inventory under another position.
         val targetState = level.getBlockState(adjacentPos)
         if (targetState.block is net.minecraft.world.level.block.ChestBlock &&
+            targetState.hasProperty(net.minecraft.world.level.block.ChestBlock.TYPE) &&
             targetState.getValue(net.minecraft.world.level.block.ChestBlock.TYPE) != net.minecraft.world.level.block.state.properties.ChestType.SINGLE
         ) {
             excluded.add(adjacentPos.relative(net.minecraft.world.level.block.ChestBlock.getConnectedDirection(targetState)))
         }
+        // When a Storage Card faces this inventory too, the terminal cache already counts
+        // what is in it. A move then only shifts items between channels, see [noteMoved].
+        val counterpart = snapshot.storageCards
+            .firstOrNull { (it.capability as? StorageSideCapability)?.adjacentPos in excluded }
+            ?.channel
+        if (tick % CURSOR_PRUNE_TICKS == 0L) pruneScanCursors(slot, snapshot)
 
         if (itemTarget != null) {
-            // Shares the network's per-tick item budget with scripts and presets, and never
-            // moves more than nine stacks' worth in one run however much budget is left.
-            val maxItems = minOf(budget.availableItems(tick), damien.nodeworks.card.TransferCard.MAX_ITEMS_PER_RUN)
+            // Never moves more than nine stacks' worth in one run however much cap is left.
+            val maxItems = minOf(itemCap.availableItems(tick), damien.nodeworks.card.TransferCard.MAX_ITEMS_PER_RUN)
             if (maxItems > 0L) {
                 val moved = when (config.mode) {
                     damien.nodeworks.card.TransferCard.Companion.Mode.IMPORT ->
-                        if (config.roundRobin) importRoundRobin(level, snapshot, cache, itemTarget, excluded, config, slot, maxItems, budget, tick)
-                        else importFromTarget(level, snapshot, cache, itemTarget, excluded, config, slot, maxItems, budget, tick)
+                        if (config.roundRobin) importRoundRobin(level, snapshot, cache, counterpart, itemTarget, excluded, config, slot, maxItems, budget, tick)
+                        else importFromTarget(level, snapshot, cache, counterpart, itemTarget, excluded, config, slot, maxItems, budget, tick)
                     damien.nodeworks.card.TransferCard.Companion.Mode.EXPORT ->
-                        exportToTarget(level, snapshot, cache, itemTarget, excluded, config, slot, maxItems, budget, tick)
+                        exportToTarget(level, snapshot, cache, counterpart, itemTarget, excluded, config, slot, maxItems, budget, tick)
                 }
-                if (moved > 0L) budget.noteItemsMoved(tick, moved)
+                if (moved > 0L) itemCap.noteItemsMoved(tick, moved)
             }
         }
         if (fluidTarget != null) {
@@ -412,34 +430,53 @@ open class NodeBlockEntity(
         }
     }
 
-    /** Storage Cards a move may use, minus any whose storage is the one on the other end
-     *  behind a second handle, the same item handler or ME grid. The far half of a double
-     *  chest is excluded by position before this. A move between those only shuffles. */
+    /** Drops this slot's scan cursors for Storage Cards that are no longer on the
+     *  network, so a card left in place for months does not keep one per retired chest. */
+    private fun pruneScanCursors(slot: Int, snapshot: damien.nodeworks.network.NetworkSnapshot) {
+        val live = HashSet<BlockPos>()
+        live.add(worldPosition)
+        for (card in snapshot.storageCards) (card.capability as? StorageSideCapability)?.let { live.add(it.adjacentPos) }
+        transferScanCursors.keys.removeIf { (s, pos) -> s == slot && pos !in live }
+    }
+
+    /** Storage Cards a move may use, each with its storage, resolved one at a time as
+     *  the caller walks them so a move that stops early never looks up the rest. The
+     *  far half of a double chest is excluded by position before this. */
     private fun transferDestinations(
         level: net.minecraft.server.level.ServerLevel,
         snapshot: damien.nodeworks.network.NetworkSnapshot,
-        other: damien.nodeworks.platform.ItemStorageHandle,
         exclude: Set<BlockPos>,
         channel: damien.nodeworks.network.ChannelFilter,
-    ): List<Pair<damien.nodeworks.network.CardSnapshot, damien.nodeworks.platform.ItemStorageHandle>> =
-        damien.nodeworks.script.NetworkTransfer.destinationCards(snapshot, channel, exclude).mapNotNull { card ->
-            val storage = damien.nodeworks.script.NetworkStorageHelper.getStorage(level, card) ?: return@mapNotNull null
-            if (damien.nodeworks.platform.PlatformServices.storage.isSameInventory(other, storage)) return@mapNotNull null
-            card to storage
+    ): Sequence<Pair<damien.nodeworks.network.CardSnapshot, damien.nodeworks.platform.ItemStorageHandle>> =
+        damien.nodeworks.script.NetworkTransfer.destinationCards(snapshot, channel, exclude).asSequence().mapNotNull { card ->
+            damien.nodeworks.script.NetworkStorageHelper.getStorage(level, card)?.let { card to it }
         }
 
     /** Keeps an open terminal's cache in step with one stack a card just moved. One
-     *  map update per stack, nothing scanned. */
+     *  map update per stack, nothing scanned. With a [counterpart], a Storage Card that
+     *  faces the card's own inventory, both ends are already counted, so the totals
+     *  stand and only the channel counts shift. Touching the totals there would mark the
+     *  item dirty every run and keep the poll from ever correcting it. */
     private fun noteMoved(
         cache: damien.nodeworks.script.NetworkInventoryCache?,
         stack: ItemStack,
         count: Long,
         channel: net.minecraft.world.item.DyeColor,
         intoNetwork: Boolean,
+        counterpart: net.minecraft.world.item.DyeColor?,
     ) {
         if (cache == null || count <= 0L) return
         val id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: return
         val patch = stack.componentsPatch
+        if (counterpart != null) {
+            val from = if (intoNetwork) counterpart else channel
+            val to = if (intoNetwork) channel else counterpart
+            if (from != to) {
+                cache.onChannelDelta(from, id, patch, -count)
+                cache.onChannelDelta(to, id, patch, count)
+            }
+            return
+        }
         if (intoNetwork) {
             cache.onInserted(id, !patch.isEmpty, count, patch)
             cache.onChannelDelta(channel, id, patch, count)
@@ -455,11 +492,12 @@ open class NodeBlockEntity(
     /** Priority fill: each Storage Card in order takes what it can. The move asks the
      *  destination before taking anything, so a source whose items nothing wants is never
      *  touched, and the scan resumes from the cursor next run when the item cap or the
-     *  network's move-time budget stops it early. No rules means everything. */
+     *  move-time budget stops it early. No rules means everything. */
     private fun importFromTarget(
         level: net.minecraft.server.level.ServerLevel,
         snapshot: damien.nodeworks.network.NetworkSnapshot,
         cache: damien.nodeworks.script.NetworkInventoryCache?,
+        counterpart: net.minecraft.world.item.DyeColor?,
         source: damien.nodeworks.platform.ItemStorageHandle,
         exclude: Set<BlockPos>,
         config: TransferConfig,
@@ -470,18 +508,16 @@ open class NodeBlockEntity(
     ): Long {
         val registries = level.registryAccess()
         val ruleMatch = ruleMatcher(config, registries)
-        val destinations = transferDestinations(level, snapshot, source, exclude, config.channel)
-        if (destinations.isEmpty()) return 0L
         var remaining = maxItems
         var total = 0L
         budget.timedMove(tick, atomic = false) {
-            for ((dest, storage) in destinations) {
+            for ((dest, storage) in transferDestinations(level, snapshot, exclude, config.channel)) {
                 if (remaining <= 0L || damien.nodeworks.platform.MoveDeadline.expired()) break
-                val cap = dest.capability as? damien.nodeworks.card.StorageSideCapability ?: continue
+                val cap = dest.capability as? StorageSideCapability ?: continue
                 val accept: (ItemStack) -> Boolean = { stack -> ruleMatch(stack) && cap.acceptsItem(stack, registries) }
                 val moved = damien.nodeworks.platform.PlatformServices.storage.moveItems(
                     source, storage, { true }, remaining, scanCursor(slot, cap.adjacentPos), accept,
-                ) { stack, n -> noteMoved(cache, stack, n, dest.channel, intoNetwork = true) }
+                ) { stack, n -> noteMoved(cache, stack, n, dest.channel, intoNetwork = true, counterpart) }
                 remaining -= moved
                 total += moved
             }
@@ -489,15 +525,17 @@ open class NodeBlockEntity(
         return total
     }
 
-    /** Round robin, the Import Chest's way: one item at a time to the next Storage Card
-     *  that takes it, so 32 logs over four furnaces land 8, 8, 8, 8. The loader places
-     *  each unit before lifting it, so nothing leaves the source without a home and
-     *  nothing is ever dropped. Resumes from the card's scan cursor and stops at the
-     *  item cap or the network's move-time budget. */
+    /** Round robin: each stack is split evenly over a window of Storage Cards, so 32 logs
+     *  over four furnaces land 8, 8, 8, 8, and the window moves on from run to run so
+     *  a large network is covered a few cards at a time. Every share is placed before
+     *  anything leaves the source, so nothing is lifted without a home. Resumes from the
+     *  card's scan cursor and rotation index and stops at the item cap or the move-time
+     *  budget. See [damien.nodeworks.platform.StorageService.moveItemsRoundRobin]. */
     private fun importRoundRobin(
         level: net.minecraft.server.level.ServerLevel,
         snapshot: damien.nodeworks.network.NetworkSnapshot,
         cache: damien.nodeworks.script.NetworkInventoryCache?,
+        counterpart: net.minecraft.world.item.DyeColor?,
         source: damien.nodeworks.platform.ItemStorageHandle,
         exclude: Set<BlockPos>,
         config: TransferConfig,
@@ -508,12 +546,12 @@ open class NodeBlockEntity(
     ): Long {
         val registries = level.registryAccess()
         val ruleMatch = ruleMatcher(config, registries)
-        val destinations = transferDestinations(level, snapshot, source, exclude, config.channel)
-        if (destinations.isEmpty()) return 0L
-        val targets = destinations.map { (card, storage) ->
-            val cap = card.capability as? damien.nodeworks.card.StorageSideCapability
+        val cards = damien.nodeworks.script.NetworkTransfer.destinationCards(snapshot, config.channel, exclude)
+        if (cards.isEmpty()) return 0L
+        val targets = cards.map { card ->
+            val cap = card.capability as? StorageSideCapability
             damien.nodeworks.platform.RoundRobinTarget(
-                storage,
+                { damien.nodeworks.script.NetworkStorageHelper.getStorage(level, card) },
                 cap?.let { c -> { stack: ItemStack -> c.acceptsItem(stack, registries) } },
                 card,
             )
@@ -523,8 +561,9 @@ open class NodeBlockEntity(
         budget.timedMove(tick, atomic = false) {
             val result = damien.nodeworks.platform.PlatformServices.storage.moveItemsRoundRobin(
                 source, targets, ruleMatch, maxItems, scanCursor(slot, worldPosition), rr.index,
+                damien.nodeworks.card.TransferCard.ROUND_ROBIN_WINDOW,
             ) { target, stack, n ->
-                noteMoved(cache, stack, n, (target.tag as damien.nodeworks.network.CardSnapshot).channel, intoNetwork = true)
+                noteMoved(cache, stack, n, (target.tag as damien.nodeworks.network.CardSnapshot).channel, intoNetwork = true, counterpart)
             }
             moved = result.moved
             rr.index = result.nextIndex
@@ -539,6 +578,7 @@ open class NodeBlockEntity(
         level: net.minecraft.server.level.ServerLevel,
         snapshot: damien.nodeworks.network.NetworkSnapshot,
         cache: damien.nodeworks.script.NetworkInventoryCache?,
+        counterpart: net.minecraft.world.item.DyeColor?,
         dest: damien.nodeworks.platform.ItemStorageHandle,
         exclude: Set<BlockPos>,
         config: TransferConfig,
@@ -553,12 +593,12 @@ open class NodeBlockEntity(
         var remaining = maxItems
         var total = 0L
         budget.timedMove(tick, atomic = false) {
-            for ((card, source) in transferDestinations(level, snapshot, dest, exclude, config.channel)) {
+            for ((card, source) in transferDestinations(level, snapshot, exclude, config.channel)) {
                 if (remaining <= 0L || damien.nodeworks.platform.MoveDeadline.expired()) break
-                val cap = card.capability as? damien.nodeworks.card.StorageSideCapability ?: continue
+                val cap = card.capability as? StorageSideCapability ?: continue
                 val moved = damien.nodeworks.platform.PlatformServices.storage.moveItems(
                     source, dest, { true }, remaining, scanCursor(slot, cap.adjacentPos), ruleMatch,
-                ) { stack, n -> noteMoved(cache, stack, n, card.channel, intoNetwork = false) }
+                ) { stack, n -> noteMoved(cache, stack, n, card.channel, intoNetwork = false, counterpart) }
                 remaining -= moved
                 total += moved
             }
@@ -743,7 +783,6 @@ open class NodeBlockEntity(
             output.putIntArray("redstoneOutputs", redstoneOutputs.copyOf())
         }
         networkId?.let { output.putString("networkId", it.toString()) }
-        output.putString("permanentId", permanentId.toString())
         if (forcedPipeBlockedMask != 0) output.putInt("forcedPipeBlocked", forcedPipeBlockedMask)
     }
 
@@ -767,12 +806,7 @@ open class NodeBlockEntity(
             try { UUID.fromString(it) } catch (_: Exception) { null }
         }
         forcedPipeBlockedMask = input.getIntOr("forcedPipeBlocked", 0) and 0x3F
-        input.getStringOrNull("permanentId")?.let { raw ->
-            runCatching { UUID.fromString(raw) }.getOrNull()?.let { permanentId = it }
-        }
         if (level != null) damien.nodeworks.network.NetworkSettingsRegistry.notifyBlockSynced(worldPosition)
-        // The id setter ran before permanentId was read, so settle the registration now.
-        refreshAnchorRegistration()
         invalidateRenderCache()
         nodeTracker?.onNodeChanged(worldPosition, true)
 
@@ -786,9 +820,9 @@ open class NodeBlockEntity(
 
     override fun setLevel(newLevel: net.minecraft.world.level.Level) {
         super.setLevel(newLevel)
-        // Load runs before the level is attached, so the client registration waits for this.
-        refreshAnchorRegistration()
         if (newLevel is net.minecraft.server.level.ServerLevel) {
+            // Load ran before the level was attached, so the ticker learns of the cards here.
+            if (hasTransferCards) TransferCardTicker.register(newLevel, worldPosition)
             NodeConnectionHelper.queueRevalidation(newLevel, worldPosition)
             // Legacy migration: drop one Monitor item per legacy per-face monitor
             // recorded on this node. The drop happens once (`legacyMonitorDrops` is
@@ -851,41 +885,18 @@ open class NodeBlockEntity(
     /** Set to true by NodeBlock when the block is actually being destroyed. */
     override var blockDestroyed: Boolean = false
     override var networkId: UUID? = null
-        set(value) {
-            field = value
-            refreshAnchorRegistration()
-        }
-
-    /** The id this Node last told the client registry it anchors, so a change or an
-     *  unload removes exactly what was added. Client only, never saved. */
-    private var registeredAnchorId: UUID? = null
-
-    /** A Node anchors its network when the network's id is its own. The client keeps
-     *  a set of such ids so every renderer can colour a controller-less network. Runs
-     *  on every id change, after load once the level is known, and on unload. */
-    private fun refreshAnchorRegistration() {
-        if (level?.isClientSide != true) return
-        val wanted = networkId?.takeIf { it == permanentId }
-        if (wanted == registeredAnchorId) return
-        registeredAnchorId?.let { damien.nodeworks.render.AnchoredNetworkClientRegistry.unregister(it) }
-        wanted?.let { damien.nodeworks.render.AnchoredNetworkClientRegistry.register(it) }
-        registeredAnchorId = wanted
-        damien.nodeworks.network.NetworkSettingsRegistry.notifyConnectableChanged(networkId)
-    }
 
     override fun setRemoved() {
         nodeTracker?.onNodeChanged(worldPosition, false)
         val currentLevel = level
         if (currentLevel is net.minecraft.server.level.ServerLevel) {
             NodeConnectionHelper.removeAllConnections(currentLevel, this)
+            TransferCardTicker.unregister(currentLevel, worldPosition)
             // Only populated while this Node anchored a controller-less network, and only
             // dropped when the Node is really gone. A chunk unload must leave the cache an
             // open terminal elsewhere on the network is reading.
-            if (blockDestroyed) damien.nodeworks.script.NetworkInventoryCache.removeByUUID(permanentId)
-        }
-        registeredAnchorId?.let {
-            damien.nodeworks.render.AnchoredNetworkClientRegistry.unregister(it)
-            registeredAnchorId = null
+            if (blockDestroyed) networkId?.takeIf { it == fallbackAnchorId }
+                ?.let { damien.nodeworks.script.NetworkInventoryCache.removeByUUID(it) }
         }
         super.setRemoved()
     }

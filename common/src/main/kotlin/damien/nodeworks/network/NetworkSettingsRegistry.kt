@@ -106,18 +106,18 @@ object NetworkSettingsRegistry {
         if (changed) onChanged?.invoke(networkId)
     }
 
-    /** Settings a controller-less network renders with. Its anchoring Node reports the
-     *  id on the client, and plain white says "connected and working" where the
+    /** Settings a controller-less network renders with. The id itself says a Node
+     *  anchors it, see [NetworkIds.isNodeAnchor], and plain white says "connected and working" where the
      *  unconnected grey would say "broken". */
-    private val ANCHORED_SETTINGS = NetworkSettings(
-        color = damien.nodeworks.render.AnchoredNetworkClientRegistry.ANCHORED_NETWORK_COLOR,
-    )
+    const val ANCHORED_NETWORK_COLOR: Int = 0xFFFFFF
+
+    private val ANCHORED_SETTINGS = NetworkSettings(color = ANCHORED_NETWORK_COLOR)
 
     /** Get settings for a network, or defaults if not registered. */
     fun get(networkId: UUID?): NetworkSettings {
         if (networkId == null) return NetworkSettings()
         registry[networkId]?.let { return it }
-        if (damien.nodeworks.render.AnchoredNetworkClientRegistry.isAnchored(networkId)) return ANCHORED_SETTINGS
+        if (NetworkIds.isNodeAnchor(networkId)) return ANCHORED_SETTINGS
         return NetworkSettings()
     }
 

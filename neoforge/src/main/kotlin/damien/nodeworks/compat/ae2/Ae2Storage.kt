@@ -328,6 +328,21 @@ object Ae2Storage {
      *  [from] goes last instead of first, so the other types get their turn before it but it
      *  still gets one. A null [from] walks from the start, and a [from] that is gone costs one
      *  walk of key comparisons to find out before also walking from the start. */
+    /** The first type past the cursor that passes [filter], as a stack of up to one
+     *  stack size, with the cursor left on it. See [damien.nodeworks.platform.StorageService.peekStack]. */
+    fun peekStack(h: Ae2ItemStorageHandle, filter: (ItemStack) -> Boolean, cursor: damien.nodeworks.platform.ScanCursor?): ItemStack? {
+        var found: ItemStack? = null
+        val key = forEachStackFrom(h, filter, cursor?.key, cursor?.keyDone ?: false) { template, available ->
+            found = template.copyWithCount(minOf(available, template.maxStackSize.toLong()).toInt().coerceAtLeast(1))
+            false
+        }
+        if (found != null && cursor != null) {
+            cursor.key = key
+            cursor.keyDone = false
+        }
+        return found
+    }
+
     fun forEachStackFrom(
         h: Ae2ItemStorageHandle,
         filter: (ItemStack) -> Boolean,

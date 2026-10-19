@@ -70,9 +70,10 @@ items where the receiving Storage Card accepts them.
 
 ### Round robin
 
-In Import mode, turning on **Round robin** spreads items across your Storage
-Cards instead of filling the highest priority one first. Each run starts with a
-different card.
+In Import mode, turning on **Round robin** splits each stack evenly across your
+Storage Cards instead of filling the highest priority one first. Thirty-two logs
+over four furnaces land eight in each. On a network with many Storage Cards the
+card works through them a group at a time, moving on each run.
 
 ### Speed
 

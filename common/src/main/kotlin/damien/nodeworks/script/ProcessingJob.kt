@@ -137,6 +137,10 @@ class ProcessingJob(
      *  [damien.nodeworks.script.cpu.CpuOpExecutor.executeProcess] retry path). */
     val invocationPulls: MutableList<SchedulerImpl.PendingJob> = mutableListOf()
 
+    /** Every poll this job registered, invocation or resume, so a hold can move their
+     *  deadlines along with [deadlineTick]. */
+    private val pulls: MutableList<SchedulerImpl.PendingJob> = mutableListOf()
+
     /** Called by the CPU at the start of each handler invocation so the pull list
      *  only reflects *this* invocation's registrations (not previous attempts). */
     fun resetInvocationPulls() { invocationPulls.clear() }
@@ -208,6 +212,7 @@ class ProcessingJob(
                 )
                 scheduler.addPendingJob(pending)
                 invocationPulls.add(pending)
+                pulls.add(pending)
 
                 return LuaValue.NIL
             }
@@ -218,6 +223,38 @@ class ProcessingJob(
 
     private val isStale: Boolean get() = cpu.jobGeneration != startGeneration
 
+    /** A CPU that is not formed, its controller pulled or part of its structure gone,
+     *  has no buffer to take outputs into, and pulling them would void them. Everything
+     *  stays in the machine and the clocks stand still, so the job carries on unchanged
+     *  once the CPU is back. True while holding. */
+    private fun holdWhileUnformed(): Boolean {
+        if (cpu.isFormed) return false
+        if (deadlineTick != Long.MAX_VALUE) deadlineTick++
+        for (pull in pulls) if (pull.timeoutAt != Long.MAX_VALUE) pull.timeoutAt++
+        lastProgressTick++
+        lastBorrowTick++
+        return true
+    }
+
+    /** Puts an output the buffer would not take back where it came from, or failing that
+     *  into network storage, or failing that on the ground at the CPU. Never voided. */
+    private fun returnToMachine(
+        stack: net.minecraft.world.item.ItemStack,
+        source: damien.nodeworks.platform.ItemStorageHandle,
+        network: () -> damien.nodeworks.network.NetworkSnapshot,
+    ) {
+        val back = try { PlatformServices.storage.insertItemStack(source, stack) } catch (_: Exception) { 0 }
+        val left = stack.count - back
+        if (left <= 0) return
+        val rest = stack.copyWithCount(left)
+        val stored = NetworkStorageHelper.insertItemStack(level, network(), rest, null)
+        if (stored < left) {
+            net.minecraft.world.Containers.dropItemStack(
+                level, cpu.blockPos.x + 0.5, cpu.blockPos.y + 1.0, cpu.blockPos.z + 0.5, rest.copyWithCount(left - stored),
+            )
+        }
+    }
+
     /**
      * Incremental: each poll grabs whatever's currently available for each declared output
      * and decrements the remaining count. Only returns true (job complete) once every
@@ -227,6 +264,7 @@ class ProcessingJob(
      * along the way go to network storage and never hold the job up.
      */
     private fun tryExtract(getters: List<CardHandle.StorageGetter>): Boolean {
+        if (holdWhileUnformed()) return false
         val stale = isStale
         var snapshot: damien.nodeworks.network.NetworkSnapshot? =
             if (stale) damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, cpu.blockPos) else null
@@ -265,6 +303,12 @@ class ProcessingJob(
             }
             val k = found.sumOf { it.first.count.toLong() }
             if (k <= 0L) continue
+            // A buffer with no room, its storage shrunk under a running craft, must not
+            // swallow the haul. Back it goes, and this poll made no progress on the group.
+            if (!stale && !cpu.bufferState.canAccept(damien.nodeworks.script.BufferKey.of(found.first().first), k)) {
+                for ((stack, source) in found) returnToMachine(stack, source, ::network)
+                continue
+            }
             noteProgress()
 
             // Split this poll's haul. Both sides present: the machine finished
@@ -419,11 +463,13 @@ class ProcessingJob(
         }
         val timeoutTicks = if (api.timeout > 0) api.timeout.toLong() else 6000L
         deadlineTick = scheduler.currentTick + timeoutTicks
-        scheduler.addPendingJob(SchedulerImpl.PendingJob(
+        val pending = SchedulerImpl.PendingJob(
             pollFn = { tryExtract(getters) },
             timeoutAt = scheduler.currentTick + timeoutTicks,
             onComplete = { success -> pendingResult.complete(success) },
             label = "resume:${api.name}"
-        ))
+        )
+        scheduler.addPendingJob(pending)
+        pulls.add(pending)
     }
 }

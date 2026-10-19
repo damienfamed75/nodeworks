@@ -121,27 +121,14 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
         else base.extractStacksByPredicate(storage, filter, maxCount, cursor)
     }
 
-    override fun moveItemsRoundRobin(
-        source: ItemStorageHandle,
-        targets: List<RoundRobinTarget>,
-        filter: (ItemStack) -> Boolean,
-        maxCount: Long,
-        cursor: ScanCursor?,
-        startIndex: Int,
-        onMoved: ((RoundRobinTarget, ItemStack, Long) -> Unit)?,
-    ): RoundRobinResult {
-        // With ME on either end the unit moves go through this service's own
-        // [moveItems], which knows both backends. Pure item handlers walk slots natively.
-        val meInvolved = ae2(source) != null || targets.any { ae2(it.storage) != null }
-        return if (meInvolved) super.moveItemsRoundRobin(source, targets, filter, maxCount, cursor, startIndex, onMoved)
-        else base.moveItemsRoundRobin(source, targets, filter, maxCount, cursor, startIndex, onMoved)
+    override fun peekStack(storage: ItemStorageHandle, filter: (ItemStack) -> Boolean, cursor: ScanCursor?): ItemStack? {
+        val a = ae2(storage)
+        return if (a != null) Ae2Storage.peekStack(a, filter, cursor) else base.peekStack(storage, filter, cursor)
     }
 
-    override fun isSameInventory(a: ItemStorageHandle, b: ItemStorageHandle): Boolean {
-        val sa = ae2(a)
-        val sb = ae2(b)
-        if (sa != null || sb != null) return sa != null && sb != null && sa.me === sb.me
-        return base.isSameInventory(a, b)
+    override fun simulateInsertStack(dest: ItemStorageHandle, stack: ItemStack): Long {
+        val a = ae2(dest)
+        return if (a != null) Ae2Storage.simulateInsertStacks(a, listOf(stack)) else base.simulateInsertStack(dest, stack)
     }
 
     override fun countStacksByPredicate(storage: ItemStorageHandle, filter: (ItemStack) -> Boolean): Long {

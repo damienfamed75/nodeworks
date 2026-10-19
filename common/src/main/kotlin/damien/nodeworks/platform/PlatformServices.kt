@@ -127,6 +127,8 @@ enum class ResourceKind { ITEM, FLUID }
  * Both item and fluid capabilities are probed via the same service, callers choose by the
  * resource kind of the query (filter prefix / handle kind).
  */
+private val STORAGE_LOGGER = org.slf4j.LoggerFactory.getLogger("nodeworks/storage")
+
 interface StorageService {
     /** Get an item storage handle for a block at [pos] accessed from [face]. Returns null if not available. */
     fun getItemStorage(level: ServerLevel, pos: BlockPos, face: Direction): ItemStorageHandle?
@@ -290,22 +292,36 @@ interface StorageService {
     /** Insert an ItemStack into storage. Returns count actually inserted. */
     fun insertItemStack(storage: ItemStorageHandle, stack: net.minecraft.world.item.ItemStack): Int
 
-    /** True when [a] and [b] are one storage behind two handles: the same handler, or the
-     *  same ME grid. A move between them would only shuffle items. Blocks that present one
-     *  inventory through several positions, like a double chest, are the caller's to
-     *  exclude by position, this never scans contents. */
-    fun isSameInventory(a: ItemStorageHandle, b: ItemStorageHandle): Boolean = a === b
+    /** The stack a scan would move next, without taking it: the first one past the cursor
+     *  that passes [filter], sized to what the source would actually let go. The cursor is left on it, so an extract with the
+     *  same cursor takes from that spot first, and a scan stopped by the move deadline
+     *  leaves the cursor where it stopped for the next call. Null when nothing matches,
+     *  or the backend cannot look without taking. */
+    fun peekStack(storage: ItemStorageHandle, filter: (ItemStack) -> Boolean, cursor: ScanCursor?): ItemStack? = null
+
+    /** How much of [stack], components included, [dest] would take right now. */
+    fun simulateInsertStack(dest: ItemStorageHandle, stack: ItemStack): Long =
+        simulateInsertItem(dest, stack.item, stack.count.toLong())
 
     /**
-     * One item at a time to the next target that takes it, the Import Chest's round
-     * robin, and never lifting an item that has no home: each unit is placed in its
-     * target before it leaves the source. [filter] picks source stacks, a target's
-     * [RoundRobinTarget.accept] can refuse a stack without using up its turn, and a
-     * target that refuses or is full is skipped for the rest of that stack. Resumable
-     * through [cursor] like [moveItems]. Returns what moved and the index the next call
-     * starts at, so turns carry across calls. This default drives [moveItems] one unit
-     * at a time, which is correct everywhere but rescans the source per unit, so loaders
-     * walk slots directly where they can.
+     * Spreads the source's stacks evenly over the targets, a stack at a time, so 32 logs
+     * over four furnaces land 8, 8, 8, 8 and 30 land 8, 8, 7, 7 with the extras going to
+     * the targets at the rotation index. Each target is asked once per stack how much it
+     * would take, the stack is split by those answers, every share is placed, and only
+     * then is the total taken from the source, so nothing is lifted without a home and
+     * the source is walked once per stack rather than once per item.
+     *
+     * Only [window] targets from the rotation index are considered for one stack. When
+     * none of them takes it the window moves on and tries again while time allows, so a
+     * large network is covered a window at a time over runs and one run never touches
+     * more targets than the window. A type no window will take is skipped for the rest of
+     * the call. Target handles resolve lazily, so untouched targets cost nothing.
+     *
+     * Honours the move deadline between targets and between stacks, never between
+     * placing shares and taking their total. A source that then gives back less than its
+     * targets received has the surplus taken back out of them, and if even that fails the
+     * call stops with one logged warning rather than duplicating again. Returns what moved
+     * and the index the next call starts at.
      */
     fun moveItemsRoundRobin(
         source: ItemStorageHandle,
@@ -314,28 +330,100 @@ interface StorageService {
         maxCount: Long,
         cursor: ScanCursor?,
         startIndex: Int,
+        window: Int = targets.size,
         onMoved: ((RoundRobinTarget, ItemStack, Long) -> Unit)? = null,
     ): RoundRobinResult {
-        if (targets.isEmpty() || maxCount <= 0L) return RoundRobinResult(0L, startIndex)
-        var index = startIndex.mod(targets.size)
+        val n = targets.size
+        if (n == 0 || maxCount <= 0L) return RoundRobinResult(0L, startIndex)
+        var index = startIndex.mod(n)
+        val span = window.coerceIn(1, n)
+        val windows = (n + span - 1) / span
+        var remaining = maxCount
         var moved = 0L
-        while (moved < maxCount && !MoveDeadline.expired()) {
-            var placed = false
-            for (k in targets.indices) {
-                val idx = (index + k) % targets.size
-                val target = targets[idx]
-                val got = moveItems(
-                    source, target.storage, { true }, 1L, cursor,
-                    { stack -> filter(stack) && (target.accept?.invoke(stack) ?: true) },
-                ) { stack, n -> onMoved?.invoke(target, stack, n) }
-                if (got > 0L) {
-                    moved += got
-                    index = (idx + 1) % targets.size
-                    placed = true
-                    break
+        val refused = ArrayList<ItemStack>()
+        val dead = BooleanArray(n)
+        val caps = LongArray(n)
+        val plan = LongArray(n)
+        val put = LongArray(n)
+        val sameAs: (ItemStack) -> (ItemStack) -> Boolean = { t -> { s -> ItemStack.isSameItemSameComponents(s, t) } }
+
+        stacks@ while (remaining > 0L && !MoveDeadline.expired()) {
+            val stack = peekStack(source, { s -> filter(s) && refused.none { ItemStack.isSameItemSameComponents(it, s) } }, cursor)
+                ?: break
+            val template = stack.copyWithCount(1)
+            val count = minOf(stack.count.toLong(), remaining)
+
+            // Ask the window what it takes. Move the window on while it takes nothing.
+            var any = false
+            var tried = 0
+            while (!any && tried < windows) {
+                java.util.Arrays.fill(caps, 0L)
+                for (k in 0 until span) {
+                    val idx = (index + k) % n
+                    if (dead[idx]) continue
+                    if (k > 0 && MoveDeadline.expired()) break
+                    val target = targets[idx]
+                    val storage = target.storage
+                    if (storage == null) { dead[idx] = true; continue }
+                    if (target.accept?.invoke(stack) == false) continue
+                    val cap = simulateInsertStack(storage, stack.copyWithCount(count.toInt()))
+                    if (cap > 0L) { caps[idx] = cap; any = true }
+                }
+                if (any) break
+                tried++
+                if (MoveDeadline.expired()) break@stacks
+                index = (index + span) % n
+            }
+            if (!any) { refused.add(template); continue }
+
+            // Even shares within the window, extras to the first in rotation order.
+            java.util.Arrays.fill(plan, 0L)
+            val order = IntArray(span) { (index + it) % n }
+            val lastReceiver = RoundRobinSpread.plan(count, order, caps, plan)
+
+            // Commit: every share placed, then one take for the lot.
+            java.util.Arrays.fill(put, 0L)
+            var inserted = 0L
+            for (k in 0 until span) {
+                val idx = (index + k) % n
+                if (plan[idx] <= 0L) continue
+                val storage = targets[idx].storage ?: continue
+                val got = insertItemStack(storage, stack.copyWithCount(plan[idx].toInt())).toLong()
+                put[idx] = got
+                inserted += got
+            }
+            if (inserted <= 0L) { refused.add(template); continue }
+            var taken = 0L
+            for (s in extractStacksByPredicate(source, sameAs(template), inserted, cursor)) taken += s.count.toLong()
+            var surplus = inserted - taken
+            if (surplus > 0L) {
+                for (k in span - 1 downTo 0) {
+                    if (surplus <= 0L) break
+                    val idx = (index + k) % n
+                    if (put[idx] <= 0L) continue
+                    val storage = targets[idx].storage ?: continue
+                    var back = 0L
+                    for (s in extractStacksByPredicate(storage, sameAs(template), minOf(surplus, put[idx]))) back += s.count.toLong()
+                    put[idx] -= back
+                    surplus -= back
+                }
+                if (surplus > 0L) {
+                    STORAGE_LOGGER.warn(
+                        "Round robin: source gave back {} fewer {} than its targets received and the surplus could not be recovered, stopping this run",
+                        surplus, template.item,
+                    )
                 }
             }
-            if (!placed) break
+            if (onMoved != null) {
+                for (k in 0 until span) {
+                    val idx = (index + k) % n
+                    if (put[idx] > 0L) onMoved(targets[idx], template, put[idx])
+                }
+            }
+            moved += taken
+            remaining -= taken
+            if (lastReceiver >= 0) index = (lastReceiver + 1) % n
+            if (inserted != taken) break
         }
         return RoundRobinResult(moved, index)
     }
@@ -463,10 +551,52 @@ data class ItemInfo(
 /** One destination of [StorageService.moveItemsRoundRobin]. [tag] rides along to the
  *  move callback so the caller can tell which destination took what. */
 class RoundRobinTarget(
-    val storage: ItemStorageHandle,
+    /** Resolved on first use, so a target the spread never reaches costs nothing. */
+    private val resolve: () -> ItemStorageHandle?,
     val accept: ((ItemStack) -> Boolean)?,
     val tag: Any? = null,
-)
+) {
+    private var resolved = false
+    private var handle: ItemStorageHandle? = null
+
+    val storage: ItemStorageHandle?
+        get() {
+            if (!resolved) {
+                handle = resolve()
+                resolved = true
+            }
+            return handle
+        }
+}
+
+/** The split behind [StorageService.moveItemsRoundRobin], kept free of any backend so it
+ *  can be tested on its own. */
+object RoundRobinSpread {
+    /** Shares [count] over the targets in [order], each capped by its entry in [caps], as
+     *  evenly as the caps allow: every pass gives each target with room the same amount,
+     *  and the last few go one each to the first targets in order. Shares land in [plan].
+     *  Returns the last target that received anything, or -1 for none. */
+    fun plan(count: Long, order: IntArray, caps: LongArray, plan: LongArray): Int {
+        var left = count
+        var lastReceiver = -1
+        while (left > 0L) {
+            var live = 0
+            for (idx in order) if (plan[idx] < caps[idx]) live++
+            if (live == 0) break
+            val per = maxOf(1L, left / live)
+            for (idx in order) {
+                if (left <= 0L) break
+                val room = caps[idx] - plan[idx]
+                if (room <= 0L) continue
+                val give = minOf(per, room, left)
+                plan[idx] += give
+                left -= give
+                lastReceiver = idx
+            }
+        }
+        return lastReceiver
+    }
+}
 
 /** Result of [StorageService.moveItemsRoundRobin]. */
 data class RoundRobinResult(val moved: Long, val nextIndex: Int)
