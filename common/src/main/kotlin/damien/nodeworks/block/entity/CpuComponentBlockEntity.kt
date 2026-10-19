@@ -76,5 +76,14 @@ interface CpuComponentBlockEntity {
             if (CraftingCoreBlockEntity.pushingStates) return
             findConnectedCores(level, pos).forEach { it.requestRecalculate() }
         }
+
+        /** Call from a block's `affectNeighborsAfterRemoval`. Runs for every removal,
+         *  not just a player's, so an explosion, a Breaker or a command taking a block
+         *  whose only link was a connecting coolant still reaches the Core. The block is
+         *  already gone, the walk starts from its neighbors. */
+        fun requestRescanOnRemove(level: Level, pos: BlockPos) {
+            if (level.isClientSide) return
+            findConnectedCores(level, pos).forEach { it.requestRecalculate() }
+        }
     }
 }

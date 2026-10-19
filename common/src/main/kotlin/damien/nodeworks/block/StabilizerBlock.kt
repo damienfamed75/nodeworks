@@ -31,6 +31,11 @@ class StabilizerBlock(properties: Properties) : BaseEntityBlock(properties) {
         return StabilizerBlockEntity(pos, state)
     }
 
+    override fun affectNeighborsAfterRemoval(state: BlockState, level: net.minecraft.server.level.ServerLevel, pos: BlockPos, movedByPiston: Boolean) {
+        super.affectNeighborsAfterRemoval(state, level, pos, movedByPiston)
+        CpuComponentBlockEntity.requestRescanOnRemove(level, pos)
+    }
+
     override fun onPlace(state: BlockState, level: Level, pos: BlockPos, oldState: BlockState, movedByPiston: Boolean) {
         super.onPlace(state, level, pos, oldState, movedByPiston)
         CpuComponentBlockEntity.requestRescanOnPlace(level, pos, state, oldState)

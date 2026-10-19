@@ -588,9 +588,10 @@ class CraftingCoreBlockEntity(
                 if (neighbor in visited) continue
                 visited.add(neighbor)
                 val entity = level?.getBlockEntity(neighbor)
-                if (entity == null) {
-                    // Connecting coolant carries the structure without contributing to it.
-                    // Its cooling is still counted by the adjacency pass below.
+                if (entity !is CraftingCoreBlockEntity && entity !is CpuComponentBlockEntity) {
+                    // Connecting coolant carries the structure without contributing to it,
+                    // whether or not the block has an entity of its own. Its cooling is
+                    // still counted by the adjacency pass below.
                     val lvl = level
                     if (lvl != null && CpuComponentBlockEntity.connectsThrough(lvl, neighbor)) {
                         queue.add(neighbor)

@@ -119,6 +119,11 @@ class CraftingCoreBlock(properties: Properties) : BaseEntityBlock(properties) {
         return InteractionResult.SUCCESS
     }
 
+    override fun affectNeighborsAfterRemoval(state: BlockState, level: net.minecraft.server.level.ServerLevel, pos: BlockPos, movedByPiston: Boolean) {
+        super.affectNeighborsAfterRemoval(state, level, pos, movedByPiston)
+        damien.nodeworks.block.entity.CpuComponentBlockEntity.requestRescanOnRemove(level, pos)
+    }
+
     override fun neighborChanged(state: BlockState, level: Level, pos: BlockPos, neighborBlock: Block, orientation: net.minecraft.world.level.redstone.Orientation?, movedByPiston: Boolean) {
         super.neighborChanged(state, level, pos, neighborBlock, orientation, movedByPiston)
         if (CraftingCoreBlockEntity.pushingStates) return
