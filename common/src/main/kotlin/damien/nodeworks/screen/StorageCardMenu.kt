@@ -21,7 +21,7 @@ class StorageCardMenu(
     initialFilterRules: List<String> = emptyList(),
     val initialName: String = "",
     initialCustomSide: damien.nodeworks.screen.widget.RelDir? = null,
-) : AbstractContainerMenu(ModScreenHandlers.STORAGE_CARD, syncId) {
+) : AbstractContainerMenu(ModScreenHandlers.STORAGE_CARD, syncId), FilterRuleMenu {
 
     val priorityData = SimpleContainerData(1)
     val channelData = SimpleContainerData(1)
@@ -154,7 +154,7 @@ class StorageCardMenu(
         dirty = true
     }
 
-    fun replaceFilterRules(rules: List<String>) {
+    override fun replaceFilterRules(rules: List<String>) {
         val cleaned = rules
             .map { it.trim() }
             .filter { it.isNotEmpty() }

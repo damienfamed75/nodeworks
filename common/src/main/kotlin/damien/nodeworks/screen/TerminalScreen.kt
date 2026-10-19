@@ -1144,6 +1144,7 @@ class TerminalScreen(
                 "storage" -> 0xFFAA83E0.toInt()
                 "redstone" -> 0xFFF53B68.toInt()
                 "observer" -> 0xFFFFEB3B.toInt()
+                "transfer" -> 0xFF4FA3FF.toInt()
                 "energy" -> 0xFFFFD700.toInt()
                 "fluid" -> 0xFF55AAFF.toInt()
                 else -> 0xFFAAAAAA.toInt()

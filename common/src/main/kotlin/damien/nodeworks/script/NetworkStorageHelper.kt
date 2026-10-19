@@ -568,6 +568,10 @@ object NetworkStorageHelper {
         stack: net.minecraft.world.item.ItemStack,
         cache: NetworkInventoryCache? = null,
         channel: ChannelFilter = ChannelFilter.All,
+        /** Storage Cards facing any of these positions are skipped, so a device feeding
+         *  the network from an inventory never puts items back into it, or into another
+         *  inventory the caller has reasons to keep out of the move. */
+        exclude: Set<BlockPos> = emptySet(),
     ): Int {
         var remaining = stack.count
         val itemId = damien.nodeworks.platform.ItemIdCache.get(stack.item)
@@ -579,6 +583,7 @@ object NetworkStorageHelper {
             if (remaining <= 0) break
             if (!channel.matches(card.channel)) continue
             val cap = card.capability as? damien.nodeworks.card.StorageSideCapability
+            if (exclude.isNotEmpty() && cap != null && cap.adjacentPos in exclude) continue
             if (cap != null && !cap.acceptsItem(stack, registries)) continue
             val storage = getStorage(level, card) ?: continue
             val inserted = PlatformServices.storage.insertItemStack(storage, stack.copyWithCount(remaining))

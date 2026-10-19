@@ -1,6 +1,7 @@
 package damien.nodeworks.render
 
 import com.mojang.blaze3d.vertex.PoseStack
+import damien.nodeworks.block.NodeBlock
 import damien.nodeworks.block.entity.NodeBlockEntity
 import damien.nodeworks.network.NetworkSettingsRegistry
 import net.minecraft.client.renderer.SubmitNodeCollector
@@ -31,8 +32,20 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
         val r: Int, val g: Int, val b: Int
     )
 
+    /** What a Node's card beams resolve to, kept on the entity until its
+     *  [NodeBlockEntity.renderCacheVersion] moves. */
+    private class CachedLinks(
+        val version: Int,
+        val links: List<CardLink>,
+        /** False for a Node with no cards whose only neighbours are other Nodes. Such a
+         *  Node carries the network but shows nothing, so a solid block of empty Nodes
+         *  draws no beams at all. The Node body still tints with the network colour. */
+        val drawThroughBeam: Boolean,
+    )
+
     class NodeRenderState : ConnectableRenderState() {
         var cardLinks: List<CardLink> = emptyList()
+        var drawThroughBeam: Boolean = true
         /** Faces touching another Connectable. The shared [PipeLaserBeam] uses
          *  these to draw one half-beam per direction from the Node centre, so
          *  the laser flows through the Node like a junction pipe. */
@@ -58,7 +71,8 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
             "io" to Triple(0x83, 0xE0, 0x86), // green
             "storage" to Triple(0xAA, 0x83, 0xE0), // purple
             "redstone" to Triple(0xF5, 0x3B, 0x68), // red
-            "observer" to Triple(0xFF, 0xEB, 0x3B)  // yellow
+            "observer" to Triple(0xFF, 0xEB, 0x3B), // yellow
+            "transfer" to Triple(0x4F, 0xA3, 0xFF)  // blue
         )
 
         /** Fixed 3×3 grid offsets for the 9 card slots on a node face, centered around 0. */
@@ -81,9 +95,14 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
         cameraPosition: Vec3,
         breakProgress: ModelFeatureRenderer.CrumblingOverlay?,
     ) {
+        // The blockstate already tracks which faces touch another Connectable, so no
+        // block entity lookups are needed for the through-beam directions.
         state.pipeDirections.clear()
-        for (dir in Direction.entries) {
-            if (blockEntity.faceRole(dir) == NodeBlockEntity.FaceRole.PIPE) state.pipeDirections.add(dir)
+        val bs = blockEntity.blockState
+        if (bs.block is NodeBlock) {
+            for (dir in Direction.entries) {
+                if (bs.getValue(NodeBlock.propFor(dir))) state.pipeDirections.add(dir)
+            }
         }
         val settings = NetworkSettingsRegistry.get(blockEntity.networkId)
         state.networkColor = settings.color
@@ -93,30 +112,50 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
 
         val level = blockEntity.level
         if (level != null) {
-            val links = mutableListOf<CardLink>()
-            for (side in Direction.entries) {
-                // PIPE-roled faces (touching a Connectable) consume the face for
-                // network connectivity, no cards are valid there. Skip card beams
-                // on those faces.
-                if (blockEntity.faceRole(side) == NodeBlockEntity.FaceRole.PIPE) continue
-                val adjacentPos = blockEntity.blockPos.relative(side)
-                val targetIsAir = level.getBlockState(adjacentPos).isAir
-                for (card in blockEntity.getCards(side)) {
-                    val (r, g, b) = CARD_COLORS[card.card.cardType] ?: continue
-                    // Inventory cards (io / storage) and the redstone card need a real
-                    // adjacent block to do anything, so we don't draw their beam into
-                    // empty air. Observer cards are useful pointed at air, they fire
-                    // onChange when something *appears* there, so their beam stays
-                    // visible regardless. Future card types that should beam into air
-                    // get added here.
-                    if (targetIsAir && card.card.cardType != "observer") continue
-                    links.add(CardLink(side, card.slotIndex, r, g, b))
-                }
-            }
-            state.cardLinks = links
+            val cached = (blockEntity.renderCache as? CachedLinks)
+                ?.takeIf { it.version == blockEntity.renderCacheVersion }
+                ?: buildCache(blockEntity, level, state.pipeDirections).also { blockEntity.renderCache = it }
+            state.cardLinks = cached.links
+            state.drawThroughBeam = cached.drawThroughBeam
         } else {
             state.cardLinks = emptyList()
+            state.drawThroughBeam = true
         }
+    }
+
+    /** The per-frame scan this used to do, now run only when the entity says its
+     *  cards or neighbours changed. */
+    private fun buildCache(
+        blockEntity: NodeBlockEntity,
+        level: net.minecraft.world.level.Level,
+        pipeDirections: Set<Direction>,
+    ): CachedLinks {
+        val links = mutableListOf<CardLink>()
+        var hasCards = false
+        for (side in Direction.entries) {
+            // PIPE-roled faces (touching a Connectable) consume the face for
+            // network connectivity, no cards are valid there. Skip card beams
+            // on those faces.
+            if (blockEntity.faceRole(side) == NodeBlockEntity.FaceRole.PIPE) continue
+            val adjacentPos = blockEntity.blockPos.relative(side)
+            val targetIsAir = level.getBlockState(adjacentPos).isAir
+            for (card in blockEntity.getCards(side)) {
+                hasCards = true
+                val (r, g, b) = CARD_COLORS[card.card.cardType] ?: continue
+                // Inventory cards (io / storage) and the redstone card need a real
+                // adjacent block to do anything, so we don't draw their beam into
+                // empty air. Observer cards are useful pointed at air, they fire
+                // onChange when something *appears* there, so their beam stays
+                // visible regardless. Future card types that should beam into air
+                // get added here.
+                if (targetIsAir && card.card.cardType != "observer") continue
+                links.add(CardLink(side, card.slotIndex, r, g, b))
+            }
+        }
+        val touchesNonNode = pipeDirections.any { dir ->
+            level.getBlockState(blockEntity.blockPos.relative(dir)).block !is NodeBlock
+        }
+        return CachedLinks(blockEntity.renderCacheVersion, links, hasCards || touchesNonNode)
     }
 
     override fun submitConnectable(
@@ -130,11 +169,11 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
         // Always emit the centre core, the Node body's wireframe geometry
         // makes even a straight-through configuration's beam-meeting-point
         // visible enough to want masking.
-        if (state.hasNetwork) {
+        if (state.hasNetwork && state.drawThroughBeam) {
             PipeLaserBeam.submit(
                 poseStack, submitNodeCollector, state.pos, camera.pos,
                 state.pipeDirections, state.networkColor,
-                laserMode = state.laserMode,
+                laserMode = PipeLaserBeam.lodMode(state.laserMode, state.pos, camera.pos),
                 drawCenterCore = state.pipeDirections.isNotEmpty(),
                 isMicro = state.isMicro,
             )

@@ -258,6 +258,7 @@ open class NodeBlock(properties: Properties) : BaseEntityBlock(properties), Simp
         private fun cardTypeColor(type: String): Int = when (type) {
             "io" -> 0x83E086        // green
             "storage" -> 0xAA83E0   // purple
+            "transfer" -> 0x4FA3FF  // blue
             "redstone" -> 0xF53B68  // red
             "observer" -> 0xFFEB3B  // yellow
             else -> 0xFFFFFF        // unrecognised cards fall back to white
@@ -287,6 +288,8 @@ open class NodeBlock(properties: Properties) : BaseEntityBlock(properties), Simp
         if (state.getValue(WATERLOGGED)) {
             ticks.scheduleTick(pos, Fluids.WATER, Fluids.WATER.getTickDelay(level))
         }
+        // A neighbour changed, so the renderer's cached beams may be stale.
+        (level.getBlockEntity(pos) as? NodeBlockEntity)?.invalidateRenderCache()
         return rebuildState(level, pos, state)
     }
 
@@ -312,6 +315,18 @@ open class NodeBlock(properties: Properties) : BaseEntityBlock(properties), Simp
     override fun newBlockEntity(pos: BlockPos, state: BlockState): BlockEntity {
         return NodeBlockEntity(pos, state)
     }
+
+    /** Server only. The entity returns at once unless it holds a Transfer Card, so the
+     *  cost for every other Node is one boolean per tick. */
+    override fun <T : BlockEntity> getTicker(
+        level: Level,
+        state: BlockState,
+        blockEntityType: net.minecraft.world.level.block.entity.BlockEntityType<T>,
+    ): net.minecraft.world.level.block.entity.BlockEntityTicker<T>? =
+        if (level.isClientSide) null
+        else net.minecraft.world.level.block.entity.BlockEntityTicker { lvl, _, _, be ->
+            if (be is NodeBlockEntity && lvl is net.minecraft.server.level.ServerLevel) be.serverTick(lvl)
+        }
 
     override fun useWithoutItem(
         state: BlockState,

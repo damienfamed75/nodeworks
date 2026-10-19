@@ -56,7 +56,10 @@ object NetworkDiscovery {
             if (cached != null && cached.tick == level.gameTime) return cached.snapshot
         }
 
-        val snapshot = doDiscoverNetwork(level, startPos)
+        val raw = doDiscoverNetwork(level, startPos)
+        // With no controller the subgraph's id is whatever propagation lent it from
+        // its anchor, which is what the caller carries.
+        val snapshot = if (raw.controller == null && callerId != null) raw.copy(anchorId = callerId) else raw
 
         // Key by the resolved controller id (stable across conflicts) so all
         // BEs on the network converge on the same cache entry regardless of
@@ -409,13 +412,16 @@ data class NetworkSnapshot(
     val cpus: List<CpuSnapshot> = emptyList(),
     val processingApis: List<ProcessingApiSnapshot> = emptyList(),
     val terminalPositions: List<BlockPos> = emptyList(),
-    val controller: ControllerSnapshot? = null
+    val controller: ControllerSnapshot? = null,
+    /** Id lent by a micro or Node anchor when there is no controller. */
+    val anchorId: UUID? = null,
 ) {
-    /** Whether this network has a controller and is online. */
-    val isOnline: Boolean get() = controller != null
+    /** Scripting, autocrafting and the world-acting devices need this. Storage,
+     *  terminals and item movement only need [networkId]. */
+    val hasController: Boolean get() = controller != null
 
-    /** The network's UUID, or null if no controller. */
-    val networkId: UUID? get() = controller?.networkId
+    /** The network's UUID: the controller's, else the anchor's, else null. */
+    val networkId: UUID? get() = controller?.networkId ?: anchorId
 
     /** All cards on this network, flattened across every node and every side.
      *  Lazy because the snapshot is shared across many lookups (especially

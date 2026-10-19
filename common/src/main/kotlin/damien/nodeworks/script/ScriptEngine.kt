@@ -502,8 +502,13 @@ class ScriptEngine(
         // side. If our entry node no longer claims a network the terminal is effectively
         // disconnected, running further would silently operate against a stale snapshot
         // so stop with a clear error and let auto-run restart us once reconnected.
+        // A Node-anchored network keeps an id with no controller, so the id alone no
+        // longer proves one is reachable. The walk is cached per tick, asked once a
+        // second so a pulled controller stops the script within that second.
         val entry = level.getBlockEntity(networkEntryNode) as? damien.nodeworks.network.Connectable
-        if (entry?.networkId == null) {
+        val controllerGone = entry?.networkId == null ||
+            (tickCount % 20L == 0L && !NetworkDiscovery.discoverNetwork(level, networkEntryNode).hasController)
+        if (controllerGone) {
             logCallback("Network disconnected, no controller reachable.", true)
             stop()
             return

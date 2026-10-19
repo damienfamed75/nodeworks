@@ -82,7 +82,8 @@ class DiagnosticScreen(
         private val CARD_COLORS = mapOf(
             "io" to 0xFF83E086.toInt(),
             "storage" to 0xFFAA83E0.toInt(),
-            "redstone" to 0xFFF53B68.toInt()
+            "redstone" to 0xFFF53B68.toInt(),
+            "transfer" to 0xFF4FA3FF.toInt()
         )
 
         private val BLOCK_LABELS = mapOf(

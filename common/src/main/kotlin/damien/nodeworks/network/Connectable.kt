@@ -77,6 +77,18 @@ interface Connectable {
      *  subgraphs whose only anchor is a micro-anchor. */
     fun isMicroNetworkAnchor(): Boolean = false
 
+    /** Anchor of last resort. When a subgraph has neither a Network Controller nor a
+     *  micro-network anchor, the lowest-positioned Connectable that returns true lends
+     *  its [fallbackAnchorId] as the network id, so Storage Cards, Transfer Cards, the
+     *  Inventory Terminal and the chests work with no controller placed. Features that
+     *  need a controller check for one on the snapshot, never for an id. Nodes opt in. */
+    fun isFallbackAnchor(): Boolean = false
+
+    /** Stable UUID lent by a fallback anchor, persisted so it survives reloads. Null
+     *  for everything that is not one. */
+    val fallbackAnchorId: UUID?
+        get() = null
+
     /** Whether the network-discovery BFS may visit this Connectable more than
      *  once when arriving through different faces. Default false: a regular
      *  Connectable is symmetric across faces and the second visit would be

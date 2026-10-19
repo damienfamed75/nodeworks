@@ -109,6 +109,7 @@ class CardProgrammerItem(properties: Properties) : Item(properties) {
                 "io" -> 0x22C55E        // green
                 "redstone" -> 0xEF4444  // red
                 "inventory" -> 0x3B82F6 // blue
+                "transfer" -> 0x4FA3FF  // blue
                 else -> -1
             }
         }

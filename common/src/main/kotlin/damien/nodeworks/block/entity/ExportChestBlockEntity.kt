@@ -196,17 +196,10 @@ class ExportChestBlockEntity(
         pushWireless(level)
     }
 
-    /** Whitelist match: any rule hits = accept. Component-aware so
-     *  `minecraft:potion[components]` rules narrow to the variant rather
-     *  than every potion sharing the itemId. */
-    private fun matchesFilter(stack: ItemStack, registries: net.minecraft.core.HolderLookup.Provider): Boolean =
-        filterRules.any { rule -> CardHandle.matchesFilter(stack, rule, registries) }
-
-    /** Walk the network's storage cards, extract filter-matched items into
-     *  our buffer until either the buffer is full or the network is empty of
-     *  matches. Filter syntax matches the Storage Card filter (delegates to
-     *  [CardHandle.matchesFilter]) so the script-side autocomplete and the
-     *  Export Chest's UI both speak the same dialect. */
+    /** Pull filter-matched items from the network's storage cards into our buffer
+     *  until either the buffer is full or the network is empty of matches. Filter
+     *  syntax matches the Storage Card filter so the script-side autocomplete and
+     *  the Export Chest's UI both speak the same dialect. */
     private fun pullFromNetwork(level: ServerLevel) {
         // Match Import Chest: use this BE's own networkId rather than
         // `snapshot.controller != null` so micro-networks (Processing
@@ -222,38 +215,10 @@ class ExportChestBlockEntity(
         if (totalSpace <= 0L) return
 
         val cache = damien.nodeworks.script.NetworkInventoryCache.getOrCreate(level, worldPosition)
-        val registries = level.registryAccess()
-        // Stack-aware predicate so `id[components]` rules pick the right
-        // variant out of a mixed-component chest.
-        val filterPred: (ItemStack) -> Boolean = { stack -> matchesFilter(stack, registries) }
-        var changed = false
-        for (card in NetworkStorageHelper.getStorageCards(snapshot)) {
-            if (totalSpace <= 0L) break
-            if (!channel.matches(card.channel)) continue
-            val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
-            val extracted = PlatformServices.storage.extractStacksByPredicate(storage, filterPred, totalSpace)
-            for (stack in extracted) {
-                if (stack.isEmpty) continue
-                val placed = placeIntoBuffer(stack)
-                if (placed > 0) {
-                    val itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM
-                        .getKey(stack.item)?.toString()
-                    if (itemId != null) cache?.onExtracted(
-                        itemId, !stack.componentsPatch.isEmpty, placed.toLong(), stack.componentsPatch,
-                    )
-                    totalSpace -= placed
-                    changed = true
-                }
-                if (placed < stack.count) {
-                    // Buffer filled mid-stack, return the leftover to the network.
-                    // Rare since we pre-computed totalSpace, but covers edge cases
-                    // where slot stack-size is tighter than the texture's 64-default.
-                    val leftover = stack.copyWithCount(stack.count - placed)
-                    NetworkStorageHelper.insertItemStack(level, snapshot, leftover, cache)
-                }
-            }
-        }
-        if (changed) setChanged()
+        val placed = damien.nodeworks.script.NetworkTransfer.pull(
+            level, snapshot, cache, filterRules, channel, totalSpace, sink = ::placeIntoBuffer,
+        )
+        if (placed > 0L) setChanged()
     }
 
     /** Try to merge [stack] into the buffer: stack-merge first, then fill empty

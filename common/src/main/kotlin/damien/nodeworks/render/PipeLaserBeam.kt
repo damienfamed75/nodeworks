@@ -36,6 +36,20 @@ import kotlin.math.sqrt
  */
 object PipeLaserBeam {
 
+    /** Fancy beams farther than this from the camera draw as Fast. Up close nothing
+     *  changes, and a large build stops paying for prisms and glows nobody can make
+     *  out at that range. */
+    const val FANCY_RANGE_SQ = 16.0 * 16.0
+
+    fun lodMode(laserMode: Int, blockPos: BlockPos, cameraPos: Vec3): Int {
+        if (laserMode != NetworkSettingsRegistry.LASER_MODE_FANCY) return laserMode
+        val dx = blockPos.x + 0.5 - cameraPos.x
+        val dy = blockPos.y + 0.5 - cameraPos.y
+        val dz = blockPos.z + 0.5 - cameraPos.z
+        return if (dx * dx + dy * dy + dz * dz > FANCY_RANGE_SQ) NetworkSettingsRegistry.LASER_MODE_FAST
+            else NetworkSettingsRegistry.LASER_MODE_FANCY
+    }
+
     private val LASER_TEXTURE: Identifier =
         Identifier.fromNamespaceAndPath("nodeworks", "textures/block/laser_trail.png")
     /** Hazard-stripe texture for micro-networks anchored by Processing

@@ -13,6 +13,7 @@ import damien.nodeworks.screen.BreakerScreen
 import damien.nodeworks.screen.ExportChestScreen
 import damien.nodeworks.screen.PlacerScreen
 import damien.nodeworks.screen.StorageCardScreen
+import damien.nodeworks.screen.TransferCardScreen
 import damien.nodeworks.screen.UserScreen
 import mezz.jei.api.IModPlugin
 import mezz.jei.api.JeiPlugin
@@ -106,6 +107,10 @@ class NodeworksJeiPlugin : IModPlugin {
         registration.addGhostIngredientHandler(
             StorageCardScreen::class.java,
             StorageCardGhostHandler()
+        )
+        registration.addGhostIngredientHandler(
+            TransferCardScreen::class.java,
+            TransferCardGhostHandler()
         )
         registration.addGhostIngredientHandler(
             ExportChestScreen::class.java,
@@ -581,8 +586,36 @@ class StorageCardGhostHandler : IGhostIngredientHandler<StorageCardScreen> {
     }
 }
 
+/** The Transfer Card's rule panel takes JEI drops the same way the Storage Card's does. */
+class TransferCardGhostHandler : IGhostIngredientHandler<TransferCardScreen> {
+
+    override fun <I : Any> getTargetsTyped(
+        gui: TransferCardScreen,
+        ingredient: ITypedIngredient<I>,
+        doStart: Boolean
+    ): List<IGhostIngredientHandler.Target<I>> {
+        if (ingredient.ingredient !is ItemStack) return emptyList()
+        val rect = gui.rulePanelDropArea() ?: return emptyList()
+        return listOf(TransferCardRuleTarget(gui, Rect2i(rect[0], rect[1], rect[2], rect[3])))
+    }
+
+    override fun onComplete() {}
+
+    private class TransferCardRuleTarget<I : Any>(
+        private val gui: TransferCardScreen,
+        private val area: Rect2i,
+    ) : IGhostIngredientHandler.Target<I> {
+        override fun getArea(): Rect2i = area
+        override fun accept(ingredient: I) {
+            if (ingredient !is ItemStack || ingredient.isEmpty) return
+            gui.acceptGhostStack(ingredient)
+        }
+    }
+}
+
 /**
- * Mirror of [StorageCardGhostHandler] for the Export Chest GUI: a single drop
+ * Mirror of [StorageCardGhostHandler] for the Export Chest GUI
+: a single drop
  * area covering the rule list panel appends the dropped item's id as a new
  * filter rule.
  */

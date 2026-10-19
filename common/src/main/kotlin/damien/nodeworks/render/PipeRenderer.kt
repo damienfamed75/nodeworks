@@ -70,7 +70,7 @@ class PipeRenderer(context: BlockEntityRendererProvider.Context) :
         val drawCenterCore = state.directions.isNotEmpty() && !isStraightLine(state.directions)
         PipeLaserBeam.submit(
             poseStack, submitNodeCollector, state.pos, camera.pos,
-            state.directions, state.color, state.laserMode, drawCenterCore,
+            state.directions, state.color, PipeLaserBeam.lodMode(state.laserMode, state.pos, camera.pos), drawCenterCore,
             isMicro = state.isMicro,
         )
     }

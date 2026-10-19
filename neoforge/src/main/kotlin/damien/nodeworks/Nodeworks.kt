@@ -282,6 +282,14 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                     damien.nodeworks.screen.StorageCardMenu.clientFactory(syncId, inv, data)
                 }
             )
+            ModScreenHandlers.TRANSFER_CARD = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "transfer_card")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = damien.nodeworks.screen.TransferCardOpenData.STREAM_CODEC.decode(buf)
+                    damien.nodeworks.screen.TransferCardMenu.clientFactory(syncId, inv, data)
+                }
+            )
             ModScreenHandlers.CARD_SETTINGS = Registry.register(
                 BuiltInRegistries.MENU,
                 ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "card_settings")),
@@ -677,7 +685,7 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
             context.enqueueWork {
                 val player = context.player()
                 val menu = player.containerMenu
-                if (menu is damien.nodeworks.screen.StorageCardMenu && menu.containerId == payload.containerId) {
+                if (menu is damien.nodeworks.screen.FilterRuleMenu && menu.containerId == payload.containerId) {
                     menu.replaceFilterRules(payload.rules)
                 }
             }
@@ -778,6 +786,8 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                     is damien.nodeworks.screen.StorageCardMenu ->
                         if (menu.containerId == payload.containerId) menu.setCardName(player, payload.name)
                     is damien.nodeworks.screen.CardSettingsMenu ->
+                        if (menu.containerId == payload.containerId) menu.setCardName(player, payload.name)
+                    is damien.nodeworks.screen.TransferCardMenu ->
                         if (menu.containerId == payload.containerId) menu.setCardName(player, payload.name)
                 }
             }

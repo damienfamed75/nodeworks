@@ -426,10 +426,13 @@ object NodeConnectionHelper {
         //   - A boundary Connectable visited from BOTH sides in this BFS, which
         //     is the same parent / micro mix detected from the boundary's POV.
         //   - Otherwise, the network's id is the Controller's permanentId when
-        //     present, else the lowest-positioned micro-anchor's permanentId.
+        //     present, else the lowest-positioned micro-anchor's permanentId, else
+        //     the lowest-positioned fallback anchor's (a Node's) permanentId, so a
+        //     network with no controller still has an identity.
         var foundId: java.util.UUID? = null
         var controllerCount = 0
         var microAnchor: Connectable? = null
+        var fallbackAnchor: Connectable? = null
         var boundaryDoubleVisited = false
         for ((pos, faces) in visited) {
             val entity = getConnectable(level, pos) ?: continue
@@ -451,12 +454,18 @@ object NodeConnectionHelper {
                 if (microAnchor == null || pos.asLong() < microAnchor.getBlockPos().asLong()) {
                     microAnchor = entity
                 }
+            } else if (entity.isFallbackAnchor()) {
+                if (fallbackAnchor == null || pos.asLong() < fallbackAnchor.getBlockPos().asLong()) {
+                    fallbackAnchor = entity
+                }
             }
         }
         if (boundaryDoubleVisited || (controllerCount >= 1 && microAnchor != null)) {
             foundId = null
         } else if (controllerCount == 0 && microAnchor != null) {
             foundId = microAnchor.microNetworkPermanentId
+        } else if (controllerCount == 0 && fallbackAnchor != null) {
+            foundId = fallbackAnchor.fallbackAnchorId
         }
 
         // Apply the new id. For PHandler, the destination field depends on which

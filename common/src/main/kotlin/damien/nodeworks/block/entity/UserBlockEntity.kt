@@ -272,7 +272,7 @@ class UserBlockEntity(
                 fp(lvl).setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY)
                 if (!heldStack.isEmpty) {
                     val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(lvl, worldPosition)
-                    val inserted = if (snapshot.controller != null) {
+                    val inserted = if (snapshot.networkId != null) {
                         NetworkStorageHelper.insertItemStack(lvl, snapshot, heldStack)
                     } else 0
                     if (inserted < heldStack.count) {
@@ -438,7 +438,7 @@ class UserBlockEntity(
     private fun scheduleUse(level: ServerLevel, fireMode: UseMode): Boolean {
         if (level.gameTime - lastUseTick < USE_COOLDOWN_TICKS) return false
         val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, worldPosition)
-        if (snapshot.controller == null) return false
+        if (snapshot.networkId == null) return false
 
         // Empty filter -> bare-hand use. No item to reserve, no deny-list
         // applies (no item to deny). The apex dispatches through the empty-
@@ -565,7 +565,7 @@ class UserBlockEntity(
     private fun finishRetract(level: ServerLevel) {
         if (!heldStack.isEmpty) {
             val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, worldPosition)
-            val inserted = if (snapshot.controller != null) {
+            val inserted = if (snapshot.networkId != null) {
                 NetworkStorageHelper.insertItemStack(level, snapshot, heldStack)
             } else 0
             if (inserted < heldStack.count) {
@@ -601,7 +601,7 @@ class UserBlockEntity(
             if (slot == mainHandSlot) continue
             val stack = inv.getItem(slot)
             if (stack.isEmpty) continue
-            val inserted = if (snapshot.controller != null) {
+            val inserted = if (snapshot.networkId != null) {
                 NetworkStorageHelper.insertItemStack(level, snapshot, stack)
             } else 0
             val leftover = stack.count - inserted

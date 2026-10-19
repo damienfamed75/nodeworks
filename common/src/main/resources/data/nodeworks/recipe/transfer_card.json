@@ -1,0 +1,12 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    "nodeworks:blank_card",
+    "minecraft:cyan_dye",
+    "minecraft:dropper"
+  ],
+  "result": {
+    "id": "nodeworks:transfer_card",
+    "count": 1
+  }
+}

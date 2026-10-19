@@ -575,6 +575,9 @@ object NeoForgeClientSetup {
         event.register(ModScreenHandlers.STORAGE_CARD) { menu, inventory, title ->
             damien.nodeworks.screen.StorageCardScreen(menu, inventory, title)
         }
+        event.register(ModScreenHandlers.TRANSFER_CARD) { menu, inventory, title ->
+            damien.nodeworks.screen.TransferCardScreen(menu, inventory, title)
+        }
         event.register(ModScreenHandlers.CARD_SETTINGS) { menu, inventory, title ->
             damien.nodeworks.screen.CardSettingsScreen(menu, inventory, title)
         }

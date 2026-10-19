@@ -138,9 +138,9 @@ class BreakerBlockEntity(
      *  started so [BreakerHandle.break] can return a live builder vs a no-op. */
     fun startBreak(level: ServerLevel, handler: LuaFunction? = null): Boolean {
         if (isBreaking) return false
-        // Inert without a Controller-rooted network, mirrors Placer / User.
+        // Inert off the network, mirrors Placer / User. A Node-anchored network counts.
         val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, worldPosition)
-        if (snapshot.controller == null) return false
+        if (snapshot.networkId == null) return false
         val target = targetPos
         val state = level.getBlockState(target)
         val duration = computeBreakDuration(level, target, state) ?: return false

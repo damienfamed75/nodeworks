@@ -104,10 +104,12 @@ class ImportChestBlockEntity(
             markDirtyAndSync()
         }
 
-    var roundRobinIndex: Int = 0
-        // No setChanged on increment so the per-tick index update doesn't constantly
-        // mark the chunk dirty. Persisted on save anyway.
-        private set
+    // The mover advances the cursor without setChanged so the per-tick index update
+    // doesn't constantly mark the chunk dirty. Persisted on save anyway.
+    private val roundRobinCursor = damien.nodeworks.script.NetworkTransfer.RoundRobinCursor()
+    var roundRobinIndex: Int
+        get() = roundRobinCursor.index
+        private set(value) { roundRobinCursor.index = value }
 
     var tickInterval: Int = DEFAULT_TICK_INTERVAL
         set(value) {
@@ -185,87 +187,12 @@ class ImportChestBlockEntity(
         // the helpers tolerate that.
         val cache = damien.nodeworks.script.NetworkInventoryCache.getOrCreate(level, worldPosition)
 
-        if (roundRobin) {
-            insertRoundRobin(level, snapshot, cache)
-        } else {
-            insertDefault(level, snapshot, cache)
-        }
-    }
-
-    /** Default insertion: walk slots, push each via [NetworkStorageHelper.insertItemStack]
-     *  which uses storage-card priority order. */
-    private fun insertDefault(
-        level: ServerLevel,
-        snapshot: damien.nodeworks.network.NetworkSnapshot,
-        cache: damien.nodeworks.script.NetworkInventoryCache?,
-    ) {
+        val cursor = if (roundRobin) roundRobinCursor else null
         var changed = false
         for (i in 0 until SLOT_COUNT) {
             val stack = items[i]
             if (stack.isEmpty) continue
-            val moved = NetworkStorageHelper.insertItemStack(level, snapshot, stack, cache, channel)
-            if (moved > 0) {
-                stack.shrink(moved)
-                changed = true
-            }
-        }
-        if (changed) setChanged()
-    }
-
-    /** Round-robin insertion: each item that moves advances the destination
-     *  index, so items spread across storage cards instead of stacking on the
-     *  highest-priority card. Cards that don't accept (channel mismatch,
-     *  filter rejection, full storage) are skipped without consuming a step
-     *  AND the cursor advances PAST the accepting card via `idx + 1`, so a
-     *  denying card sitting at the cursor's position can't park the rotation
-     *  on a perpetual no-op. (This is the same defensive pattern the
-     *  Importer preset and BlockProcessingHandler use.) */
-    private fun insertRoundRobin(
-        level: ServerLevel,
-        snapshot: damien.nodeworks.network.NetworkSnapshot,
-        cache: damien.nodeworks.script.NetworkInventoryCache?,
-    ) {
-        val cards = NetworkStorageHelper.getStorageCards(snapshot)
-            .filter { channel.matches(it.channel) }
-        if (cards.isEmpty()) return
-
-        var changed = false
-        for (slot in 0 until SLOT_COUNT) {
-            val stack = items[slot]
-            if (stack.isEmpty) continue
-            // Move ONE item per round-robin step. The chest's tick cadence (default 20)
-            // bounds the cost, and per-item distribution matches `:roundrobin(1)`.
-            while (!stack.isEmpty) {
-                val startIndex = roundRobinIndex.mod(cards.size)
-                var placed = false
-                val registries = level.registryAccess()
-                for (offset in 0 until cards.size) {
-                    val idx = (startIndex + offset).mod(cards.size)
-                    val card = cards[idx]
-                    val cap = card.capability as? damien.nodeworks.card.StorageSideCapability
-                    val itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM
-                        .getKey(stack.item)?.toString()
-                    // Read before shrinking, an emptied stack reports an empty patch.
-                    val patch = stack.componentsPatch
-                    val hasData = !patch.isEmpty
-                    if (cap != null && !cap.acceptsItem(stack, registries)) continue
-                    val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
-                    val moved = damien.nodeworks.platform.PlatformServices.storage.insertItemStack(
-                        storage, stack.copyWithCount(1)
-                    )
-                    if (moved > 0) {
-                        stack.shrink(moved)
-                        if (itemId != null) {
-                            cache?.onInserted(itemId, hasData, moved.toLong(), patch)
-                        }
-                        roundRobinIndex = (idx + 1).mod(cards.size)
-                        changed = true
-                        placed = true
-                        break
-                    }
-                }
-                if (!placed) break // network has no room for this item, leave in chest
-            }
+            if (damien.nodeworks.script.NetworkTransfer.insert(level, snapshot, cache, stack, channel, cursor) > 0) changed = true
         }
         if (changed) setChanged()
     }

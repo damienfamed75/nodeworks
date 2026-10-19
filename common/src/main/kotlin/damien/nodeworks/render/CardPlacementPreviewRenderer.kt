@@ -41,6 +41,7 @@ object CardPlacementPreviewRenderer {
         "storage" to 0xAA83E0,
         "redstone" to 0xF53B68,
         "observer" to 0xFFEB3B,
+        "transfer" to 0x4FA3FF,
     )
     private const val DEFAULT_COLOR = 0xFFFFFF
 

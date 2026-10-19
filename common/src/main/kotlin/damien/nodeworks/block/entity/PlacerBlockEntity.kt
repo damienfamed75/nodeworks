@@ -199,7 +199,7 @@ class PlacerBlockEntity(
      *  to match what was deducted). */
     private fun tryAutoPlace(level: ServerLevel): Boolean {
         val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, worldPosition)
-        if (snapshot.controller == null) return false
+        if (snapshot.networkId == null) return false
 
         // Empty filter is the "any block" sentinel, matchesFilter handles `*` as
         // "match everything" natively. Stack-aware so `id[components]` rules

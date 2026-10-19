@@ -3,6 +3,10 @@
     size: [9, 6, 1],
     data: [
         {
+            pos: [3, 0, 0],
+            state: "minecraft:stripped_dark_oak_log{axis:y}"
+        },
+        {
             pos: [4, 0, 0],
             state: "minecraft:air"
         },
@@ -110,7 +114,7 @@
         },
         {
             pos: [2, 0, 0],
-            state: "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
+            state: "nodeworks:node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
                 Items: [
@@ -120,82 +124,83 @@
                         id: "nodeworks:storage_card"
                     }
                 ],
-                networkId: "906f56e9-6c81-4454-a1fb-1cc39b1c7fd6",
-                id: "nodeworks:node"
-            }
-        },
-        {
-            pos: [3, 0, 0],
-            state: "nodeworks:network_controller",
-            nbt: {
-                chunkLoadingEnabled: 0b,
-                components: {},
-                laserEnabled: 1b,
-                networkName: "",
-                handlerRetryLimit: 50,
-                networkId: "906f56e9-6c81-4454-a1fb-1cc39b1c7fd6",
-                nodeGlowStyle: 0,
-                id: "nodeworks:network_controller",
-                permanentId: "906f56e9-6c81-4454-a1fb-1cc39b1c7fd6",
-                laserMode: 0,
-                redstoneMode: 0,
-                networkColor: 3721971
+                networkId: "4f71f0f9-8d50-4201-878e-8f8aaaad3164",
+                id: "nodeworks:node",
+                permanentId: "4f71f0f9-8d50-4201-878e-8f8aaaad3164"
             }
         },
         {
             pos: [5, 0, 0],
-            state: "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false}",
+            state: "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
                 Items: [
                     {
+                        components: {
+                            "minecraft:custom_data": {
+                                channel: 14
+                            }
+                        },
                         count: 1,
                         Slot: 9b,
                         id: "nodeworks:storage_card"
                     }
                 ],
-                networkId: "1ae6468f-bcdc-4d4e-8215-7f2738e05e83",
-                id: "nodeworks:node"
+                networkId: "1d0f9b0f-42f0-468b-82d8-b66ee0772e47",
+                id: "nodeworks:node",
+                permanentId: "1d0f9b0f-42f0-468b-82d8-b66ee0772e47"
             }
         },
         {
             pos: [6, 0, 0],
-            state: "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            state: "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}",
             nbt: {
                 components: {},
                 Items: [
                     {
+                        components: {
+                            "minecraft:custom_data": {
+                                channel: 14
+                            }
+                        },
                         count: 1,
                         Slot: 9b,
                         id: "nodeworks:storage_card"
                     }
                 ],
-                networkId: "1ae6468f-bcdc-4d4e-8215-7f2738e05e83",
-                id: "nodeworks:node"
+                networkId: "1d0f9b0f-42f0-468b-82d8-b66ee0772e47",
+                id: "nodeworks:node",
+                permanentId: "445f3519-7b31-4b6e-8ded-fec484e56202"
             }
         },
         {
             pos: [7, 0, 0],
-            state: "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            state: "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}",
             nbt: {
                 components: {},
                 Items: [
                     {
+                        components: {
+                            "minecraft:custom_data": {
+                                channel: 14
+                            }
+                        },
                         count: 1,
                         Slot: 9b,
                         id: "nodeworks:storage_card"
                     }
                 ],
-                networkId: "1ae6468f-bcdc-4d4e-8215-7f2738e05e83",
-                id: "nodeworks:node"
+                networkId: "1d0f9b0f-42f0-468b-82d8-b66ee0772e47",
+                id: "nodeworks:node",
+                permanentId: "f1ba3ed5-0c2e-4a95-9d23-86322ce4cbab"
             }
         },
         {
             pos: [8, 0, 0],
-            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:true}",
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:true,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "1ae6468f-bcdc-4d4e-8215-7f2738e05e83",
+                networkId: "1d0f9b0f-42f0-468b-82d8-b66ee0772e47",
                 id: "nodeworks:pipe"
             }
         },
@@ -213,13 +218,19 @@
             state: "minecraft:chest{facing:north,type:right,waterlogged:false}",
             nbt: {
                 components: {},
-                Items: [],
+                Items: [
+                    {
+                        count: 4,
+                        Slot: 0b,
+                        id: "minecraft:iron_ingot"
+                    }
+                ],
                 id: "minecraft:chest"
             }
         },
         {
             pos: [2, 1, 0],
-            state: "nodeworks:node{pipe_down:true,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false}",
+            state: "nodeworks:node{pipe_down:true,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
                 Items: [
@@ -229,8 +240,9 @@
                         id: "nodeworks:storage_card"
                     }
                 ],
-                networkId: "906f56e9-6c81-4454-a1fb-1cc39b1c7fd6",
-                id: "nodeworks:node"
+                networkId: "4f71f0f9-8d50-4201-878e-8f8aaaad3164",
+                id: "nodeworks:node",
+                permanentId: "f342d8c3-e1be-4d83-bae4-2c20345d4147"
             }
         },
         {
@@ -239,7 +251,7 @@
             nbt: {
                 components: {},
                 layoutIndex: 0,
-                networkId: "906f56e9-6c81-4454-a1fb-1cc39b1c7fd6",
+                networkId: "4f71f0f9-8d50-4201-878e-8f8aaaad3164",
                 id: "nodeworks:inventory_terminal"
             }
         },
@@ -249,24 +261,24 @@
             nbt: {
                 lit_total_time: 1600,
                 components: {},
-                cooking_time_spent: 0,
+                cooking_time_spent: 18,
                 cooking_total_time: 200,
                 Items: [
                     {
-                        count: 63,
-                        Slot: 1b,
-                        id: "minecraft:coal"
+                        count: 14,
+                        Slot: 0b,
+                        id: "minecraft:raw_iron"
                     },
                     {
-                        count: 1,
-                        Slot: 2b,
-                        id: "minecraft:iron_ingot"
+                        count: 62,
+                        Slot: 1b,
+                        id: "minecraft:coal"
                     }
                 ],
                 id: "minecraft:furnace",
-                lit_time_remaining: 889,
+                lit_time_remaining: 1183,
                 RecipesUsed: {
-                    "minecraft:iron_ingot_from_smelting_raw_iron": 1
+                    "minecraft:iron_ingot_from_smelting_raw_iron": 3
                 }
             }
         },
@@ -276,24 +288,24 @@
             nbt: {
                 lit_total_time: 1600,
                 components: {},
-                cooking_time_spent: 0,
+                cooking_time_spent: 18,
                 cooking_total_time: 200,
                 Items: [
                     {
-                        count: 63,
-                        Slot: 1b,
-                        id: "minecraft:coal"
+                        count: 30,
+                        Slot: 0b,
+                        id: "minecraft:raw_iron"
                     },
                     {
-                        count: 1,
-                        Slot: 2b,
-                        id: "minecraft:iron_ingot"
+                        count: 62,
+                        Slot: 1b,
+                        id: "minecraft:coal"
                     }
                 ],
                 id: "minecraft:furnace",
-                lit_time_remaining: 857,
+                lit_time_remaining: 843,
                 RecipesUsed: {
-                    "minecraft:iron_ingot_from_smelting_raw_iron": 1
+                    "minecraft:iron_ingot_from_smelting_raw_iron": 3
                 }
             }
         },
@@ -303,22 +315,22 @@
             nbt: {
                 lit_total_time: 1600,
                 components: {},
-                cooking_time_spent: 0,
+                cooking_time_spent: 35,
                 cooking_total_time: 200,
                 Items: [
                     {
-                        count: 63,
-                        Slot: 1b,
-                        id: "minecraft:coal"
+                        count: 16,
+                        Slot: 0b,
+                        id: "minecraft:raw_iron"
                     },
                     {
-                        count: 1,
-                        Slot: 2b,
-                        id: "minecraft:iron_ingot"
+                        count: 62,
+                        Slot: 1b,
+                        id: "minecraft:coal"
                     }
                 ],
                 id: "minecraft:furnace",
-                lit_time_remaining: 823,
+                lit_time_remaining: 1314,
                 RecipesUsed: {
                     "minecraft:iron_ingot_from_smelting_raw_iron": 1
                 }
@@ -326,232 +338,242 @@
         },
         {
             pos: [8, 1, 0],
-            state: "nodeworks:network_controller",
+            state: "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
             nbt: {
-                chunkLoadingEnabled: 0b,
                 components: {},
-                laserEnabled: 1b,
-                networkName: "",
-                handlerRetryLimit: 50,
-                networkId: "1ae6468f-bcdc-4d4e-8215-7f2738e05e83",
-                nodeGlowStyle: 0,
-                id: "nodeworks:network_controller",
-                permanentId: "1ae6468f-bcdc-4d4e-8215-7f2738e05e83",
-                laserMode: 0,
-                redstoneMode: 0,
-                networkColor: 4715813
+                networkId: "1d0f9b0f-42f0-468b-82d8-b66ee0772e47",
+                id: "nodeworks:pipe"
             }
         },
         {
             pos: [3, 2, 0],
-            state: "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
+            state: "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "906f56e9-6c81-4454-a1fb-1cc39b1c7fd6",
+                networkId: "4f71f0f9-8d50-4201-878e-8f8aaaad3164",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [5, 2, 0],
-            state: "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
+            state: "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
                 Items: [
                     {
+                        components: {
+                            "minecraft:custom_data": {
+                                channel: 11
+                            }
+                        },
                         count: 1,
                         Slot: 0b,
                         id: "nodeworks:storage_card"
                     }
                 ],
-                networkId: "1ae6468f-bcdc-4d4e-8215-7f2738e05e83",
-                id: "nodeworks:node"
+                networkId: "1d0f9b0f-42f0-468b-82d8-b66ee0772e47",
+                id: "nodeworks:node",
+                permanentId: "a4d81041-5faf-49cb-ba9f-ddd610805ad0"
             }
         },
         {
             pos: [6, 2, 0],
-            state: "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            state: "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}",
             nbt: {
                 components: {},
                 Items: [
                     {
+                        components: {
+                            "minecraft:custom_data": {
+                                channel: 11
+                            }
+                        },
                         count: 1,
                         Slot: 0b,
                         id: "nodeworks:storage_card"
                     }
                 ],
-                networkId: "1ae6468f-bcdc-4d4e-8215-7f2738e05e83",
-                id: "nodeworks:node"
+                networkId: "1d0f9b0f-42f0-468b-82d8-b66ee0772e47",
+                id: "nodeworks:node",
+                permanentId: "bc1fa998-bf90-4886-954f-19f791d42943"
             }
         },
         {
             pos: [7, 2, 0],
-            state: "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:true}",
+            state: "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:true,waterlogged:false}",
             nbt: {
                 components: {},
                 Items: [
                     {
+                        components: {
+                            "minecraft:custom_data": {
+                                channel: 11
+                            }
+                        },
                         count: 1,
                         Slot: 0b,
                         id: "nodeworks:storage_card"
                     }
                 ],
-                networkId: "1ae6468f-bcdc-4d4e-8215-7f2738e05e83",
-                id: "nodeworks:node"
+                networkId: "1d0f9b0f-42f0-468b-82d8-b66ee0772e47",
+                id: "nodeworks:node",
+                permanentId: "8ebb61ab-c854-4763-8086-9649d2a6607a"
             }
         },
         {
             pos: [8, 2, 0],
-            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "1ae6468f-bcdc-4d4e-8215-7f2738e05e83",
+                networkId: "1d0f9b0f-42f0-468b-82d8-b66ee0772e47",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [3, 3, 0],
-            state: "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
+            state: "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "906f56e9-6c81-4454-a1fb-1cc39b1c7fd6",
+                networkId: "4f71f0f9-8d50-4201-878e-8f8aaaad3164",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [5, 3, 0],
-            state: "nodeworks:export_chest{facing:north}",
+            state: "nodeworks:export_chest{facing:north,waterlogged:false}",
             nbt: {
-                filterRules: "",
+                filterRules: "*",
                 components: {},
                 pushFace: "UP",
                 tickInterval: 20,
-                channel: -1,
+                channel: 14,
                 Items: [],
-                networkId: "1ae6468f-bcdc-4d4e-8215-7f2738e05e83",
+                networkId: "1d0f9b0f-42f0-468b-82d8-b66ee0772e47",
                 id: "nodeworks:export_chest",
                 redstoneMode: 0
             }
         },
         {
             pos: [7, 3, 0],
-            state: "nodeworks:import_chest{facing:north}",
+            state: "nodeworks:import_chest{facing:north,waterlogged:false}",
             nbt: {
                 components: {},
                 tickInterval: 20,
                 channel: -1,
                 Items: [],
-                networkId: "1ae6468f-bcdc-4d4e-8215-7f2738e05e83",
-                roundRobinIndex: 0,
+                networkId: "1d0f9b0f-42f0-468b-82d8-b66ee0772e47",
+                roundRobinIndex: 3,
                 id: "nodeworks:import_chest",
                 redstoneMode: 0,
-                roundRobin: 0b
+                roundRobin: 1b
             }
         },
         {
             pos: [3, 4, 0],
-            state: "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
+            state: "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "906f56e9-6c81-4454-a1fb-1cc39b1c7fd6",
+                networkId: "4f71f0f9-8d50-4201-878e-8f8aaaad3164",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [5, 4, 0],
-            state: "nodeworks:import_chest{facing:north}",
+            state: "nodeworks:import_chest{facing:north,waterlogged:false}",
             nbt: {
                 components: {},
                 tickInterval: 20,
                 channel: -1,
                 Items: [],
-                networkId: "906f56e9-6c81-4454-a1fb-1cc39b1c7fd6",
+                networkId: "4f71f0f9-8d50-4201-878e-8f8aaaad3164",
                 roundRobinIndex: 0,
                 id: "nodeworks:import_chest",
-                redstoneMode: 0,
+                redstoneMode: 1,
                 roundRobin: 0b
             }
         },
         {
             pos: [7, 4, 0],
-            state: "nodeworks:export_chest{facing:north}",
+            state: "nodeworks:export_chest{facing:north,waterlogged:false}",
             nbt: {
-                filterRules: "",
+                filterRules: "#c:raw_materials",
                 components: {},
                 pushFace: "DOWN",
                 tickInterval: 20,
                 channel: -1,
                 Items: [],
-                networkId: "906f56e9-6c81-4454-a1fb-1cc39b1c7fd6",
+                networkId: "4f71f0f9-8d50-4201-878e-8f8aaaad3164",
                 id: "nodeworks:export_chest",
                 redstoneMode: 0
             }
         },
         {
             pos: [3, 5, 0],
-            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false}",
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "906f56e9-6c81-4454-a1fb-1cc39b1c7fd6",
+                networkId: "4f71f0f9-8d50-4201-878e-8f8aaaad3164",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [4, 5, 0],
-            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "906f56e9-6c81-4454-a1fb-1cc39b1c7fd6",
+                networkId: "4f71f0f9-8d50-4201-878e-8f8aaaad3164",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [5, 5, 0],
-            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "906f56e9-6c81-4454-a1fb-1cc39b1c7fd6",
+                networkId: "4f71f0f9-8d50-4201-878e-8f8aaaad3164",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [6, 5, 0],
-            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "906f56e9-6c81-4454-a1fb-1cc39b1c7fd6",
+                networkId: "4f71f0f9-8d50-4201-878e-8f8aaaad3164",
                 id: "nodeworks:pipe"
             }
         },
         {
             pos: [7, 5, 0],
-            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}",
             nbt: {
                 components: {},
-                networkId: "906f56e9-6c81-4454-a1fb-1cc39b1c7fd6",
+                networkId: "4f71f0f9-8d50-4201-878e-8f8aaaad3164",
                 id: "nodeworks:pipe"
             }
         }
     ],
     entities: [],
     palette: [
+        "minecraft:stripped_dark_oak_log{axis:y}",
         "minecraft:air",
         "minecraft:chest{facing:north,type:left,waterlogged:false}",
         "minecraft:chest{facing:north,type:right,waterlogged:false}",
-        "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
-        "nodeworks:network_controller",
-        "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false}",
-        "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
-        "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:true}",
-        "nodeworks:node{pipe_down:true,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false}",
+        "nodeworks:node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
+        "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false,waterlogged:false}",
+        "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:true,waterlogged:false}",
+        "nodeworks:node{pipe_down:true,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false,waterlogged:false}",
         "nodeworks:inventory_terminal{facing:north}",
         "minecraft:furnace{facing:north,lit:true}",
-        "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
-        "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:true}",
-        "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
-        "nodeworks:export_chest{facing:north}",
-        "nodeworks:import_chest{facing:north}",
-        "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false}",
-        "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
-        "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}"
+        "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
+        "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
+        "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:true,waterlogged:false}",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}",
+        "nodeworks:export_chest{facing:north,waterlogged:false}",
+        "nodeworks:import_chest{facing:north,waterlogged:false}",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false,waterlogged:false}",
+        "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}"
     ]
 }

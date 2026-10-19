@@ -38,6 +38,22 @@ object CardChannel {
         return runCatching { DyeColor.byId(id) }.getOrDefault(DyeColor.WHITE)
     }
 
+    /** True when a channel has been written to [stack]. The Transfer Card reads an
+     *  unset channel as "any Storage Card", which [get]'s white default can't express. */
+    fun isSet(stack: ItemStack): Boolean {
+        val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return false
+        return customData.copyTag().contains(KEY)
+    }
+
+    /** Remove the channel from [stack], leaving every other custom-data key. */
+    fun clear(stack: ItemStack) {
+        val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return
+        val tag = customData.copyTag()
+        if (!tag.contains(KEY)) return
+        tag.remove(KEY)
+        stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag))
+    }
+
     /** Write the channel onto [stack], preserving every other custom-data key.
      *  Round-trips through [CustomData.of] so the component update fires the usual
      *  ItemStack change hooks (tooltip refresh, network sync, etc.).
