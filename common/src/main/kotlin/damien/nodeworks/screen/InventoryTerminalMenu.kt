@@ -436,6 +436,40 @@ class InventoryTerminalMenu(
         }
     }
 
+    /** The stored variant a clicked cell's [patch] refers to.
+     *
+     *  The fast [damien.nodeworks.script.BufferKey.componentsHash] compares the live
+     *  component objects, and a component that holds a registry tag set (the `tool`
+     *  component's mineable rules, for one) compares that set by object identity. A
+     *  tool built in-session by a mod can carry a tag set that is a different object
+     *  from the one the client's click decodes to, with identical NBT, so the cell
+     *  shows the tool but every pull misses. Reloading the world re-decodes the stored
+     *  tool and the mismatch vanishes, which is why such items only work after a
+     *  reload.
+     *
+     *  When the cache has no entry under [patch]'s own hash, the cache's other
+     *  variants of the item are compared by their encoded NBT and the matching stored
+     *  patch is returned, so count and extract then run their normal fast path
+     *  against the hash the stored stacks really have. Nothing in storage is scanned,
+     *  the request is encoded once, and the common path is a single map lookup. */
+    private fun resolveVariant(
+        c: NetworkInventoryCache?,
+        lvl: ServerLevel,
+        itemId: String,
+        patch: net.minecraft.core.component.DataComponentPatch,
+    ): net.minecraft.core.component.DataComponentPatch {
+        if (c == null || patch.size() == 0) return patch
+        val key = damien.nodeworks.script.BufferKey.Key(itemId, damien.nodeworks.script.BufferKey.componentsHash(patch))
+        if (c.variantCount(key) > 0L) return patch
+        val candidates = c.variantsOf(itemId)
+        if (candidates.isEmpty()) return patch
+        val registries = lvl.registryAccess()
+        val want = damien.nodeworks.script.BufferKey.stableComponentsHash(patch, registries)
+        return candidates.firstOrNull {
+            damien.nodeworks.script.BufferKey.stableComponentsHash(it.componentsPatch, registries) == want
+        }?.componentsPatch ?: patch
+    }
+
     private fun disconnect() {
         if (source == null && snapshot == null && cache == null) return
         source = null
@@ -724,7 +758,7 @@ class InventoryTerminalMenu(
         val snap = snapshot ?: return
         val c = cache
         // The clicked cell is one exact variant, a plain cell only takes plain stacks.
-        val variantPatch = componentsPatch
+        val variantPatch = resolveVariant(c, lvl, itemId, componentsPatch)
 
         when (action) {
             0, 2, 3, 7 -> {
