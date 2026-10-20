@@ -32,8 +32,20 @@ class MultiProcessingHandlerBlockEntity(
 
     override val singleBinding: Boolean get() = false
 
-    /** Many sets share one machine bank, so one job runs through it at a time. */
-    override val exclusiveUse: Boolean get() = true
+    /** Off by default: many sets share one machine bank, so one job runs through it at a
+     *  time and co-processors spend their threads elsewhere. On, when the bank has room
+     *  for several recipes at once, jobs dispatch into it freely and the machine room
+     *  probe keeps them apart. */
+    var parallel: Boolean = false
+        private set
+
+    override val exclusiveUse: Boolean get() = !parallel
+
+    fun setParallel(enabled: Boolean) {
+        if (parallel == enabled) return
+        parallel = enabled
+        markDirtyAndSync()
+    }
 
     override fun boundSetNames(): List<String> = boundSets.toList()
 
@@ -73,6 +85,7 @@ class MultiProcessingHandlerBlockEntity(
     override fun saveAdditional(output: ValueOutput) {
         super.saveAdditional(output)
         output.putInt("inputChannel", inputChannel.id)
+        output.putBoolean("parallel", parallel)
         output.putInt("boundCount", boundSets.size)
         for ((index, name) in boundSets.withIndex()) output.putString("bound$index", name)
     }
@@ -81,6 +94,7 @@ class MultiProcessingHandlerBlockEntity(
         super.loadAdditional(input)
         inputChannel = runCatching { DyeColor.byId(input.getIntOr("inputChannel", DyeColor.BLUE.id)) }
             .getOrDefault(DyeColor.BLUE)
+        parallel = input.getBooleanOr("parallel", false)
         boundSets.clear()
         // Bounded by the config's ceiling, not its current value, so lowering the
         // cap later never silently drops sets a world already bound.

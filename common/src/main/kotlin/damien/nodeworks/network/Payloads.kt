@@ -1250,6 +1250,20 @@ data class MultiProcessingHandlerSetChannelPayload(val pos: BlockPos, val output
     override fun type() = TYPE
 }
 
+/** C2S: let several recipes run through a Multi-Processing Handler at once, or one at a time. */
+data class MultiProcessingHandlerSetParallelPayload(val pos: BlockPos, val enabled: Boolean) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<MultiProcessingHandlerSetParallelPayload> = CustomPacketPayload.Type(
+            Identifier.fromNamespaceAndPath("nodeworks", "mphandler_set_parallel")
+        )
+        val CODEC: StreamCodec<FriendlyByteBuf, MultiProcessingHandlerSetParallelPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeBlockPos(p.pos); buf.writeBoolean(p.enabled) },
+            { buf -> MultiProcessingHandlerSetParallelPayload(buf.readBlockPos(), buf.readBoolean()) }
+        )
+    }
+    override fun type() = TYPE
+}
+
 /** S2C: refresh the open Multi-Processing Handler menu after a change. */
 data class MultiProcessingHandlerStateSyncPayload(val data: damien.nodeworks.screen.MultiProcessingHandlerOpenData) : CustomPacketPayload {
     companion object {

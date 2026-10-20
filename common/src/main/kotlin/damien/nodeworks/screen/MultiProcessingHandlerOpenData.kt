@@ -23,8 +23,9 @@ data class MultiProcessingHandlerOpenData(
     data class SetEntry(val set: ProcessingHandlerOpenData.AvailableSet, val claimedBy: String)
 
     companion object {
-        /** Sets one open packet carries. A network with more shows the first this many. */
-        const val MAX_SETS_ON_WIRE = 512
+        /** Sets one open packet carries, each with up to twelve item stacks. A network
+         *  with more shows the first this many. */
+        const val MAX_SETS_ON_WIRE = 256
         const val MAX_CLAIM = 64
 
         val STREAM_CODEC: StreamCodec<FriendlyByteBuf, MultiProcessingHandlerOpenData> =

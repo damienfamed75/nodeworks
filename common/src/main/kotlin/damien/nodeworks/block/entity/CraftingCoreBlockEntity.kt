@@ -448,6 +448,19 @@ class CraftingCoreBlockEntity(
         return true
     }
 
+    /** Puts [count] of [stack] in the buffer whatever its capacity, and tells the player
+     *  why. For a job's outputs that are already out of the machine and have nowhere
+     *  else to go. The buffer is over its limit until a Deliver or the plan's end drains
+     *  it, and the craft carries on. */
+    fun addToBufferForced(stack: net.minecraft.world.item.ItemStack, count: Long, networkFull: Boolean) {
+        bufferState.insertForced(stack, count)
+        lastFailureReason = if (networkFull)
+            "Buffer over capacity and the network has no space for outputs. Holding them until storage frees up."
+        else
+            "Buffer over capacity. Holding outputs until space frees up."
+        setChanged()
+    }
+
     /** Component-aware buffer insertion. Use this when the caller has a real
      *  [ItemStack] (e.g. just pulled from storage) so durability / potion
      *  contents / dye colour / enchantments live in the buffer template

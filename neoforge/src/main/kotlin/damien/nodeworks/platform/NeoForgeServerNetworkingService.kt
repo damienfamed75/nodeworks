@@ -15,6 +15,18 @@ class NeoForgeServerNetworkingService : ServerNetworkingService {
         }
     }
 
+    override fun sendToPlayersTracking(
+        level: ServerLevel,
+        positions: Collection<net.minecraft.core.BlockPos>,
+        payload: CustomPacketPayload,
+    ) {
+        val chunks = HashSet<net.minecraft.world.level.ChunkPos>()
+        for (pos in positions) chunks.add(net.minecraft.world.level.ChunkPos(net.minecraft.core.SectionPos.blockToSectionCoord(pos.x), net.minecraft.core.SectionPos.blockToSectionCoord(pos.z)))
+        val recipients = HashSet<ServerPlayer>()
+        for (chunk in chunks) recipients.addAll(level.chunkSource.chunkMap.getPlayers(chunk, false))
+        for (player in recipients) PacketDistributor.sendToPlayer(player, payload)
+    }
+
     override fun sendToPlayer(
         player: ServerPlayer,
         payload: CustomPacketPayload,

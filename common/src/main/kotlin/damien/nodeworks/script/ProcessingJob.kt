@@ -228,6 +228,15 @@ class ProcessingJob(
      *  stays in the machine and the clocks stand still, so the job carries on unchanged
      *  once the CPU is back. True while holding. */
     private fun holdWhileUnformed(): Boolean {
+        if (cpu.isRemoved) {
+            // The CPU is broken or unloaded. Its poll must not keep pulling outputs into a
+            // buffer nobody will read, so every pull expires next tick and anything it
+            // reserved is let go. A reload resumes from the op state saved with the CPU.
+            val now = scheduler.currentTick
+            deadlineTick = now
+            for (pull in pulls) pull.timeoutAt = now
+            return true
+        }
         if (cpu.isFormed) return false
         if (deadlineTick != Long.MAX_VALUE) deadlineTick++
         for (pull in pulls) if (pull.timeoutAt != Long.MAX_VALUE) pull.timeoutAt++
@@ -236,23 +245,12 @@ class ProcessingJob(
         return true
     }
 
-    /** Puts an output the buffer would not take back where it came from, or failing that
-     *  into network storage, or failing that on the ground at the CPU. Never voided. */
-    private fun returnToMachine(
-        stack: net.minecraft.world.item.ItemStack,
-        source: damien.nodeworks.platform.ItemStorageHandle,
-        network: () -> damien.nodeworks.network.NetworkSnapshot,
-    ) {
-        val back = try { PlatformServices.storage.insertItemStack(source, stack) } catch (_: Exception) { 0 }
-        val left = stack.count - back
-        if (left <= 0) return
-        val rest = stack.copyWithCount(left)
-        val stored = NetworkStorageHelper.insertItemStack(level, network(), rest, null)
-        if (stored < left) {
-            net.minecraft.world.Containers.dropItemStack(
-                level, cpu.blockPos.x + 0.5, cpu.blockPos.y + 1.0, cpu.blockPos.z + 0.5, rest.copyWithCount(left - stored),
-            )
-        }
+    /** Keeps [n] of [stack] with the craft. A buffer that is full takes it anyway and
+     *  the Core tells the player, since the only alternatives are pushing it back into a
+     *  machine or losing it, and neither happens. */
+    private fun holdInBuffer(stack: net.minecraft.world.item.ItemStack, n: Long, networkFull: Boolean) {
+        if (n <= 0L) return
+        if (!cpu.addToBuffer(stack, n)) cpu.addToBufferForced(stack, n, networkFull)
     }
 
     /**
@@ -303,12 +301,6 @@ class ProcessingJob(
             }
             val k = found.sumOf { it.first.count.toLong() }
             if (k <= 0L) continue
-            // A buffer with no room, its storage shrunk under a running craft, must not
-            // swallow the haul. Back it goes, and this poll made no progress on the group.
-            if (!stale && !cpu.bufferState.canAccept(damien.nodeworks.script.BufferKey.of(found.first().first), k)) {
-                for ((stack, source) in found) returnToMachine(stack, source, ::network)
-                continue
-            }
             noteProgress()
 
             // Split this poll's haul. Both sides present: the machine finished
@@ -338,7 +330,7 @@ class ProcessingJob(
                         // into the live network as-is (components preserved).
                         NetworkStorageHelper.insertItemStack(level, network(), part, null)
                     } else {
-                        cpu.addToBuffer(part, kept)
+                        holdInBuffer(part, kept, networkFull = false)
                     }
                 }
                 if (amount > kept) routeOptional(stack.copyWithCount((amount - kept).toInt()), network(), source)
@@ -405,7 +397,7 @@ class ProcessingJob(
             for (stack in stacks) {
                 if (stack.isEmpty) continue
                 val n = stack.count.toLong()
-                cpu.addToBuffer(stack, n)
+                holdInBuffer(stack, n, networkFull = false)
                 req.amount -= n
                 group.optionalSent -= n
             }
@@ -414,25 +406,18 @@ class ProcessingJob(
         return remaining.isEmpty()
     }
 
-    /** Send an optional output to network storage. What storage won't take goes to the CPU
-     *  buffer, and what the buffer won't take goes back into the card it came from, so
-     *  nothing is lost. */
+    /** Send an optional output to network storage. What storage won't take stays with
+     *  the craft in the buffer, over capacity if it must, until the player frees space.
+     *  Never back into the machine, never dropped. */
     private fun routeOptional(
         stack: net.minecraft.world.item.ItemStack,
         snapshot: damien.nodeworks.network.NetworkSnapshot,
-        source: damien.nodeworks.platform.ItemStorageHandle,
+        @Suppress("UNUSED_PARAMETER") source: damien.nodeworks.platform.ItemStorageHandle,
     ) {
         val inserted = NetworkStorageHelper.insertItemStack(level, snapshot, stack, null)
         val left = stack.count - inserted
         if (left <= 0) return
-        val rest = stack.copyWithCount(left)
-        if (cpu.addToBuffer(rest, left.toLong())) return
-        val back = try { PlatformServices.storage.insertItemStack(source, rest) } catch (_: Exception) { 0 }
-        if (back < left) {
-            net.minecraft.world.Containers.dropItemStack(
-                level, cpu.blockPos.x + 0.5, cpu.blockPos.y + 1.0, cpu.blockPos.z + 0.5, rest.copyWithCount(left - back),
-            )
-        }
+        holdInBuffer(stack.copyWithCount(left), left.toLong(), networkFull = true)
     }
 
     /**

@@ -55,6 +55,12 @@ open class NodeBlockEntity(
         /** How often a Transfer Card drops scan cursors for Storage Cards that are gone. */
         private const val CURSOR_PRUNE_TICKS = 1200L
 
+        /** An idle Transfer Card waits up to four times its interval between runs. */
+        private const val MAX_IDLE_BACKOFF_SHIFT = 2
+
+        /** A Node whose network id is gone looks again after this long. */
+        private const val NO_NETWORK_RECHECK_TICKS = 20
+
         private val logger = LoggerFactory.getLogger("nodeworks-node")
         const val SLOTS_PER_SIDE = 9
         const val TOTAL_SLOTS = SLOTS_PER_SIDE * 6 // 54 total
@@ -306,6 +312,10 @@ open class NodeBlockEntity(
     // Per-slot run state. Not persisted: after a reload a card's countdown starts over
     // and its round robin resumes at the first Storage Card, neither of which loses items.
     private val transferCountdown = IntArray(TOTAL_SLOTS)
+    /** Runs in a row that moved nothing. Each one doubles the wait before the next, up
+     *  to [MAX_IDLE_BACKOFF_SHIFT] doublings, so an idle card costs little and a card
+     *  that finds work again is back at its interval at once. */
+    private val transferMisses = IntArray(TOTAL_SLOTS)
     private val transferCursors =
         arrayOfNulls<damien.nodeworks.script.NetworkTransfer.RoundRobinCursor>(TOTAL_SLOTS)
 
@@ -338,10 +348,12 @@ open class NodeBlockEntity(
                 transferConfigs[slot] = null
                 transferCursors[slot] = null
                 transferCountdown[slot] = 0
+                transferMisses[slot] = 0
             }
         }
         hasTransferCards = any
         transferScanCursors.keys.removeIf { (slot, _) -> transferConfigs[slot] == null }
+        java.util.Arrays.fill(transferViews, null)
         val serverLevel = level as? net.minecraft.server.level.ServerLevel ?: return
         // The cards are part of what a network walk reports, so a walk kept for card runs
         // is stale from here on.
@@ -352,25 +364,57 @@ open class NodeBlockEntity(
 
     /** Runs every Transfer Card whose interval has elapsed. Called from
      *  [TransferCardTicker] for Nodes that hold a card, no other Node is ticked. */
-    fun serverTick(level: net.minecraft.server.level.ServerLevel) {
-        if (!hasTransferCards) return
-        if (networkId == null) return
+    /** Advances every card by [elapsed] ticks and runs the ones that are due. Returns how
+     *  many ticks until the next card is due, so the ticker can leave this Node alone
+     *  until then instead of looking it up every tick. */
+    fun serverTick(level: net.minecraft.server.level.ServerLevel, elapsed: Int): Int {
+        if (!hasTransferCards) return Int.MAX_VALUE
+        if (networkId == null) return NO_NETWORK_RECHECK_TICKS
+        var nextDue = Int.MAX_VALUE
         for (slot in 0 until TOTAL_SLOTS) {
             val config = transferConfigs[slot] ?: continue
-            if (++transferCountdown[slot] < config.interval) continue
-            transferCountdown[slot] = 0
-            val side = sideForSlot(slot)
-            if (faceRole(side) != FaceRole.DEVICE) continue
-            runTransferCard(level, slot, side, config)
+            val wait = (config.interval shl minOf(transferMisses[slot], MAX_IDLE_BACKOFF_SHIFT))
+                .coerceAtMost(damien.nodeworks.card.TransferCard.MAX_TICK_INTERVAL)
+            transferCountdown[slot] += elapsed
+            if (transferCountdown[slot] >= wait) {
+                transferCountdown[slot] = 0
+                val side = sideForSlot(slot)
+                if (faceRole(side) == FaceRole.DEVICE) {
+                    if (runTransferCard(level, slot, side, config)) transferMisses[slot] = 0
+                    else transferMisses[slot]++
+                }
+            }
+            val again = (config.interval shl minOf(transferMisses[slot], MAX_IDLE_BACKOFF_SHIFT))
+                .coerceAtMost(damien.nodeworks.card.TransferCard.MAX_TICK_INTERVAL)
+            nextDue = minOf(nextDue, (again - transferCountdown[slot]).coerceAtLeast(1))
         }
+        return nextDue
     }
 
-    private fun runTransferCard(level: net.minecraft.server.level.ServerLevel, slot: Int, side: Direction, config: TransferConfig) {
+    /** The Storage Cards the run in progress may use, with the channel of the one
+     *  facing the card's own inventory when there is one. Built once per network walk
+     *  and exclusion set rather than once per run, since a walk lives up to a second. */
+    private class TransferView(
+        val snapshot: damien.nodeworks.network.NetworkSnapshot,
+        val excluded: Set<BlockPos>,
+        val channel: damien.nodeworks.network.ChannelFilter,
+        val cards: List<damien.nodeworks.network.CardSnapshot>,
+        val counterpart: net.minecraft.world.item.DyeColor?,
+    )
+
+    private val transferViews = arrayOfNulls<TransferView>(TOTAL_SLOTS)
+
+    /** The cards of the run in progress, set by [runTransferCard] for its passes. */
+    private var runCards: List<damien.nodeworks.network.CardSnapshot> = emptyList()
+
+    /** True when the run moved anything. */
+    private fun runTransferCard(level: net.minecraft.server.level.ServerLevel, slot: Int, side: Direction, config: TransferConfig): Boolean {
         val adjacentPos = worldPosition.relative(side)
         val face = config.face?.resolve(side) ?: side.opposite
         val itemTarget = damien.nodeworks.platform.PlatformServices.storage.getItemStorage(level, adjacentPos, face)
         val fluidTarget = damien.nodeworks.platform.PlatformServices.storage.getFluidStorage(level, adjacentPos, face)
-        if (itemTarget == null && fluidTarget == null) return
+        if (itemTarget == null && fluidTarget == null) return false
+        var movedAny = false
         // A walk up to a second old is good enough to move items by, and a card at the
         // shortest interval then costs one walk a second rather than one a tick.
         val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(
@@ -401,11 +445,19 @@ open class NodeBlockEntity(
         ) {
             excluded.add(adjacentPos.relative(net.minecraft.world.level.block.ChestBlock.getConnectedDirection(targetState)))
         }
-        // When a Storage Card faces this inventory too, the terminal cache already counts
-        // what is in it. A move then only shifts items between channels, see [noteMoved].
-        val counterpart = snapshot.storageCards
-            .firstOrNull { (it.capability as? StorageSideCapability)?.adjacentPos in excluded }
-            ?.channel
+        val view = transferViews[slot]?.takeIf {
+            it.snapshot === snapshot && it.channel == config.channel && it.excluded == excluded
+        } ?: TransferView(
+            snapshot, excluded, config.channel,
+            damien.nodeworks.script.NetworkTransfer.destinationCards(snapshot, config.channel, excluded),
+            // When a Storage Card faces this inventory too, the terminal cache already counts
+            // what is in it. A move then only shifts items between channels, see [noteMoved].
+            snapshot.storageCards
+                .firstOrNull { (it.capability as? StorageSideCapability)?.adjacentPos in excluded }
+                ?.channel,
+        ).also { transferViews[slot] = it }
+        runCards = view.cards
+        val counterpart = view.counterpart
         if (level.gameTime % CURSOR_PRUNE_TICKS == 0L) pruneScanCursors(slot, snapshot)
 
         if (itemTarget != null) {
@@ -419,17 +471,22 @@ open class NodeBlockEntity(
                     damien.nodeworks.card.TransferCard.Companion.Mode.EXPORT ->
                         exportToTarget(level, snapshot, cache, counterpart, itemTarget, excluded, config, slot, maxItems, budget, tick)
                 }
-                if (moved > 0L) itemCap.noteItemsMoved(tick, moved)
+                if (moved > 0L) {
+                    itemCap.noteItemsMoved(tick, moved)
+                    movedAny = true
+                }
             }
         }
         if (fluidTarget != null) {
-            when (config.mode) {
+            val movedFluid = when (config.mode) {
                 damien.nodeworks.card.TransferCard.Companion.Mode.IMPORT ->
                     importFluidFromTarget(level, snapshot, fluidTarget, excluded, config, slot, budget, tick)
                 damien.nodeworks.card.TransferCard.Companion.Mode.EXPORT ->
                     exportFluidToTarget(level, snapshot, fluidTarget, excluded, config, budget, tick)
             }
+            if (movedFluid > 0L) movedAny = true
         }
+        return movedAny
     }
 
     /** Drops this slot's scan cursors for Storage Cards that are no longer on the
@@ -446,11 +503,8 @@ open class NodeBlockEntity(
      *  far half of a double chest is excluded by position before this. */
     private fun transferDestinations(
         level: net.minecraft.server.level.ServerLevel,
-        snapshot: damien.nodeworks.network.NetworkSnapshot,
-        exclude: Set<BlockPos>,
-        channel: damien.nodeworks.network.ChannelFilter,
     ): Sequence<Pair<damien.nodeworks.network.CardSnapshot, damien.nodeworks.platform.ItemStorageHandle>> =
-        damien.nodeworks.script.NetworkTransfer.destinationCards(snapshot, channel, exclude).asSequence().mapNotNull { card ->
+        runCards.asSequence().mapNotNull { card ->
             damien.nodeworks.script.NetworkStorageHelper.getStorage(level, card)?.let { card to it }
         }
 
@@ -513,7 +567,7 @@ open class NodeBlockEntity(
         var remaining = maxItems
         var total = 0L
         budget.timedMove(tick, atomic = false) {
-            for ((dest, storage) in transferDestinations(level, snapshot, exclude, config.channel)) {
+            for ((dest, storage) in transferDestinations(level)) {
                 if (remaining <= 0L || damien.nodeworks.platform.MoveDeadline.expired()) break
                 val cap = dest.capability as? StorageSideCapability ?: continue
                 val accept: (ItemStack) -> Boolean = { stack -> ruleMatch(stack) && cap.acceptsItem(stack, registries) }
@@ -548,9 +602,12 @@ open class NodeBlockEntity(
     ): Long {
         val registries = level.registryAccess()
         val ruleMatch = ruleMatcher(config, registries)
-        val cards = damien.nodeworks.script.NetworkTransfer.destinationCards(snapshot, config.channel, exclude)
+        val cards = runCards
         if (cards.isEmpty()) return 0L
-        val targets = cards.map { card ->
+        // Built on demand, so a network of thousands of cards costs a run only the
+        // window it offers items to.
+        val targetAt: (Int) -> damien.nodeworks.platform.RoundRobinTarget = { idx ->
+            val card = cards[idx]
             val cap = card.capability as? StorageSideCapability
             damien.nodeworks.platform.RoundRobinTarget(
                 { damien.nodeworks.script.NetworkStorageHelper.getStorage(level, card) },
@@ -562,7 +619,7 @@ open class NodeBlockEntity(
         var moved = 0L
         budget.timedMove(tick, atomic = false) {
             val result = damien.nodeworks.platform.PlatformServices.storage.moveItemsRoundRobin(
-                source, targets, ruleMatch, maxItems, scanCursor(slot, worldPosition), rr.index,
+                source, cards.size, targetAt, ruleMatch, maxItems, scanCursor(slot, worldPosition), rr.index,
                 damien.nodeworks.card.TransferCard.ROUND_ROBIN_WINDOW,
             ) { target, stack, n ->
                 noteMoved(cache, stack, n, (target.tag as damien.nodeworks.network.CardSnapshot).channel, intoNetwork = true, counterpart)
@@ -595,7 +652,7 @@ open class NodeBlockEntity(
         var remaining = maxItems
         var total = 0L
         budget.timedMove(tick, atomic = false) {
-            for ((card, source) in transferDestinations(level, snapshot, exclude, config.channel)) {
+            for ((card, source) in transferDestinations(level)) {
                 if (remaining <= 0L || damien.nodeworks.platform.MoveDeadline.expired()) break
                 val cap = card.capability as? StorageSideCapability ?: continue
                 val moved = damien.nodeworks.platform.PlatformServices.storage.moveItems(
@@ -629,15 +686,15 @@ open class NodeBlockEntity(
         slot: Int,
         budget: damien.nodeworks.script.NetworkBudget,
         tick: Long,
-    ) {
+    ): Long {
         // No rules means every fluid, as for items.
         val matches: (String) -> Boolean = { fluidId ->
             config.rules.isEmpty() || config.rules.any {
                 damien.nodeworks.script.CardHandle.matchesFilter(fluidId, damien.nodeworks.platform.ResourceKind.FLUID, it)
             }
         }
-        val destinations = damien.nodeworks.script.NetworkTransfer.destinationCards(snapshot, config.channel, exclude)
-        if (destinations.isEmpty()) return
+        val destinations = runCards
+        if (destinations.isEmpty()) return 0L
         var remaining = damien.nodeworks.card.TransferCard.MAX_FLUID_PER_RUN
         // The move fills the destination in simulation before draining anything, so a
         // tank nothing wants is never touched.
@@ -649,6 +706,7 @@ open class NodeBlockEntity(
                 remaining -= damien.nodeworks.platform.PlatformServices.storage.moveFluid(source, storage, matches, allowance)
             }
         }
+        return damien.nodeworks.card.TransferCard.MAX_FLUID_PER_RUN - remaining
     }
 
     private fun exportFluidToTarget(
@@ -659,20 +717,21 @@ open class NodeBlockEntity(
         config: TransferConfig,
         budget: damien.nodeworks.script.NetworkBudget,
         tick: Long,
-    ) {
+    ): Long {
         // No rules pulls nothing, as for items.
-        if (config.rules.isEmpty()) return
+        if (config.rules.isEmpty()) return 0L
         val matches: (String) -> Boolean = { fluidId ->
             config.rules.any { damien.nodeworks.script.CardHandle.matchesFilter(fluidId, damien.nodeworks.platform.ResourceKind.FLUID, it) }
         }
         var remaining = damien.nodeworks.card.TransferCard.MAX_FLUID_PER_RUN
         budget.timedMove(tick, atomic = false) {
-            for (card in damien.nodeworks.script.NetworkTransfer.destinationCards(snapshot, config.channel, exclude)) {
+            for (card in runCards) {
                 if (remaining <= 0L || damien.nodeworks.platform.MoveDeadline.expired()) break
                 val source = damien.nodeworks.script.NetworkStorageHelper.getFluidStorage(level, card) ?: continue
                 remaining -= damien.nodeworks.platform.PlatformServices.storage.moveFluid(source, dest, matches, remaining)
             }
         }
+        return damien.nodeworks.card.TransferCard.MAX_FLUID_PER_RUN - remaining
     }
 
     // --- Side-aware access ---

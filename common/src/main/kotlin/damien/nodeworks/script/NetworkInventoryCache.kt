@@ -279,6 +279,15 @@ class NetworkInventoryCache(
             caches.remove(uuid.toString())
         }
 
+        /** Carries a network's cache over to its new id. When both ids already have one,
+         *  two networks merged, the one under [next] stays and the other is dropped, its
+         *  terminals rebind to the survivor on their next check. */
+        fun renameKey(previous: java.util.UUID, next: java.util.UUID) {
+            if (previous == next) return
+            val moved = caches.remove(previous.toString()) ?: return
+            caches.putIfAbsent(next.toString(), moved)
+        }
+
         /** The cache a network already has, or null. Never creates one, so a device that
          *  only wants to keep an open terminal current does not start a poller on a
          *  network nobody is looking at. */

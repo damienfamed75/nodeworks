@@ -13,6 +13,9 @@ import net.minecraft.world.phys.shapes.CollisionContext
 import java.util.concurrent.ConcurrentHashMap
 
 object NodeConnectionHelper {
+    /** Positions per network id packet, about 32 KB each. */
+    private const val ID_BATCH_PACKET_POSITIONS = 4096
+
 
     // --- Advanced Node link gating: range + line of sight ---
     //
@@ -525,15 +528,23 @@ object NodeConnectionHelper {
         }
         for (otherPos in otherSideRequeues) queueRevalidation(level, otherPos)
 
-        if (changedPositions.isNotEmpty()) {
-            damien.nodeworks.platform.PlatformServices.serverNetworking.sendToPlayersInDimension(
+        // In pieces, so a network of a hundred thousand blocks never builds one packet
+        // past the size a client accepts, and each piece reaches only the players who
+        // can see its blocks.
+        for (piece in changedPositions.chunked(ID_BATCH_PACKET_POSITIONS)) {
+            damien.nodeworks.platform.PlatformServices.serverNetworking.sendToPlayersTracking(
                 level,
-                NetworkIdBatchPayload(foundId, changedPositions),
+                piece,
+                NetworkIdBatchPayload(foundId, piece),
             )
         }
 
         foundId?.let { NetworkDiscovery.invalidate(it) }
         for (id in previousIds) NetworkDiscovery.invalidate(id)
+        // The network's inventory cache follows the id, so a chunk loading a lower Node
+        // or a controller coming back changes nothing a terminal on it can see: no
+        // rescan, no resync.
+        if (foundId != null) for (id in previousIds) damien.nodeworks.script.NetworkInventoryCache.renameKey(id, foundId)
     }
 
     /** Face-adjacent Connectable BEs. Both endpoints must opt into adjacency, and both

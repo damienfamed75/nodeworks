@@ -32,6 +32,9 @@ object PlatformServices {
      *  this at mod init. */
     var fakePlayer: FakePlayerService = NoopFakePlayerService
 
+    /** Loader hooks around vanilla crafting. */
+    var crafting: CraftingHookService = CraftingHookService.Noop
+
     /** Set by the loader-specific client init. Falls back to a plain gray square if
      *  the loader didn't register a renderer (e.g. dedicated server, never touched). */
     var fluidRenderer: FluidSpriteRenderer = FluidSpriteRenderer.Fallback
@@ -107,6 +110,15 @@ interface ServerNetworkingService {
         player: ServerPlayer,
         payload: net.minecraft.network.protocol.common.custom.CustomPacketPayload,
     )
+
+    /** Send [payload] once to every player who can see any of [positions]. A block
+     *  change only matters to clients that render it, so a network spanning a world
+     *  need not tell players a continent away. */
+    fun sendToPlayersTracking(
+        level: ServerLevel,
+        positions: Collection<net.minecraft.core.BlockPos>,
+        payload: net.minecraft.network.protocol.common.custom.CustomPacketPayload,
+    ) = sendToPlayersInDimension(level, payload)
 }
 
 /**
@@ -128,6 +140,15 @@ enum class ResourceKind { ITEM, FLUID }
  * resource kind of the query (filter prefix / handle kind).
  */
 private val STORAGE_LOGGER = org.slf4j.LoggerFactory.getLogger("nodeworks/storage")
+
+/** Hooks around vanilla crafting that common code cannot reach on its own. */
+interface CraftingHookService {
+    /** Runs [block] with [player] known to the loader as the crafting player, for mods
+     *  that read it while working out crafting remainders. */
+    fun <T> withCraftingPlayer(player: net.minecraft.world.entity.player.Player, block: () -> T): T = block()
+
+    object Noop : CraftingHookService
+}
 
 interface StorageService {
     /** Get an item storage handle for a block at [pos] accessed from [face]. Returns null if not available. */
@@ -315,7 +336,7 @@ interface StorageService {
      * none of them takes it the window moves on and tries again while time allows, so a
      * large network is covered a window at a time over runs and one run never touches
      * more targets than the window. A type no window will take is skipped for the rest of
-     * the call. Target handles resolve lazily, so untouched targets cost nothing.
+     * the call. Targets are built and resolved lazily, so untouched targets cost nothing.
      *
      * Honours the move deadline between targets and between stacks, never between
      * placing shares and taking their total. A source that then gives back less than its
@@ -325,26 +346,34 @@ interface StorageService {
      */
     fun moveItemsRoundRobin(
         source: ItemStorageHandle,
-        targets: List<RoundRobinTarget>,
+        /** How many targets there are. Only the ones a window reaches are ever built. */
+        targetCount: Int,
+        /** Builds the target at an index. Called once per index per call, on first use. */
+        targetAt: (Int) -> RoundRobinTarget,
         filter: (ItemStack) -> Boolean,
         maxCount: Long,
         cursor: ScanCursor?,
         startIndex: Int,
-        window: Int = targets.size,
+        window: Int = targetCount,
         onMoved: ((RoundRobinTarget, ItemStack, Long) -> Unit)? = null,
     ): RoundRobinResult {
-        val n = targets.size
-        if (n == 0 || maxCount <= 0L) return RoundRobinResult(0L, startIndex)
+        val n = targetCount
+        if (n <= 0 || maxCount <= 0L) return RoundRobinResult(0L, startIndex)
         var index = startIndex.mod(n)
         val span = window.coerceIn(1, n)
         val windows = (n + span - 1) / span
         var remaining = maxCount
         var moved = 0L
         val refused = ArrayList<ItemStack>()
-        val dead = BooleanArray(n)
-        val caps = LongArray(n)
-        val plan = LongArray(n)
-        val put = LongArray(n)
+        // Everything per call is sized to the window or to what was touched, never to
+        // the whole target list, so a network of thousands of cards costs a run nothing
+        // beyond the few it actually offers items to.
+        val built = HashMap<Int, RoundRobinTarget>()
+        fun target(idx: Int): RoundRobinTarget = built.getOrPut(idx) { targetAt(idx) }
+        val dead = java.util.BitSet(n)
+        val caps = LongArray(span)
+        val plan = LongArray(span)
+        val put = LongArray(span)
         val sameAs: (ItemStack) -> (ItemStack) -> Boolean = { t -> { s -> ItemStack.isSameItemSameComponents(s, t) } }
 
         stacks@ while (remaining > 0L && !MoveDeadline.expired()) {
@@ -360,14 +389,14 @@ interface StorageService {
                 java.util.Arrays.fill(caps, 0L)
                 for (k in 0 until span) {
                     val idx = (index + k) % n
-                    if (dead[idx]) continue
+                    if (dead.get(idx)) continue
                     if (k > 0 && MoveDeadline.expired()) break
-                    val target = targets[idx]
+                    val target = target(idx)
                     val storage = target.storage
-                    if (storage == null) { dead[idx] = true; continue }
+                    if (storage == null) { dead.set(idx); continue }
                     if (target.accept?.invoke(stack) == false) continue
                     val cap = simulateInsertStack(storage, stack.copyWithCount(count.toInt()))
-                    if (cap > 0L) { caps[idx] = cap; any = true }
+                    if (cap > 0L) { caps[k] = cap; any = true }
                 }
                 if (any) break
                 tried++
@@ -378,18 +407,16 @@ interface StorageService {
 
             // Even shares within the window, extras to the first in rotation order.
             java.util.Arrays.fill(plan, 0L)
-            val order = IntArray(span) { (index + it) % n }
-            val lastReceiver = RoundRobinSpread.plan(count, order, caps, plan)
+            val lastReceiver = RoundRobinSpread.plan(count, caps, plan)
 
             // Commit: every share placed, then one take for the lot.
             java.util.Arrays.fill(put, 0L)
             var inserted = 0L
             for (k in 0 until span) {
-                val idx = (index + k) % n
-                if (plan[idx] <= 0L) continue
-                val storage = targets[idx].storage ?: continue
-                val got = insertItemStack(storage, stack.copyWithCount(plan[idx].toInt())).toLong()
-                put[idx] = got
+                if (plan[k] <= 0L) continue
+                val storage = target((index + k) % n).storage ?: continue
+                val got = insertItemStack(storage, stack.copyWithCount(plan[k].toInt())).toLong()
+                put[k] = got
                 inserted += got
             }
             if (inserted <= 0L) { refused.add(template); continue }
@@ -399,12 +426,11 @@ interface StorageService {
             if (surplus > 0L) {
                 for (k in span - 1 downTo 0) {
                     if (surplus <= 0L) break
-                    val idx = (index + k) % n
-                    if (put[idx] <= 0L) continue
-                    val storage = targets[idx].storage ?: continue
+                    if (put[k] <= 0L) continue
+                    val storage = target((index + k) % n).storage ?: continue
                     var back = 0L
-                    for (s in extractStacksByPredicate(storage, sameAs(template), minOf(surplus, put[idx]))) back += s.count.toLong()
-                    put[idx] -= back
+                    for (s in extractStacksByPredicate(storage, sameAs(template), minOf(surplus, put[k]))) back += s.count.toLong()
+                    put[k] -= back
                     surplus -= back
                 }
                 if (surplus > 0L) {
@@ -415,14 +441,11 @@ interface StorageService {
                 }
             }
             if (onMoved != null) {
-                for (k in 0 until span) {
-                    val idx = (index + k) % n
-                    if (put[idx] > 0L) onMoved(targets[idx], template, put[idx])
-                }
+                for (k in 0 until span) if (put[k] > 0L) onMoved(target((index + k) % n), template, put[k])
             }
             moved += taken
             remaining -= taken
-            if (lastReceiver >= 0) index = (lastReceiver + 1) % n
+            if (lastReceiver >= 0) index = (index + lastReceiver + 1) % n
             if (inserted != taken) break
         }
         return RoundRobinResult(moved, index)
@@ -572,26 +595,26 @@ class RoundRobinTarget(
 /** The split behind [StorageService.moveItemsRoundRobin], kept free of any backend so it
  *  can be tested on its own. */
 object RoundRobinSpread {
-    /** Shares [count] over the targets in [order], each capped by its entry in [caps], as
+    /** Shares [count] over a window of targets, each capped by its entry in [caps], as
      *  evenly as the caps allow: every pass gives each target with room the same amount,
      *  and the last few go one each to the first targets in order. Shares land in [plan].
-     *  Returns the last target that received anything, or -1 for none. */
-    fun plan(count: Long, order: IntArray, caps: LongArray, plan: LongArray): Int {
+     *  Returns the last window position that received anything, or -1 for none. */
+    fun plan(count: Long, caps: LongArray, plan: LongArray): Int {
         var left = count
         var lastReceiver = -1
         while (left > 0L) {
             var live = 0
-            for (idx in order) if (plan[idx] < caps[idx]) live++
+            for (k in caps.indices) if (plan[k] < caps[k]) live++
             if (live == 0) break
             val per = maxOf(1L, left / live)
-            for (idx in order) {
+            for (k in caps.indices) {
                 if (left <= 0L) break
-                val room = caps[idx] - plan[idx]
+                val room = caps[k] - plan[k]
                 if (room <= 0L) continue
                 val give = minOf(per, room, left)
-                plan[idx] += give
+                plan[k] += give
                 left -= give
-                lastReceiver = idx
+                lastReceiver = k
             }
         }
         return lastReceiver

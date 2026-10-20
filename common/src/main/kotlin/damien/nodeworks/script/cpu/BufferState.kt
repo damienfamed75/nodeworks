@@ -71,6 +71,17 @@ class BufferState {
         typesCapacity = typesCap.coerceAtLeast(0)
     }
 
+    /** Insert past the capacity limits. For outputs a running craft has already pulled
+     *  and has nowhere else to put: the buffer may run over for a while rather than
+     *  push them back into a machine or drop them. */
+    fun insertForced(stack: ItemStack, amount: Long) {
+        if (amount <= 0) return
+        val key = BufferKey.of(stack)
+        val existing = items[key]
+        items[key] = if (existing == null) Entry(stack.copyWithCount(1), amount)
+            else existing.copy(count = existing.count + amount)
+    }
+
     // =====================================================================
     // Query
     // =====================================================================

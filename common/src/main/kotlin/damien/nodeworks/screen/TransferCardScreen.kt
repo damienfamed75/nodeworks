@@ -42,6 +42,8 @@ class TransferCardScreen(
 ) : AbstractContainerScreen<TransferCardMenu>(menu, playerInventory, title, W, H) {
 
     companion object {
+        /** How long an unconfirmed interval request is shown before the server's value wins again. */
+        private const val PENDING_INTERVAL_MS = 2000L
         private const val W = 220
         private const val H = 203
 
@@ -110,6 +112,15 @@ class TransferCardScreen(
 
     private var intervalField: EditBox? = null
     private var lastSyncedInterval = -1
+    /** The interval the player last asked for, until the server echoes it back, so quick
+     *  clicks on the stepper stack up instead of each starting from the stale value. */
+    private var pendingInterval: Int? = null
+    private var pendingIntervalSince = 0L
+    /** Same for the mode and round robin buttons: the click shows at once and repeats
+     *  under lag land on the same setting instead of flipping it back. */
+    private var pendingMode: TransferCard.Companion.Mode? = null
+    private var pendingRoundRobin: Boolean? = null
+    private var pendingSince = 0L
     private var lastSyncedChannel = -1
     private var lastSyncedSideOrdinal = Int.MIN_VALUE
     private var picker: ChannelPickerWidget? = null
@@ -386,14 +397,37 @@ class TransferCardScreen(
         return super.keyPressed(event)
     }
 
+    private fun shownMode(): TransferCard.Companion.Mode {
+        val pending = pendingMode
+        if (pending != null && (pending == menu.getMode() || net.minecraft.util.Util.getMillis() - pendingSince > PENDING_INTERVAL_MS)) pendingMode = null
+        return pendingMode ?: menu.getMode()
+    }
+
+    private fun shownRoundRobin(): Boolean {
+        val pending = pendingRoundRobin
+        if (pending != null && (pending == menu.getRoundRobin() || net.minecraft.util.Util.getMillis() - pendingSince > PENDING_INTERVAL_MS)) pendingRoundRobin = null
+        return pendingRoundRobin ?: menu.getRoundRobin()
+    }
+
+    /** The interval as the player sees it: what they last asked for while the server
+     *  has yet to confirm it, else the server's value. A request the server never echoes
+     *  is forgotten after a moment. */
+    private fun shownInterval(): Int {
+        val pending = pendingInterval
+        if (pending != null && net.minecraft.util.Util.getMillis() - pendingIntervalSince > PENDING_INTERVAL_MS) pendingInterval = null
+        return pendingInterval ?: menu.getTickInterval()
+    }
+
     private fun commitIntervalField() {
-        val typed = intervalField?.value?.toIntOrNull() ?: menu.getTickInterval()
+        val typed = intervalField?.value?.toIntOrNull() ?: shownInterval()
         val value = typed.coerceIn(TransferCard.MIN_TICK_INTERVAL, TransferCard.MAX_TICK_INTERVAL)
         intervalField?.value = "$value"
-        if (value != menu.getTickInterval()) sendInterval(value)
+        if (value != shownInterval()) sendInterval(value)
     }
 
     private fun sendInterval(value: Int) {
+        pendingInterval = value
+        pendingIntervalSince = net.minecraft.util.Util.getMillis()
         Minecraft.getInstance().gameMode?.handleInventoryButtonClick(
             menu.containerId, TransferCardMenu.BUTTON_INTERVAL_BASE + value,
         )
@@ -401,9 +435,9 @@ class TransferCardScreen(
 
     private fun stepInterval(delta: Int) {
         val step = if (hasShiftDownCompat()) 5 else 1
-        val next = (menu.getTickInterval() + delta * step)
+        val next = (shownInterval() + delta * step)
             .coerceIn(TransferCard.MIN_TICK_INTERVAL, TransferCard.MAX_TICK_INTERVAL)
-        if (next != menu.getTickInterval()) sendInterval(next)
+        if (next != shownInterval()) sendInterval(next)
     }
 
     override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
@@ -468,7 +502,7 @@ class TransferCardScreen(
         graphics.drawString(font, FILTER_LABEL_TEXT, leftPos + FILTER_HEADER_PAD_LEFT, headerY + 3, 0xFFAAAAAA.toInt())
 
         val modeX = modeButtonX()
-        val importing = menu.getMode() == TransferCard.Companion.Mode.IMPORT
+        val importing = shownMode() == TransferCard.Companion.Mode.IMPORT
         val modeHover = mouseX in modeX until modeX + MODE_BUTTON_W && mouseY in headerY until headerY + TOGGLE_SIZE
         (if (modeHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(graphics, modeX, headerY, MODE_BUTTON_W, TOGGLE_SIZE)
         val modeText = if (importing) "Import" else "Export"
@@ -480,7 +514,7 @@ class TransferCardScreen(
 
         if (importing) {
             val rrX = roundRobinButtonX()
-            val on = menu.getRoundRobin()
+            val on = shownRoundRobin()
             (if (on) NineSlice.TOGGLE_ACTIVE else NineSlice.TOGGLE_INACTIVE)
                 .draw(graphics, rrX, headerY, RR_TOGGLE_W, RR_TOGGLE_H)
             if (mouseX in rrX until rrX + RR_TOGGLE_W && mouseY in headerY until headerY + RR_TOGGLE_H) {
@@ -586,7 +620,7 @@ class TransferCardScreen(
             val overlayRight = interiorX + interiorW + 1
             val overlayBottom = interiorY + VISIBLE_ROWS * ROW_H - SEPARATOR_OVERLAP + 2
             graphics.fill(overlayLeft, overlayTop, overlayRight, overlayBottom, EMPTY_OVERLAY_BG)
-            val text = if (menu.getMode() == TransferCard.Companion.Mode.IMPORT) NO_RULES_IMPORT_TEXT else NO_RULES_EXPORT_TEXT
+            val text = if (shownMode() == TransferCard.Companion.Mode.IMPORT) NO_RULES_IMPORT_TEXT else NO_RULES_EXPORT_TEXT
             val textX = overlayLeft + (overlayRight - overlayLeft - font.width(text)) / 2
             val textY = overlayTop + (overlayBottom - overlayTop - font.lineHeight) / 2
             graphics.drawString(font, text, textX, textY, 0xFFFFFFFF.toInt())
@@ -687,10 +721,11 @@ class TransferCardScreen(
     }
 
     override fun extractRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
-        val serverInterval = menu.getTickInterval()
-        if (serverInterval != lastSyncedInterval && intervalField?.isFocused != true) {
-            intervalField?.value = "$serverInterval"
-            lastSyncedInterval = serverInterval
+        if (pendingInterval != null && menu.getTickInterval() == pendingInterval) pendingInterval = null
+        val shownValue = shownInterval()
+        if (shownValue != lastSyncedInterval && intervalField?.isFocused != true) {
+            intervalField?.value = "$shownValue"
+            lastSyncedInterval = shownValue
         }
         val serverChannel = menu.channelData.get(0)
         if (serverChannel != lastSyncedChannel && picker?.expanded != true) {
@@ -791,14 +826,21 @@ class TransferCardScreen(
             val modeRect = Rect(modeButtonX(), headerY, MODE_BUTTON_W, TOGGLE_SIZE)
             if (modeRect.contains(mx, my)) {
                 playClickSound()
-                Minecraft.getInstance().gameMode?.handleInventoryButtonClick(menu.containerId, TransferCardMenu.BUTTON_TOGGLE_MODE)
+                val next = if (shownMode() == TransferCard.Companion.Mode.IMPORT) TransferCard.Companion.Mode.EXPORT
+                    else TransferCard.Companion.Mode.IMPORT
+                pendingMode = next
+                pendingSince = net.minecraft.util.Util.getMillis()
+                Minecraft.getInstance().gameMode?.handleInventoryButtonClick(menu.containerId, TransferCardMenu.BUTTON_SET_MODE_BASE + next.ordinal)
                 return true
             }
-            if (menu.getMode() == TransferCard.Companion.Mode.IMPORT) {
+            if (shownMode() == TransferCard.Companion.Mode.IMPORT) {
                 val rrRect = Rect(roundRobinButtonX(), headerY, RR_TOGGLE_W, RR_TOGGLE_H)
                 if (rrRect.contains(mx, my)) {
                     playClickSound()
-                    Minecraft.getInstance().gameMode?.handleInventoryButtonClick(menu.containerId, TransferCardMenu.BUTTON_TOGGLE_ROUND_ROBIN)
+                    val next = !shownRoundRobin()
+                    pendingRoundRobin = next
+                    pendingSince = net.minecraft.util.Util.getMillis()
+                    Minecraft.getInstance().gameMode?.handleInventoryButtonClick(menu.containerId, TransferCardMenu.BUTTON_SET_ROUND_ROBIN_BASE + (if (next) 1 else 0))
                     return true
                 }
             }

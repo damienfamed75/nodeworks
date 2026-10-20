@@ -61,6 +61,7 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
         PlatformServices.storage = damien.nodeworks.platform.CompositeStorageService(NeoForgeStorageService())
         PlatformServices.modState = NeoForgeModStateService()
         PlatformServices.fakePlayer = damien.nodeworks.platform.NeoForgeFakePlayerService()
+        PlatformServices.crafting = damien.nodeworks.platform.NeoForgeCraftingHookService()
         PlatformServices.serverNetworking = NeoForgeServerNetworkingService()
         PlatformServices.coolantRating = damien.nodeworks.registry.NodeworksDataMaps::coolantRating
 
@@ -797,8 +798,8 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                 val level = player.level() as ServerLevel
                 if (!player.blockPosition().closerThan(payload.pos, 8.0)) return@enqueueWork
                 val entity = level.getBlockEntity(payload.pos) as? damien.nodeworks.block.entity.MultiProcessingHandlerBlockEntity ?: return@enqueueWork
+                // The block entity sync carries the new bound list, the screen reads it live.
                 damien.nodeworks.screen.MultiProcessingHandlerServerLogic.toggle(level, entity, payload.processingApiName, payload.selected)
-                damien.nodeworks.screen.MultiProcessingHandlerServerLogic.pushStateSyncIfOpen(level, player, entity)
             }
         }
         registrar.playToServer(
@@ -812,6 +813,18 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                 val entity = level.getBlockEntity(payload.pos) as? damien.nodeworks.block.entity.MultiProcessingHandlerBlockEntity ?: return@enqueueWork
                 val color = runCatching { net.minecraft.world.item.DyeColor.byId(payload.channelId) }.getOrNull() ?: return@enqueueWork
                 if (payload.output) entity.setOutputChannel(color) else entity.setInputChannel(color)
+            }
+        }
+        registrar.playToServer(
+            damien.nodeworks.network.MultiProcessingHandlerSetParallelPayload.TYPE,
+            damien.nodeworks.network.MultiProcessingHandlerSetParallelPayload.CODEC,
+        ) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val level = player.level() as? ServerLevel ?: return@enqueueWork
+                if (!player.blockPosition().closerThan(payload.pos, 8.0)) return@enqueueWork
+                val entity = level.getBlockEntity(payload.pos) as? damien.nodeworks.block.entity.MultiProcessingHandlerBlockEntity ?: return@enqueueWork
+                entity.setParallel(payload.enabled)
             }
         }
 
@@ -1169,8 +1182,8 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
         }
         damien.nodeworks.script.NetworkInventoryCache.evictOrphans(tickCount.toLong())
         damien.nodeworks.script.NetworkRateLimits.evictIdle(tickCount.toLong())
+        damien.nodeworks.block.entity.TransferCardTicker.tickAll(event.server.allLevels)
         for (level in event.server.allLevels) {
-            damien.nodeworks.block.entity.TransferCardTicker.tick(level)
             damien.nodeworks.script.MonitorUpdateHelper.tick(level, tickCount)
         }
         tickGrappleSessions(event.server)

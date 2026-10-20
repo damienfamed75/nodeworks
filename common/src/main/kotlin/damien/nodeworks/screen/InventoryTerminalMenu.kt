@@ -150,6 +150,14 @@ class InventoryTerminalMenu(
      *  slice per tick by [broadcastChanges] until the recipe stops matching, the inventory
      *  is full, or the player does anything else. */
     private var craftAllResult: ItemStack? = null
+        set(value) {
+            if ((field == null) != (value == null)) activeCraftAll += if (value != null) 1 else -1
+            field = value
+        }
+
+    /** True while vanilla's slot change hook runs. A craft-all must not continue from
+     *  inside it, that would craft in the middle of whatever changed the slot. */
+    private var inSlotsChanged = false
     val craftingContainer = TransientCraftingContainer(this, 3, 3)
     val resultContainer = ResultContainer()
 
@@ -222,7 +230,12 @@ class InventoryTerminalMenu(
         if (container === crystalContainer) {
             onCrystalSlotChanged()
         }
-        super.slotsChanged(container)
+        inSlotsChanged = true
+        try {
+            super.slotsChanged(container)
+        } finally {
+            inSlotsChanged = false
+        }
     }
 
     /**
@@ -553,7 +566,7 @@ class InventoryTerminalMenu(
                 return
             }
             checkTakeAchievements(carried)
-            val remaining = recipe.value().getRemainingItems(input)
+            val remaining = damien.nodeworks.platform.PlatformServices.crafting.withCraftingPlayer(player) { recipe.value().getRemainingItems(input) }
             // One grid change at the end instead of one per consumed slot.
             suppressSlotsChanged = true
             try {
@@ -598,9 +611,20 @@ class InventoryTerminalMenu(
          *  acts on 0/1, so [clicked] maps this back to 0 before delegating. */
         const val CRAFT_ALL_BUTTON = 2
 
-        /** Time one tick may spend crafting in a batch. A craft-all that needs more
-         *  carries on next tick, so a huge order never stalls the server. */
+        /** Time one menu may spend crafting in a tick when it is the only one. A craft-all
+         *  that needs more carries on next tick, so a huge order never stalls the server. */
         private const val CRAFT_BATCH_NANOS = 4_000_000L
+
+        /** Time every craft-all on the server shares per tick, and the least one gets,
+         *  so fifty players crafting at once cannot each take their own slice. */
+        private const val CRAFT_ALL_TOTAL_NANOS = 8_000_000L
+        private const val CRAFT_BATCH_MIN_NANOS = 500_000L
+
+        /** Menus with a craft-all in progress. Server thread only. */
+        private var activeCraftAll = 0
+
+        private fun craftSliceNanos(): Long =
+            (CRAFT_ALL_TOTAL_NANOS / activeCraftAll.coerceAtLeast(1)).coerceIn(CRAFT_BATCH_MIN_NANOS, CRAFT_BATCH_NANOS)
 
         /** Crafts one batch may run, a bound on a grid that never stops matching. */
         private const val CRAFT_BATCH_SAFETY = 4096
@@ -661,7 +685,7 @@ class InventoryTerminalMenu(
             // bound covers a full 9-input 64-per-stack grid.
             if (serverLevel != null) {
                 craftAllResult = null
-                val more = craftBatch(player, slot, firstResult, craftAllOnQuickMove, System.nanoTime() + CRAFT_BATCH_NANOS)
+                val more = craftBatch(player, slot, firstResult, craftAllOnQuickMove, System.nanoTime() + craftSliceNanos())
                 if (more && craftAllOnQuickMove) craftAllResult = firstResult
                 // Always EMPTY. A non-empty return re-enters vanilla's
                 // QUICK_MOVE loop while auto-pull keeps the slot populated,
@@ -1558,17 +1582,44 @@ class InventoryTerminalMenu(
         // different recipes and corrupt lastCraftPattern
         suppressSlotsChanged = true
         try {
+            // Empty slots that want the same item share one pull, split evenly, so a recipe
+            // using an item in four slots keeps crafting while the network holds enough for
+            // all four, instead of filling the first slot and starving the rest. Whole
+            // stacks per slot, so the next crafts draw from the grid and the network is
+            // asked once per stack rather than once per craft.
+            val groups = LinkedHashMap<damien.nodeworks.script.BufferKey.Key, MutableList<Int>>()
             for ((i, template) in pattern.withIndex()) {
                 if (template.isEmpty) continue
-                val current = craftingContainer.getItem(i)
-                if (!current.isEmpty) continue
-
+                if (!craftingContainer.getItem(i).isEmpty) continue
+                groups.getOrPut(damien.nodeworks.script.BufferKey.of(template)) { ArrayList() }.add(i)
+            }
+            for ((_, slots) in groups) {
+                val template = pattern[slots[0]]
                 val itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(template.item).toString()
-                // A whole stack, so the next crafts draw from the grid and the network is
-                // asked once per stack rather than once per craft.
-                val stacks = extractRealStacks(lvl, snap, c, itemId, template.maxStackSize.toLong(), template.componentsPatch)
-                val refill = stacks.firstOrNull() ?: continue
-                craftingContainer.setItem(i, refill)
+                val stacks = extractRealStacks(
+                    lvl, snap, c, itemId, template.maxStackSize.toLong() * slots.size, template.componentsPatch,
+                )
+                var total = 0L
+                for (stack in stacks) total += stack.count
+                if (total <= 0L) continue
+                val per = (total / slots.size).toInt()
+                var placed = 0L
+                if (per > 0) {
+                    for (slot in slots) {
+                        craftingContainer.setItem(slot, template.copyWithCount(per))
+                        placed += per
+                    }
+                }
+                // The pulled stacks are one variant, the patch narrowed them, so the share
+                // that found no slot goes back as copies of the template.
+                var rest = total - placed
+                while (rest > 0L) {
+                    val n = minOf(rest, template.maxStackSize.toLong()).toInt()
+                    val back = template.copyWithCount(n)
+                    val stored = NetworkStorageHelper.insertItemStack(lvl, snap, back, c, channel = channel)
+                    if (stored < n) playerInventory.placeItemBackInInventory(template.copyWithCount(n - stored))
+                    rest -= n
+                }
             }
         } finally {
             suppressSlotsChanged = false
@@ -1982,10 +2033,10 @@ class InventoryTerminalMenu(
 
     override fun broadcastChanges() {
         if (batchCrafting) return
-        craftAllResult?.let { result ->
+        if (!inSlotsChanged) craftAllResult?.let { result ->
             val slot = slots[CRAFT_OUTPUT_SLOT]
             val more = slot.hasItem() &&
-                craftBatch(playerInventory.player, slot, result, craftAll = true, System.nanoTime() + CRAFT_BATCH_NANOS)
+                craftBatch(playerInventory.player, slot, result, craftAll = true, System.nanoTime() + craftSliceNanos())
             if (!more) craftAllResult = null
         }
         super.broadcastChanges()

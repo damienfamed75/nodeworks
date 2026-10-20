@@ -618,7 +618,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         // reload the terminal script may not have auto-started yet, so the handler isn't
         // registered. Resume doesn't need it: items are physically in machines, we just
         // poll the persisted target coords on the global ResumeScheduler (always ticking).
-        cpu.opResumeInfo[op.id]?.let { return startResumePoll(op, it, lvl, outputItemId) }
+        cpu.opResumeInfo[op.id]?.let { return startResumePoll(op, it, lvl, snapshot, outputItemId) }
 
         // FRESH PATH, needs the handler resolved. Look up by the recipe name
         // (hash) the planner picked, NOT by output itemId. When multiple
@@ -1109,10 +1109,28 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
      * Polls run on the global [damien.nodeworks.script.ResumeScheduler.scheduler], independent
      * of any terminal/script engine, the terminal's auto-run can lag CPU ticking on world load.
      */
+    /** The handler block bound to [op]'s recipe when it takes one job at a time, with
+     *  its level. Resolved the way the fresh path resolves it, through a remote
+     *  provider network when the recipe came in over an antenna. */
+    private fun exclusiveHandlerFor(
+        op: Operation.Process,
+        lvl: ServerLevel,
+        snapshot: damien.nodeworks.network.NetworkSnapshot,
+    ): Pair<ServerLevel, damien.nodeworks.block.entity.ProcessingHandlerBlockEntity>? {
+        val apiMatch = snapshot.findProcessingApiByName(op.processingApiName)
+        val handlerNetworkId = apiMatch?.apiStorage?.remoteNetworkId ?: snapshot.networkId
+        val handlerLevel = apiMatch?.apiStorage?.remoteDimension?.let { lvl.server.getLevel(it) } ?: lvl
+        val pos = BlockHandlerRegistry.find(handlerNetworkId, op.processingApiName) ?: return null
+        val handler = handlerLevel.getBlockEntity(pos) as? damien.nodeworks.block.entity.ProcessingHandlerBlockEntity ?: return null
+        if (!handler.exclusiveUse) return null
+        return handlerLevel to handler
+    }
+
     private fun startResumePoll(
         op: Operation.Process,
         info: damien.nodeworks.block.entity.CraftingCoreBlockEntity.OpResumeInfo,
         lvl: ServerLevel,
+        snapshot: damien.nodeworks.network.NetworkSnapshot,
         outputItemId: String
     ): CraftScheduler.OpResult {
         // BatchProgress as a single-batch, no-input bulk op (items already in machine).
@@ -1133,6 +1151,14 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         }
         val scheduler = damien.nodeworks.script.ResumeScheduler.scheduler
         val pending = CraftingHelper.PendingHandlerJob()
+        // The machine still holds this op's items, so its handler stays this op's until
+        // they are out, the same as it would have been had the world not reloaded.
+        exclusiveHandlerFor(op, lvl, snapshot)?.let { (handlerLevel, handler) ->
+            HandlerReservations.reserve(
+                handlerLevel.dimension(), handler.blockPos,
+                HandlerReservations.Holder(cpu.blockPos, op.id, pending),
+            )
+        }
         // Each entry is the per-operation count with the remainder alongside, the shape the
         // job's bulk override takes, so a bonus copy of the main output is still told apart.
         val resumeOutputs = buildList {

@@ -8,6 +8,7 @@ import damien.nodeworks.compat.mouseX
 import damien.nodeworks.compat.mouseY
 import damien.nodeworks.compat.renderComponentTooltip
 import damien.nodeworks.network.MultiProcessingHandlerSetChannelPayload
+import damien.nodeworks.network.MultiProcessingHandlerSetParallelPayload
 import damien.nodeworks.network.MultiProcessingHandlerTogglePayload
 import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.screen.widget.ChannelPickerWidget
@@ -209,6 +210,8 @@ class MultiProcessingHandlerScreen(
         val query = searchText.trim().lowercase()
         val boundSet = bound.toHashSet()
         visible = rows
+            // A missing set's row only exists to be unchecked, so it goes once it is.
+            .filter { it.entry.set.inputs.isNotEmpty() || it.entry.set.outputs.isNotEmpty() || it.entry.set.name in boundSet }
             .filter { query.isEmpty() || it.searchText.contains(query) }
             .sortedWith(compareBy({ it.entry.set.name !in boundSet }, { it.sortKey }, { it.entry.set.name }))
         scroll = scroll.coerceIn(0, maxScroll())
@@ -374,6 +377,20 @@ class MultiProcessingHandlerScreen(
         graphics.drawString(font, "In", leftPos + OUTER_PAD, textY, LABEL_GRAY)
         inputPicker?.let { graphics.drawString(font, "Out", it.x + ChannelPickerWidget.SWATCH + 12, textY, LABEL_GRAY) }
 
+        val parallel = entity()?.parallel == true
+        val (px, py, pw, ph) = parallelButtonBounds().toList()
+        val parallelHover = mouseX in px until px + pw && mouseY in py until py + ph
+        (if (parallel) NineSlice.BUTTON_ACTIVE else if (parallelHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(graphics, px, py, pw, ph)
+        graphics.drawString(font, "P", px + (pw - font.width("P")) / 2 + 1, py + (ph - font.lineHeight) / 2 + 1, if (parallel) WHITE else LABEL_GRAY)
+        if (parallelHover) {
+            queueTooltip(
+                mouseX, mouseY,
+                if (parallel) "Parallel crafts: on" else "Parallel crafts: off",
+                if (parallel) "Several recipes may run through this handler at once"
+                else "One recipe at a time, other crafts wait or run elsewhere",
+            )
+        }
+
         val (rx, ry, rw, rh) = redstoneButtonBounds().toList()
         val redstoneHover = mouseX in rx until rx + rw && mouseY in ry until ry + rh
         (if (redstoneHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(graphics, rx, ry, rw, rh)
@@ -395,6 +412,12 @@ class MultiProcessingHandlerScreen(
 
     private fun redstoneButtonBounds(): IntArray {
         val x = leftPos + IMAGE_W - OUTER_PAD - BUTTON_SIZE * 2 - BUTTON_GAP
+        val y = topPos + FOOTER_Y + (FOOTER_H - BUTTON_SIZE) / 2
+        return intArrayOf(x, y, BUTTON_SIZE, BUTTON_SIZE)
+    }
+
+    private fun parallelButtonBounds(): IntArray {
+        val x = leftPos + IMAGE_W - OUTER_PAD - BUTTON_SIZE * 3 - BUTTON_GAP * 2
         val y = topPos + FOOTER_Y + (FOOTER_H - BUTTON_SIZE) / 2
         return intArrayOf(x, y, BUTTON_SIZE, BUTTON_SIZE)
     }
@@ -447,6 +470,13 @@ class MultiProcessingHandlerScreen(
             return true
         }
 
+        val (px, py, pw, ph) = parallelButtonBounds().toList()
+        if (mx in px until px + pw && my in py until py + ph) {
+            playClickSound()
+            val enabled = entity()?.parallel != true
+            PlatformServices.clientNetworking.sendToServer(MultiProcessingHandlerSetParallelPayload(menu.devicePos, enabled))
+            return true
+        }
         val (rx, ry, rw, rh) = redstoneButtonBounds().toList()
         if (mx in rx until rx + rw && my in ry until ry + rh) {
             playClickSound()

@@ -137,6 +137,13 @@ class TransferCardMenu(
                 modeData.set(0, next.ordinal); dirty = true
             }
             id == BUTTON_TOGGLE_ROUND_ROBIN -> { roundRobinData.set(0, if (getRoundRobin()) 0 else 1); dirty = true }
+            // Target values, so a click that repeats under lag lands on the same setting.
+            id in BUTTON_SET_MODE_BASE until BUTTON_SET_MODE_BASE + TransferCard.Companion.Mode.entries.size -> {
+                modeData.set(0, id - BUTTON_SET_MODE_BASE); dirty = true
+            }
+            id == BUTTON_SET_ROUND_ROBIN_BASE || id == BUTTON_SET_ROUND_ROBIN_BASE + 1 -> {
+                roundRobinData.set(0, id - BUTTON_SET_ROUND_ROBIN_BASE); dirty = true
+            }
             // Interval set directly, the id carries the value.
             id in (BUTTON_INTERVAL_BASE + TransferCard.MIN_TICK_INTERVAL)..(BUTTON_INTERVAL_BASE + TransferCard.MAX_TICK_INTERVAL) -> {
                 tickIntervalData.set(0, id - BUTTON_INTERVAL_BASE); dirty = true
@@ -172,6 +179,8 @@ class TransferCardMenu(
         const val BUTTON_CHANNEL_NONE = 2099
         const val BUTTON_TOGGLE_MODE = 5000
         const val BUTTON_TOGGLE_ROUND_ROBIN = 5001
+        const val BUTTON_SET_MODE_BASE = 5100
+        const val BUTTON_SET_ROUND_ROBIN_BASE = 5200
         const val BUTTON_INTERVAL_BASE = 6000
 
         fun clientFactory(syncId: Int, playerInventory: Inventory, data: TransferCardOpenData): TransferCardMenu {
