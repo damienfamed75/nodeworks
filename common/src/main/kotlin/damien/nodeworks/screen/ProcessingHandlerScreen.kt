@@ -14,6 +14,7 @@ import damien.nodeworks.network.ProcessingHandlerSetOutputPayload
 import damien.nodeworks.network.ProcessingHandlerUnbindPayload
 import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.screen.widget.ChannelPickerWidget
+import damien.nodeworks.screen.widget.RecipeGridRenderer
 import net.minecraft.ChatFormatting
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
@@ -511,13 +512,10 @@ class ProcessingHandlerScreen(
         }
     }
 
-    /** Draw the 3×3 input grid, arrow, and outputs inside the given bounds.
-     *  When [vertical] is true the layout is inputs (top) → arrow down →
-     *  output row (1×3 horizontal, bottom); otherwise inputs (left) → arrow
-     *  right → output column (1×3 vertical, right) - the original layout
-     *  used by the picker thumbnails. When [recipe] is null the grid renders
-     *  empty (slot frames only) so the panel still reads as a recipe-shaped
-     *  area pre-binding. */
+    /** Draw the 3×3 input grid, arrow, and outputs inside the given bounds, through the
+     *  renderer both handler screens share. Vertical stacks inputs over outputs, the
+     *  recipe panel's shape. Horizontal is the picker thumbnail. A null recipe draws
+     *  the empty frames. */
     private fun drawRecipeGrid(
         graphics: GuiGraphicsExtractor,
         panelX: Int,
@@ -527,105 +525,8 @@ class ProcessingHandlerScreen(
         recipe: ProcessingHandlerOpenData.AvailableSet?,
         vertical: Boolean = false,
     ) {
-        if (vertical) {
-            val blockW = RECIPE_GRID_W
-            val gridX = panelX + (panelW - blockW) / 2
-            val gridY = panelY + (panelH - RECIPE_GRID_VERT_H) / 2
-            val outputY = gridY + RECIPE_GRID_INPUT_H + RECIPE_ARROW_H
-
-            for (row in 0..2) {
-                for (col in 0..2) {
-                    NineSlice.SLOT.draw(
-                        graphics,
-                        gridX + col * SLOT_SIZE, gridY + row * SLOT_SIZE,
-                        SLOT_SIZE, SLOT_SIZE,
-                    )
-                }
-            }
-            for (col in 0..2) {
-                NineSlice.SLOT.draw(
-                    graphics,
-                    gridX + col * SLOT_SIZE, outputY,
-                    SLOT_SIZE, SLOT_SIZE,
-                )
-            }
-
-            // Down arrow: rotate ARROW_RIGHT 90° clockwise around its centre.
-            // pose().rotate is CCW in math coords; screen Y points down so a
-            // math-CCW rotation reads as visually clockwise, mapping right →
-            // down for an arrow pointing right.
-            val arrowX = gridX + (RECIPE_GRID_W - 16) / 2
-            val arrowY = gridY + RECIPE_GRID_INPUT_H + (RECIPE_ARROW_H - 16) / 2
-            val pose = graphics.pose()
-            pose.pushMatrix()
-            pose.translate(arrowX + 8f, arrowY + 8f)
-            pose.rotate((Math.PI / 2.0).toFloat())
-            pose.translate(-8f, -8f)
-            Icons.ARROW_RIGHT.draw(graphics, 0, 0)
-            pose.popMatrix()
-
-            if (recipe == null) return
-            for ((idx, pair) in recipe.inputs.withIndex()) {
-                if (idx >= 9) break
-                val ingr = pair
-                val col = idx % 3
-                val row = idx / 3
-                val sx = gridX + col * SLOT_SIZE + 1
-                val sy = gridY + row * SLOT_SIZE + 1
-                val stack = ingr.stack.copyWithCount(ingr.count.coerceIn(1, 99))
-                graphics.renderItem(stack, sx, sy)
-                graphics.renderItemDecorations(font, stack, sx, sy)
-            }
-            for ((idx, pair) in recipe.outputs.withIndex()) {
-                if (idx >= 3) break
-                val ingr = pair
-                val sx = gridX + idx * SLOT_SIZE + 1
-                val sy = outputY + 1
-                val stack = ingr.stack.copyWithCount(ingr.count.coerceIn(1, 99))
-                graphics.renderItem(stack, sx, sy)
-                graphics.renderItemDecorations(font, stack, sx, sy)
-            }
-            return
-        }
-
-        // Horizontal (picker thumbnail).
-        val blockW = RECIPE_GRID_W + RECIPE_ARROW_H + SLOT_SIZE
-        val gridX = panelX + (panelW - blockW) / 2
-        val gridY = panelY + (panelH - RECIPE_GRID_INPUT_H) / 2
-        val outputX = gridX + RECIPE_GRID_W + RECIPE_ARROW_H
-
-        for (row in 0..2) {
-            for (col in 0..2) {
-                NineSlice.SLOT.draw(graphics, gridX + col * SLOT_SIZE, gridY + row * SLOT_SIZE, SLOT_SIZE, SLOT_SIZE)
-            }
-        }
-        for (row in 0..2) {
-            NineSlice.SLOT.draw(graphics, outputX, gridY + row * SLOT_SIZE, SLOT_SIZE, SLOT_SIZE)
-        }
-
-        val arrowX = gridX + RECIPE_GRID_W + (RECIPE_ARROW_H - 16) / 2
-        val arrowY = gridY + (RECIPE_GRID_INPUT_H - 16) / 2
-        Icons.ARROW_RIGHT.draw(graphics, arrowX, arrowY)
-
-        if (recipe == null) return
-        for ((idx, ingr) in recipe.inputs.withIndex()) {
-            if (idx >= 9) break
-            val col = idx % 3
-            val row = idx / 3
-            val sx = gridX + col * SLOT_SIZE + 1
-            val sy = gridY + row * SLOT_SIZE + 1
-            val stack = ingr.stack.copyWithCount(ingr.count.coerceIn(1, 99))
-            graphics.renderItem(stack, sx, sy)
-            graphics.renderItemDecorations(font, stack, sx, sy)
-        }
-        for ((idx, ingr) in recipe.outputs.withIndex()) {
-            if (idx >= 3) break
-            val sx = outputX + 1
-            val sy = gridY + idx * SLOT_SIZE + 1
-            val stack = ingr.stack.copyWithCount(ingr.count.coerceIn(1, 99))
-            graphics.renderItem(stack, sx, sy)
-            graphics.renderItemDecorations(font, stack, sx, sy)
-        }
+        if (vertical) RecipeGridRenderer.drawVertical(graphics, font, panelX, panelY, panelW, panelH, recipe)
+        else RecipeGridRenderer.drawHorizontal(graphics, font, panelX, panelY, panelW, panelH, recipe)
     }
 
     // ---- Inputs / Outputs sections ----

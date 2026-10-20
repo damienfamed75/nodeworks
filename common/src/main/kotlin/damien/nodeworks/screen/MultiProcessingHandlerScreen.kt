@@ -1,6 +1,7 @@
 package damien.nodeworks.screen
 
 import damien.nodeworks.block.entity.MultiProcessingHandlerBlockEntity
+import damien.nodeworks.compat.buttonNum
 import damien.nodeworks.compat.drawString
 import damien.nodeworks.compat.keyCode
 import damien.nodeworks.compat.mouseX
@@ -10,7 +11,7 @@ import damien.nodeworks.network.MultiProcessingHandlerSetChannelPayload
 import damien.nodeworks.network.MultiProcessingHandlerTogglePayload
 import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.screen.widget.ChannelPickerWidget
-import damien.nodeworks.screen.widget.RecipeHintRenderer
+import damien.nodeworks.screen.widget.RecipeGridRenderer
 import net.minecraft.ChatFormatting
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
@@ -42,7 +43,7 @@ class MultiProcessingHandlerScreen(
 ) : AbstractContainerScreen<MultiProcessingHandlerMenu>(menu, playerInventory, title, IMAGE_W, IMAGE_H) {
 
     companion object {
-        private const val IMAGE_W = 236
+        private const val IMAGE_W = 160
         private const val OUTER_PAD = 6
         private const val TOP_BAR_H = 20
 
@@ -54,8 +55,9 @@ class MultiProcessingHandlerScreen(
 
         private const val LIST_Y = SEARCH_Y + SEARCH_H + 4
         private const val LIST_W = IMAGE_W - OUTER_PAD * 2
-        private const val ROW_H = 18
-        private const val VISIBLE_ROWS = 8
+        /** A row holds the set drawn as the editor shows it, a 3×3 grid and an output column. */
+        private const val ROW_H = RecipeGridRenderer.HORIZONTAL_H + 6
+        private const val VISIBLE_ROWS = 3
         private const val PANEL_INNER_PAD = 2
         private const val LIST_H = VISIBLE_ROWS * ROW_H + PANEL_INNER_PAD * 2
         private const val SCROLL_BAR_W = 6
@@ -94,6 +96,7 @@ class MultiProcessingHandlerScreen(
     private var outputPicker: ChannelPickerWidget? = null
 
     private var scroll = 0
+    private var draggingScrollbar = false
     private var rows: List<Row> = emptyList()
     private var visible: List<Row> = emptyList()
     private var rowsVersion = -1
@@ -286,15 +289,14 @@ class MultiProcessingHandlerScreen(
             NineSlice.SLOT.draw(graphics, boxX, boxY, CHECK_SIZE, CHECK_SIZE)
             if (checked) Icons.CHECKMARK.draw(graphics, boxX + 1, boxY + 1, CHECK_SIZE - 2)
 
-            val stripX = boxX + CHECK_SIZE + 4
-            val stripY = rowY + (ROW_H - SEPARATOR_OVERLAP - RecipeHintRenderer.HINT_HEIGHT) / 2
+            val gridX = boxX + CHECK_SIZE + 4
+            val textY = rowY + (ROW_H - SEPARATOR_OVERLAP - font.lineHeight) / 2 + 1
             val missing = row.entry.set.inputs.isEmpty() && row.entry.set.outputs.isEmpty()
             if (missing) {
-                graphics.drawString(font, "Recipe missing", stripX + 2, rowY + (ROW_H - SEPARATOR_OVERLAP - font.lineHeight) / 2 + 1, MISSING_RED)
+                graphics.drawString(font, "Recipe missing", gridX + 2, textY, MISSING_RED)
             } else {
-                RecipeHintRenderer.render(
-                    graphics, font, row.entry.set.inputs, row.entry.set.outputs,
-                    stripX, stripY, interiorX + interiorW - stripX - 2, RecipeHintRenderer.HINT_HEIGHT,
+                RecipeGridRenderer.drawHorizontal(
+                    graphics, font, gridX, rowY, RecipeGridRenderer.HORIZONTAL_W, ROW_H - SEPARATOR_OVERLAP, row.entry.set,
                 )
             }
 
@@ -327,16 +329,44 @@ class MultiProcessingHandlerScreen(
             )
         }
 
-        val sbX = panelX + LIST_W - PANEL_INNER_PAD - SCROLL_BAR_W
-        val sbY = panelY + PANEL_INNER_PAD
-        val trackH = LIST_H - PANEL_INNER_PAD * 2
-        NineSlice.SCROLLBAR_TRACK.draw(graphics, sbX, sbY, SCROLL_BAR_W, trackH)
+        val (sbX, sbY, sbW, trackH) = scrollbarTrack().toList()
+        NineSlice.SCROLLBAR_TRACK.draw(graphics, sbX, sbY, sbW, trackH)
         if (visible.size > VISIBLE_ROWS) {
-            val thumbH = maxOf(12, trackH * VISIBLE_ROWS / visible.size)
+            val thumbH = thumbHeight()
             val thumbY = sbY + (trackH - thumbH) * scroll / maxScroll().coerceAtLeast(1)
-            val hovered = mouseX in sbX until sbX + SCROLL_BAR_W && mouseY in sbY until sbY + trackH
-            (if (hovered) NineSlice.SCROLLBAR_THUMB_HOVER else NineSlice.SCROLLBAR_THUMB).draw(graphics, sbX, thumbY, SCROLL_BAR_W, thumbH)
+            val hovered = draggingScrollbar || (mouseX in sbX until sbX + sbW && mouseY in sbY until sbY + trackH)
+            (if (hovered) NineSlice.SCROLLBAR_THUMB_HOVER else NineSlice.SCROLLBAR_THUMB).draw(graphics, sbX, thumbY, sbW, thumbH)
         }
+    }
+
+    private fun scrollbarTrack(): IntArray = intArrayOf(
+        leftPos + OUTER_PAD + LIST_W - PANEL_INNER_PAD - SCROLL_BAR_W,
+        topPos + LIST_Y + PANEL_INNER_PAD,
+        SCROLL_BAR_W,
+        LIST_H - PANEL_INNER_PAD * 2,
+    )
+
+    private fun thumbHeight(): Int {
+        val trackH = LIST_H - PANEL_INNER_PAD * 2
+        return maxOf(12, trackH * VISIBLE_ROWS / visible.size.coerceAtLeast(1))
+    }
+
+    /** Puts the thumb's centre at [mouseY], for a click on the track or a drag. */
+    private fun scrollToThumbCentre(mouseY: Int) {
+        val max = maxScroll()
+        if (max <= 0) return
+        val (_, sbY, _, trackH) = scrollbarTrack().toList()
+        val range = trackH - thumbHeight()
+        if (range <= 0) return
+        val rel = (mouseY - sbY - thumbHeight() / 2).toFloat() / range
+        scroll = (rel * max).toInt().coerceIn(0, max)
+    }
+
+    /** Drops the search field's focus. The screen-level tracker is cleared too when it
+     *  points here, or vanilla's same-target check would leave the field unclickable. */
+    private fun unfocusSearchBox() {
+        if (!searchBox.isFocused) return
+        if (focused === searchBox) setFocused(null) else searchBox.isFocused = false
     }
 
     private fun drawFooter(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
@@ -378,6 +408,26 @@ class MultiProcessingHandlerScreen(
         val mx = event.mouseX.toInt()
         val my = event.mouseY.toInt()
 
+        // A click anywhere but the search box gives the keyboard back to the screen.
+        val overSearch = mx in searchBox.x until searchBox.x + searchBox.width &&
+            my in searchBox.y until searchBox.y + searchBox.height
+        if (!overSearch) unfocusSearchBox()
+        // Right click on the search box clears it.
+        if (overSearch && event.buttonNum == 1) {
+            searchBox.value = ""
+            searchText = ""
+            return true
+        }
+
+        val (sbX, sbY, sbW, sbH) = scrollbarTrack().toList()
+        if (mx in sbX until sbX + sbW && my in sbY until sbY + sbH) {
+            if (visible.size > VISIBLE_ROWS) {
+                scrollToThumbCentre(my)
+                draggingScrollbar = true
+            }
+            return true
+        }
+
         val (interiorX, interiorY, interiorW, interiorH) = listInterior().toList()
         if (mx in interiorX until interiorX + interiorW && my in interiorY until interiorY + interiorH) {
             val idx = scroll + (my - interiorY) / ROW_H
@@ -409,6 +459,19 @@ class MultiProcessingHandlerScreen(
             return true
         }
         return super.mouseClicked(event, doubleClick)
+    }
+
+    override fun mouseDragged(event: MouseButtonEvent, dragX: Double, dragY: Double): Boolean {
+        if (draggingScrollbar) {
+            scrollToThumbCentre(event.mouseY.toInt())
+            return true
+        }
+        return super.mouseDragged(event, dragX, dragY)
+    }
+
+    override fun mouseReleased(event: MouseButtonEvent): Boolean {
+        draggingScrollbar = false
+        return super.mouseReleased(event)
     }
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {

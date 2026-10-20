@@ -78,7 +78,9 @@ data class ProcessingHandlerOpenData(
                     repeat(ic) {
                         val stack = ItemStack.OPTIONAL_STREAM_CODEC.decode(regBuf)
                         val ct = buf.readVarInt()
-                        ins.add(RecipeIngredient(stack, ct))
+                        // The tag rides along so a picker can show what the slot accepts.
+                        val tag = buf.readUtf(MAX_ITEM_ID).ifEmpty { null }
+                        ins.add(RecipeIngredient(stack, ct, tag))
                     }
                     val oc = buf.readVarInt().coerceIn(0, MAX_OUTPUTS)
                     val outs = ArrayList<RecipeIngredient>(oc)
@@ -97,6 +99,7 @@ data class ProcessingHandlerOpenData(
                     for (ingr in set.inputs.take(MAX_INPUTS)) {
                         ItemStack.OPTIONAL_STREAM_CODEC.encode(regBuf, ingr.stack)
                         buf.writeVarInt(ingr.count)
+                        buf.writeUtf(ingr.tag ?: "", MAX_ITEM_ID)
                     }
                     buf.writeVarInt(set.outputs.size.coerceAtMost(MAX_OUTPUTS))
                     for (ingr in set.outputs.take(MAX_OUTPUTS)) {
