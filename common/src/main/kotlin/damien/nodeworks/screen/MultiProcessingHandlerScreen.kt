@@ -44,7 +44,7 @@ class MultiProcessingHandlerScreen(
 ) : AbstractContainerScreen<MultiProcessingHandlerMenu>(menu, playerInventory, title, IMAGE_W, IMAGE_H) {
 
     companion object {
-        private const val IMAGE_W = 160
+        private const val IMAGE_W = 176
         private const val OUTER_PAD = 6
         private const val TOP_BAR_H = 20
 
@@ -68,9 +68,13 @@ class MultiProcessingHandlerScreen(
         private const val CHECK_PAD = 3
 
         private const val FOOTER_Y = LIST_Y + LIST_H + 4
-        private const val FOOTER_H = 16
+        /** A label line, a gap, and the toggle row beneath it. */
+        private const val FOOTER_H = 9 + 2 + 16
         private const val BUTTON_SIZE = 14
-        private const val BUTTON_GAP = 2
+        /** The Processing Set editor's toggle, same slices and size. */
+        private const val TOGGLE_W = 48
+        private const val TOGGLE_H = 16
+        private const val TOGGLE_GAP = 6
         private const val IMAGE_H = FOOTER_Y + FOOTER_H + OUTER_PAD
 
         private const val LABEL_GRAY = 0xFFAAAAAA.toInt()
@@ -127,7 +131,7 @@ class MultiProcessingHandlerScreen(
         addRenderableWidget(searchBox)
 
         val be = entity()
-        val pickerY = topPos + FOOTER_Y
+        val pickerY = topPos + FOOTER_Y + FOOTER_H - TOGGLE_H
         val input = ChannelPickerWidget(
             x = leftPos + OUTER_PAD + font.width("In") + 4,
             y = pickerY,
@@ -373,29 +377,24 @@ class MultiProcessingHandlerScreen(
     }
 
     private fun drawFooter(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
-        val textY = topPos + FOOTER_Y + (FOOTER_H - font.lineHeight) / 2 + 1
+        val rowY = topPos + FOOTER_Y + FOOTER_H - TOGGLE_H
+        val textY = rowY + (TOGGLE_H - font.lineHeight) / 2 + 1
         graphics.drawString(font, "In", leftPos + OUTER_PAD, textY, LABEL_GRAY)
         inputPicker?.let { graphics.drawString(font, "Out", it.x + ChannelPickerWidget.SWATCH + 12, textY, LABEL_GRAY) }
 
+        // Parallel toggle with its label above, the Processing Set editor's control.
         val parallel = entity()?.parallel == true
-        val (px, py, pw, ph) = parallelButtonBounds().toList()
-        val parallelHover = mouseX in px until px + pw && mouseY in py until py + ph
-        (if (parallel) NineSlice.BUTTON_ACTIVE else if (parallelHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(graphics, px, py, pw, ph)
-        graphics.drawString(font, "P", px + (pw - font.width("P")) / 2 + 1, py + (ph - font.lineHeight) / 2 + 1, if (parallel) WHITE else LABEL_GRAY)
-        if (parallelHover) {
+        val (tx, ty, tw, th) = parallelToggleBounds().toList()
+        val label = "Parallel"
+        graphics.drawString(font, label, tx + (tw - font.width(label)) / 2, topPos + FOOTER_Y, LABEL_GRAY)
+        (if (parallel) NineSlice.TOGGLE_ACTIVE else NineSlice.TOGGLE_INACTIVE).draw(graphics, tx, ty, tw, th)
+        if (mouseX in tx until tx + tw && mouseY in ty until ty + th) {
             queueTooltip(
                 mouseX, mouseY,
-                if (parallel) "Parallel crafts: on" else "Parallel crafts: off",
                 if (parallel) "Several recipes may run through this handler at once"
                 else "One recipe at a time, other crafts wait or run elsewhere",
             )
         }
-
-        val (rx, ry, rw, rh) = redstoneButtonBounds().toList()
-        val redstoneHover = mouseX in rx until rx + rw && mouseY in ry until ry + rh
-        (if (redstoneHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(graphics, rx, ry, rw, rh)
-        Icons.REDSTONE_IGNORE.draw(graphics, rx + (rw - 16) / 2, ry + (rh - 16) / 2)
-        if (redstoneHover) queueTooltip(mouseX, mouseY, "Redstone control", "(Not implemented yet)")
 
         val (hx, hy, hw, hh) = helpButtonBounds().toList()
         val helpHover = mouseX in hx until hx + hw && mouseY in hy until hy + hh
@@ -406,20 +405,14 @@ class MultiProcessingHandlerScreen(
 
     private fun helpButtonBounds(): IntArray {
         val x = leftPos + IMAGE_W - OUTER_PAD - BUTTON_SIZE
-        val y = topPos + FOOTER_Y + (FOOTER_H - BUTTON_SIZE) / 2
+        val y = topPos + FOOTER_Y + FOOTER_H - TOGGLE_H + (TOGGLE_H - BUTTON_SIZE) / 2
         return intArrayOf(x, y, BUTTON_SIZE, BUTTON_SIZE)
     }
 
-    private fun redstoneButtonBounds(): IntArray {
-        val x = leftPos + IMAGE_W - OUTER_PAD - BUTTON_SIZE * 2 - BUTTON_GAP
-        val y = topPos + FOOTER_Y + (FOOTER_H - BUTTON_SIZE) / 2
-        return intArrayOf(x, y, BUTTON_SIZE, BUTTON_SIZE)
-    }
-
-    private fun parallelButtonBounds(): IntArray {
-        val x = leftPos + IMAGE_W - OUTER_PAD - BUTTON_SIZE * 3 - BUTTON_GAP * 2
-        val y = topPos + FOOTER_Y + (FOOTER_H - BUTTON_SIZE) / 2
-        return intArrayOf(x, y, BUTTON_SIZE, BUTTON_SIZE)
+    private fun parallelToggleBounds(): IntArray {
+        val x = leftPos + IMAGE_W - OUTER_PAD - BUTTON_SIZE - TOGGLE_GAP - TOGGLE_W
+        val y = topPos + FOOTER_Y + FOOTER_H - TOGGLE_H
+        return intArrayOf(x, y, TOGGLE_W, TOGGLE_H)
     }
 
     // ---- Input ----
@@ -470,16 +463,11 @@ class MultiProcessingHandlerScreen(
             return true
         }
 
-        val (px, py, pw, ph) = parallelButtonBounds().toList()
-        if (mx in px until px + pw && my in py until py + ph) {
+        val (tx, ty, tw, th) = parallelToggleBounds().toList()
+        if (mx in tx until tx + tw && my in ty until ty + th) {
             playClickSound()
             val enabled = entity()?.parallel != true
             PlatformServices.clientNetworking.sendToServer(MultiProcessingHandlerSetParallelPayload(menu.devicePos, enabled))
-            return true
-        }
-        val (rx, ry, rw, rh) = redstoneButtonBounds().toList()
-        if (mx in rx until rx + rw && my in ry until ry + rh) {
-            playClickSound()
             return true
         }
         val (hx, hy, hw, hh) = helpButtonBounds().toList()

@@ -25,10 +25,10 @@ into your machine and pull the outputs back without you writing any Lua.
   <IsometricCamera yaw="160" roll="0" pitch="10" />
   <ImportStructure src="../assets/assemblies/basic_processing_handler.snbt" />
   <BoxAnnotation min="0 2 0" max="1 2.25 1" color="#3C44AA">
-    Blue channel Storage Card pointing at the top of the furnace
+    <ItemImage id="storage_card" /> Blue channel Storage Card
   </BoxAnnotation>
   <BoxAnnotation min="0 0.75 0" max="1 1 1" color="#B02E26">
-    Red channel Storage Card pointing at the bottom of the furnace
+    <ItemImage id="storage_card" /> Red channel Storage Card
   </BoxAnnotation>
 </GameScene>
 
