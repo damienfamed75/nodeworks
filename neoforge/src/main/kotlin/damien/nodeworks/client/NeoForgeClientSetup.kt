@@ -186,7 +186,8 @@ object NeoForgeClientSetup {
         event.registerBlockEntityRenderer(ModBlockEntities.NODE, ::NodeRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.FOCUS_NODE, ::FocusNodeRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.PIPE, ::PipeRenderer)
-        event.registerBlockEntityRenderer(ModBlockEntities.PROCESSING_HANDLER, ::ProcessingHandlerRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.PROCESSING_HANDLER) { ctx -> ProcessingHandlerRenderer(ctx) }
+        event.registerBlockEntityRenderer(ModBlockEntities.MULTI_PROCESSING_HANDLER) { ctx -> ProcessingHandlerRenderer(ctx) }
         event.registerBlockEntityRenderer(ModBlockEntities.MONITOR, ::MonitorRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.STORAGE_METER, ::StorageMeterRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.CRAFT_REQUESTER, ::CraftRequesterRenderer)
@@ -598,6 +599,9 @@ object NeoForgeClientSetup {
         }
         event.register(ModScreenHandlers.PROCESSING_HANDLER) { menu, inventory, title ->
             damien.nodeworks.screen.ProcessingHandlerScreen(menu, inventory, title)
+        }
+        event.register(ModScreenHandlers.MULTI_PROCESSING_HANDLER) { menu, inventory, title ->
+            damien.nodeworks.screen.MultiProcessingHandlerScreen(menu, inventory, title)
         }
         event.register(ModScreenHandlers.STORAGE_METER) { menu, inventory, title ->
             damien.nodeworks.screen.StorageMeterScreen(menu, inventory, title)

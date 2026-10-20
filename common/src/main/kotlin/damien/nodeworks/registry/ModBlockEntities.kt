@@ -23,6 +23,7 @@ import damien.nodeworks.block.entity.BreakerBlockEntity
 import damien.nodeworks.block.entity.ExportChestBlockEntity
 import damien.nodeworks.block.entity.ImportChestBlockEntity
 import damien.nodeworks.block.entity.PlacerBlockEntity
+import damien.nodeworks.block.entity.MultiProcessingHandlerBlockEntity
 import damien.nodeworks.block.entity.ProcessingHandlerBlockEntity
 import damien.nodeworks.block.entity.UserBlockEntity
 import damien.nodeworks.block.entity.VariableBlockEntity
@@ -165,6 +166,11 @@ object ModBlockEntities {
     val PROCESSING_HANDLER: BlockEntityType<ProcessingHandlerBlockEntity> = register(
         "processing_handler",
         PlatformServices.blockEntity.createBlockEntityType(::ProcessingHandlerBlockEntity, ModBlocks.PROCESSING_HANDLER)
+    )
+
+    val MULTI_PROCESSING_HANDLER: BlockEntityType<MultiProcessingHandlerBlockEntity> = register(
+        "multi_processing_handler",
+        PlatformServices.blockEntity.createBlockEntityType(::MultiProcessingHandlerBlockEntity, ModBlocks.MULTI_PROCESSING_HANDLER)
     )
 
     private fun <T : BlockEntity> register(

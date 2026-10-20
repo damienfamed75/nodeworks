@@ -346,6 +346,14 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                     damien.nodeworks.screen.ProcessingHandlerMenu.clientFactory(syncId, inv, data)
                 }
             )
+            ModScreenHandlers.MULTI_PROCESSING_HANDLER = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "multi_processing_handler")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = damien.nodeworks.screen.MultiProcessingHandlerOpenData.STREAM_CODEC.decode(buf)
+                    damien.nodeworks.screen.MultiProcessingHandlerMenu.clientFactory(syncId, inv, data)
+                }
+            )
             ModScreenHandlers.STORAGE_METER = Registry.register(
                 BuiltInRegistries.MENU,
                 ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "storage_meter")),
@@ -779,6 +787,34 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
             }
         }
 
+        // Multi-Processing Handler GUI -> server messages, same 8 m gate.
+        registrar.playToServer(
+            damien.nodeworks.network.MultiProcessingHandlerTogglePayload.TYPE,
+            damien.nodeworks.network.MultiProcessingHandlerTogglePayload.CODEC,
+        ) { payload, context ->
+            context.enqueueWork {
+                val player = context.player() as? net.minecraft.server.level.ServerPlayer ?: return@enqueueWork
+                val level = player.level() as ServerLevel
+                if (!player.blockPosition().closerThan(payload.pos, 8.0)) return@enqueueWork
+                val entity = level.getBlockEntity(payload.pos) as? damien.nodeworks.block.entity.MultiProcessingHandlerBlockEntity ?: return@enqueueWork
+                damien.nodeworks.screen.MultiProcessingHandlerServerLogic.toggle(level, entity, payload.processingApiName, payload.selected)
+                damien.nodeworks.screen.MultiProcessingHandlerServerLogic.pushStateSyncIfOpen(level, player, entity)
+            }
+        }
+        registrar.playToServer(
+            damien.nodeworks.network.MultiProcessingHandlerSetChannelPayload.TYPE,
+            damien.nodeworks.network.MultiProcessingHandlerSetChannelPayload.CODEC,
+        ) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val level = player.level() as? ServerLevel ?: return@enqueueWork
+                if (!player.blockPosition().closerThan(payload.pos, 8.0)) return@enqueueWork
+                val entity = level.getBlockEntity(payload.pos) as? damien.nodeworks.block.entity.MultiProcessingHandlerBlockEntity ?: return@enqueueWork
+                val color = runCatching { net.minecraft.world.item.DyeColor.byId(payload.channelId) }.getOrNull() ?: return@enqueueWork
+                if (payload.output) entity.setOutputChannel(color) else entity.setInputChannel(color)
+            }
+        }
+
         registrar.playToServer(SetCardNamePayload.TYPE, SetCardNamePayload.CODEC) { payload, context ->
             context.enqueueWork {
                 val player = context.player()
@@ -1110,6 +1146,18 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                 menu.applyStateSync(payload.data)
             }
         }
+
+        registrar.playToClient(
+            damien.nodeworks.network.MultiProcessingHandlerStateSyncPayload.TYPE,
+            damien.nodeworks.network.MultiProcessingHandlerStateSyncPayload.CODEC,
+        ) { payload, context ->
+            context.enqueueWork {
+                val player = net.minecraft.client.Minecraft.getInstance().player ?: return@enqueueWork
+                val menu = player.containerMenu as? damien.nodeworks.screen.MultiProcessingHandlerMenu ?: return@enqueueWork
+                if (menu.devicePos != payload.data.pos) return@enqueueWork
+                menu.applyStateSync(payload.data)
+            }
+        }
     }
 
     private fun onServerTick(event: ServerTickEvent.Post) {
@@ -1187,6 +1235,7 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
         // load via ProcessingHandlerBlockEntity.setLevel, so a fresh index
         // is the right starting state for the next world load.
         damien.nodeworks.script.cpu.BlockHandlerRegistry.reset()
+        damien.nodeworks.script.cpu.HandlerReservations.reset()
         // Drop cached SavedData handles, a restart in the same JVM (integrated server quit+rejoin)
         // must re-resolve them against the freshly loaded level.dataStorage.
         damien.nodeworks.network.NodeConnectionHelper.clearServerCaches()

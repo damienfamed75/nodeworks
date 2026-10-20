@@ -69,9 +69,8 @@ data class ProcessingHandlerOpenData(
         const val MAX_OUTPUTS = 32
         const val MAX_AVAILABLE = 64
 
-        val STREAM_CODEC: StreamCodec<FriendlyByteBuf, ProcessingHandlerOpenData> =
-            object : StreamCodec<FriendlyByteBuf, ProcessingHandlerOpenData> {
-                private fun decodeSet(buf: FriendlyByteBuf): AvailableSet {
+        /** One set on the wire, shared with the Multi-Processing Handler's open data. */
+        fun decodeSet(buf: FriendlyByteBuf): AvailableSet {
                     val regBuf = buf as RegistryFriendlyByteBuf
                     val sn = buf.readUtf(MAX_API_NAME)
                     val ic = buf.readVarInt().coerceIn(0, MAX_INPUTS)
@@ -91,7 +90,7 @@ data class ProcessingHandlerOpenData(
                     return AvailableSet(sn, ins, outs)
                 }
 
-                private fun encodeSet(buf: FriendlyByteBuf, set: AvailableSet) {
+        fun encodeSet(buf: FriendlyByteBuf, set: AvailableSet) {
                     val regBuf = buf as RegistryFriendlyByteBuf
                     buf.writeUtf(set.name, MAX_API_NAME)
                     buf.writeVarInt(set.inputs.size.coerceAtMost(MAX_INPUTS))
@@ -105,6 +104,9 @@ data class ProcessingHandlerOpenData(
                         buf.writeVarInt(ingr.count)
                     }
                 }
+
+        val STREAM_CODEC: StreamCodec<FriendlyByteBuf, ProcessingHandlerOpenData> =
+            object : StreamCodec<FriendlyByteBuf, ProcessingHandlerOpenData> {
 
                 override fun decode(buf: FriendlyByteBuf): ProcessingHandlerOpenData {
                     val pos = buf.readBlockPos()

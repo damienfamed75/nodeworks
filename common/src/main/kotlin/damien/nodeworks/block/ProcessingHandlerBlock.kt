@@ -40,7 +40,7 @@ import net.minecraft.world.phys.shapes.VoxelShape
  * Phase 1: placement and the directional split. GUI, item routing, and the
  * actual handler binding land in later phases.
  */
-class ProcessingHandlerBlock(properties: Properties) : BaseEntityBlock(properties), Wrenchable, SimpleWaterloggedBlock {
+open class ProcessingHandlerBlock(properties: Properties) : BaseEntityBlock(properties), Wrenchable, SimpleWaterloggedBlock {
 
     companion object {
         val CODEC: MapCodec<ProcessingHandlerBlock> = simpleCodec(::ProcessingHandlerBlock)
@@ -85,6 +85,18 @@ class ProcessingHandlerBlock(properties: Properties) : BaseEntityBlock(propertie
     override fun newBlockEntity(pos: BlockPos, state: BlockState): BlockEntity =
         ProcessingHandlerBlockEntity(pos, state)
 
+    /** Opens this Handler's settings. The Multi-Processing Handler opens its own menu. */
+    protected open fun openMenu(level: ServerLevel, player: ServerPlayer, entity: ProcessingHandlerBlockEntity) {
+        val openData = ProcessingHandlerServerLogic.buildOpenData(level, entity)
+        PlatformServices.menu.openExtendedMenu(
+            player,
+            Component.translatable("container.nodeworks.processing_handler"),
+            openData,
+            ProcessingHandlerOpenData.STREAM_CODEC,
+            { syncId, inv, _ -> ProcessingHandlerMenu.createServer(syncId, inv, entity) },
+        )
+    }
+
     /** Re-propagate from the new position so the back face joins the parent
      *  network and the front face starts (or merges into) a micro-network. */
     override fun setPlacedBy(level: Level, pos: BlockPos, state: BlockState, placer: LivingEntity?, stack: ItemStack) {
@@ -118,15 +130,7 @@ class ProcessingHandlerBlock(properties: Properties) : BaseEntityBlock(propertie
 
         val entity = level.getBlockEntity(pos) as? ProcessingHandlerBlockEntity ?: return InteractionResult.PASS
         val serverLevel = level as? ServerLevel ?: return InteractionResult.PASS
-        val serverPlayer = player as ServerPlayer
-        val openData = ProcessingHandlerServerLogic.buildOpenData(serverLevel, entity)
-        PlatformServices.menu.openExtendedMenu(
-            serverPlayer,
-            Component.translatable("container.nodeworks.processing_handler"),
-            openData,
-            ProcessingHandlerOpenData.STREAM_CODEC,
-            { syncId, inv, _ -> ProcessingHandlerMenu.createServer(syncId, inv, entity) },
-        )
+        openMenu(serverLevel, player as ServerPlayer, entity)
         return InteractionResult.SUCCESS
     }
 }

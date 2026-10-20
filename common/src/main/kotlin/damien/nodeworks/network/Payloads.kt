@@ -1221,6 +1221,49 @@ data class ProcessingHandlerStateSyncPayload(val data: damien.nodeworks.screen.P
     override fun type() = TYPE
 }
 
+/** C2S: bind or unbind one Processing Set on a Multi-Processing Handler. The server
+ *  checks the set is on the parent network, free, and under the cap. */
+data class MultiProcessingHandlerTogglePayload(val pos: BlockPos, val processingApiName: String, val selected: Boolean) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<MultiProcessingHandlerTogglePayload> = CustomPacketPayload.Type(
+            Identifier.fromNamespaceAndPath("nodeworks", "mphandler_toggle")
+        )
+        val CODEC: StreamCodec<FriendlyByteBuf, MultiProcessingHandlerTogglePayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeBlockPos(p.pos); buf.writeUtf(p.processingApiName, 4096); buf.writeBoolean(p.selected) },
+            { buf -> MultiProcessingHandlerTogglePayload(buf.readBlockPos(), buf.readUtf(4096), buf.readBoolean()) }
+        )
+    }
+    override fun type() = TYPE
+}
+
+/** C2S: set the Multi-Processing Handler's input channel, or its output channel when [output]. */
+data class MultiProcessingHandlerSetChannelPayload(val pos: BlockPos, val output: Boolean, val channelId: Int) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<MultiProcessingHandlerSetChannelPayload> = CustomPacketPayload.Type(
+            Identifier.fromNamespaceAndPath("nodeworks", "mphandler_set_channel")
+        )
+        val CODEC: StreamCodec<FriendlyByteBuf, MultiProcessingHandlerSetChannelPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeBlockPos(p.pos); buf.writeBoolean(p.output); buf.writeVarInt(p.channelId) },
+            { buf -> MultiProcessingHandlerSetChannelPayload(buf.readBlockPos(), buf.readBoolean(), buf.readVarInt()) }
+        )
+    }
+    override fun type() = TYPE
+}
+
+/** S2C: refresh the open Multi-Processing Handler menu after a change. */
+data class MultiProcessingHandlerStateSyncPayload(val data: damien.nodeworks.screen.MultiProcessingHandlerOpenData) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<MultiProcessingHandlerStateSyncPayload> = CustomPacketPayload.Type(
+            Identifier.fromNamespaceAndPath("nodeworks", "mphandler_state_sync")
+        )
+        val CODEC: StreamCodec<FriendlyByteBuf, MultiProcessingHandlerStateSyncPayload> = CustomPacketPayload.codec(
+            { p, buf -> damien.nodeworks.screen.MultiProcessingHandlerOpenData.STREAM_CODEC.encode(buf, p.data) },
+            { buf -> MultiProcessingHandlerStateSyncPayload(damien.nodeworks.screen.MultiProcessingHandlerOpenData.STREAM_CODEC.decode(buf)) }
+        )
+    }
+    override fun type() = TYPE
+}
+
 /**
  * S2C: assign one network id to many Connectable BEs in one packet, for
  * `propagateNetworkId` to push the result of a graph walk to clients without

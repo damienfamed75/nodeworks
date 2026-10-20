@@ -3,7 +3,8 @@
   "ingredients": [
     "nodeworks:blank_card",
     "minecraft:light_blue_dye",
-    "minecraft:dropper"
+    "nodeworks:import_chest",
+    "nodeworks:export_chest"
   ],
   "result": {
     "id": "nodeworks:transfer_card",

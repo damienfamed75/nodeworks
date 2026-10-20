@@ -39,10 +39,13 @@ import java.util.UUID
  *
  * Phase 1 stores the binding state but does not yet integrate with the CPU.
  */
-class ProcessingHandlerBlockEntity(
+open class ProcessingHandlerBlockEntity(
+    type: net.minecraft.world.level.block.entity.BlockEntityType<*>,
     pos: BlockPos,
     state: BlockState,
-) : BlockEntity(ModBlockEntities.PROCESSING_HANDLER, pos, state), Connectable {
+) : BlockEntity(type, pos, state), Connectable {
+
+    constructor(pos: BlockPos, state: BlockState) : this(ModBlockEntities.PROCESSING_HANDLER, pos, state)
 
     private val connections = LinkedHashSet<BlockPos>()
     override var blockDestroyed: Boolean = false
@@ -101,6 +104,23 @@ class ProcessingHandlerBlockEntity(
     var processingApiName: String = ""
         private set
 
+    /** Every Processing Set this Handler answers for. One or none here. The
+     *  Multi-Processing Handler answers with its whole list, and everything that
+     *  asks which sets a Handler owns, the registry, the executor, the claim check,
+     *  goes through this so the two never disagree. */
+    open fun boundSetNames(): List<String> =
+        if (processingApiName.isEmpty()) emptyList() else listOf(processingApiName)
+
+    open fun handles(apiName: String): Boolean = apiName.isNotEmpty() && apiName == processingApiName
+
+    /** False for a Handler whose binding is a list, so the single-set bind and
+     *  channel paths below leave it alone even if a stale packet reaches them. */
+    protected open val singleBinding: Boolean get() = true
+
+    /** True for a Handler that takes one job at a time. The executor then reserves it
+     *  for the op using it, see [damien.nodeworks.script.cpu.HandlerReservations]. */
+    open val exclusiveUse: Boolean get() = false
+
     /** Per-input-variant channel. Keyed on [damien.nodeworks.script.BufferKey.Key]
      *  so the same recipe can bind different channels to different variants of
      *  the same itemId (e.g. Strength Potion on BLUE and Fire Resistance Potion
@@ -125,13 +145,13 @@ class ProcessingHandlerBlockEntity(
         private set
 
     /** Looks up the channel for an ingredient by full variant identity. */
-    fun getInputChannel(key: damien.nodeworks.script.BufferKey.Key): DyeColor =
+    open fun getInputChannel(key: damien.nodeworks.script.BufferKey.Key): DyeColor =
         inputChannelsByKey[key] ?: DyeColor.BLUE
 
     /** The bound key a recipe input's channel lives under. The input's own key when it
      *  is bound. For a tag input bound from a set that showed another member of the tag,
      *  that member's key, so sets sharing a tag recipe share the handler's channels. */
-    fun channelKeyFor(ingr: damien.nodeworks.script.RecipeIngredient): damien.nodeworks.script.BufferKey.Key {
+    open fun channelKeyFor(ingr: damien.nodeworks.script.RecipeIngredient): damien.nodeworks.script.BufferKey.Key {
         val key = ingr.bufferKey()
         if (key in inputChannelsByKey) return key
         val tag = ingr.tag ?: return key
@@ -153,6 +173,7 @@ class ProcessingHandlerBlockEntity(
     fun snapshotInputChannels(): Map<damien.nodeworks.script.BufferKey.Key, DyeColor> = inputChannelsByKey.toMap()
 
     fun bindToProcessingSet(name: String, inputs: Collection<damien.nodeworks.script.RecipeIngredient>) {
+        if (!singleBinding) return
         processingApiName = name
         inputChannelsByKey.clear()
         inputPatchesByKey.clear()
@@ -169,6 +190,7 @@ class ProcessingHandlerBlockEntity(
     }
 
     fun unbind() {
+        if (!singleBinding) return
         processingApiName = ""
         inputChannelsByKey.clear()
         inputPatchesByKey.clear()
@@ -190,6 +212,7 @@ class ProcessingHandlerBlockEntity(
     }
 
     fun setInputChannel(key: damien.nodeworks.script.BufferKey.Key, color: DyeColor) {
+        if (!singleBinding) return
         if (!inputChannelsByKey.containsKey(key)) return
         if (inputChannelsByKey[key] == color) return
         inputChannelsByKey[key] = color
@@ -197,6 +220,7 @@ class ProcessingHandlerBlockEntity(
     }
 
     fun setAllInputChannels(color: DyeColor) {
+        if (!singleBinding) return
         var changed = false
         for (key in inputChannelsByKey.keys.toList()) {
             if (inputChannelsByKey[key] != color) {
@@ -213,7 +237,7 @@ class ProcessingHandlerBlockEntity(
         markDirtyAndSync()
     }
 
-    private fun markDirtyAndSync() {
+    protected fun markDirtyAndSync() {
         setChanged()
         level?.sendBlockUpdated(worldPosition, blockState, blockState, Block.UPDATE_ALL)
     }

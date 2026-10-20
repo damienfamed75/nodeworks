@@ -140,6 +140,11 @@ data class ServerSafetySettings(
      *  budget AND building up unbounded memory. */
     val maxCallbacksPerKind: Int = 256,
 
+    /** Processing Sets one Multi-Processing Handler may own. Each bound set is one
+     *  registry entry and one row in its GUI, so the cap is about keeping a single
+     *  block's picker and its open packet reasonable, not about server load. */
+    val multiHandlerMaxSets: Int = 16,
+
     /** Set of optional Lua standard libraries to load on engine startup. Default
      *  contains the full set of currently-shipped libs so vanilla / trusted
      *  servers behave like an unrestricted sandbox. Admins on hostile servers

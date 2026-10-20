@@ -81,6 +81,9 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
      *  "the CPU is waiting for something" without being laggy. */
     private val RETRY_BACKOFF_TICKS = 20L
 
+    /** How long an op steps aside when its handler block is busy with another op. */
+    private val HANDLER_BUSY_BACKOFF_TICKS = 5L
+
     /** Per-op retry cap. Read live from the Network Controller for this CPU's network so
      *  players can tune it in the Controller GUI without a server restart. Falls back to
      *  50 if no Controller is reachable (legacy default). */
@@ -646,7 +649,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             val handlerBE = blockHandlerPos?.let {
                 handlerLevel.getBlockEntity(it) as? damien.nodeworks.block.entity.ProcessingHandlerBlockEntity
             }
-            if (handlerBE != null && handlerBE.processingApiName == apiMatch.api.name) {
+            if (handlerBE != null && handlerBE.handles(apiMatch.api.name)) {
                 // [executeBlockHandler] still receives the cpu's level - it
                 // gets handed straight to [ProcessingJob] which uses it for
                 // cpu-side network re-discovery on stale-job recovery. The
@@ -956,6 +959,18 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             return CraftScheduler.OpResult.InProgress
         }
 
+        // A handler that takes one job at a time and already has one, from this CPU or
+        // another, is left alone. The op gives up its thread and looks again shortly.
+        val handlerLevel = handlerBE.level as? ServerLevel
+        if (handlerBE.exclusiveUse && handlerLevel != null) {
+            val holder = HandlerReservations.holder(handlerLevel.dimension(), handlerBE.blockPos)
+            if (holder != null && (holder.cpuPos != cpu.blockPos || holder.opId != op.id)) {
+                val now = (cpu.level as? ServerLevel)?.gameTime ?: 0L
+                op.readyAt = now + HANDLER_BUSY_BACKOFF_TICKS
+                return CraftScheduler.OpResult.Deferred
+            }
+        }
+
         cpu.setCrafting(true, outputItemId.substringAfter(':').replace('_', ' '))
 
         // Serial runs one batch per call. Parallel runs chunks sized to what the machine takes.
@@ -976,6 +991,12 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         }
         return when (invokeResult) {
             is BlockProcessingHandler.InvokeResult.InProgress -> {
+                if (handlerBE.exclusiveUse && handlerLevel != null) {
+                    HandlerReservations.reserve(
+                        handlerLevel.dimension(), handlerBE.blockPos,
+                        HandlerReservations.Holder(cpu.blockPos, op.id, invokeResult.pending),
+                    )
+                }
                 val state = ProcessState(
                     pending = invokeResult.pending,
                     processingJob = invokeResult.job,
@@ -1224,6 +1245,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         // Drop the registered state so the next dispatch re-invokes the
         // handler fresh instead of polling a never-completing pending.
         if (state != null) processState.remove(op.id)
+        HandlerReservations.release(cpu.blockPos, op.id)
         // Per-op resume info is only meaningful when items actually reached
         // the machine; on a failed-move retry we're starting fresh.
         cpu.clearOpResume(op.id)
@@ -1244,6 +1266,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
     }
 
     override fun onPlanCompleted(plan: CraftPlan) {
+        HandlerReservations.releaseAll(cpu.blockPos)
         // Defensive: should be empty by now (each op cleans on completion), but a stuck
         // entry would leak across plans since op IDs reset to 0 each plan.
         val planOpIds = plan.ops.map { it.id }.toSet()
@@ -1275,6 +1298,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
     }
 
     override fun onPlanFailed(plan: CraftPlan, reason: String) {
+        HandlerReservations.releaseAll(cpu.blockPos)
         logger.warn("CPU at {}: plan for {} failed: {}", cpu.blockPos, plan.rootItemId, reason)
         val planOpIds = plan.ops.map { it.id }.toSet()
         processState.keys.retainAll { it !in planOpIds }

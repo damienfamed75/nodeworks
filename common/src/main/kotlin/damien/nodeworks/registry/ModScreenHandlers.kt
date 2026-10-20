@@ -44,6 +44,7 @@ object ModScreenHandlers {
     lateinit var EXPORT_CHEST: MenuType<damien.nodeworks.screen.ExportChestMenu>
     lateinit var USER: MenuType<damien.nodeworks.screen.UserMenu>
     lateinit var PROCESSING_HANDLER: MenuType<damien.nodeworks.screen.ProcessingHandlerMenu>
+    lateinit var MULTI_PROCESSING_HANDLER: MenuType<damien.nodeworks.screen.MultiProcessingHandlerMenu>
     lateinit var STORAGE_METER: MenuType<damien.nodeworks.screen.StorageMeterMenu>
     lateinit var CRAFT_REQUESTER: MenuType<damien.nodeworks.screen.CraftRequesterMenu>
 

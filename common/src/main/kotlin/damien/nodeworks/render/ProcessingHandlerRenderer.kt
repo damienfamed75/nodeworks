@@ -22,8 +22,8 @@ import net.minecraft.world.phys.Vec3
  *    `transition_cube.png` texture (white→yellow gradient) so the colour
  *    handoff between the two stubs is visible at any angle.
  */
-class ProcessingHandlerRenderer(context: BlockEntityRendererProvider.Context) :
-    ConnectableBER<ProcessingHandlerBlockEntity, ProcessingHandlerRenderer.RenderState>(context) {
+class ProcessingHandlerRenderer<T : ProcessingHandlerBlockEntity>(context: BlockEntityRendererProvider.Context) :
+    ConnectableBER<T, ProcessingHandlerRenderer.RenderState>(context) {
 
     companion object {
         /** Yellow tint passed to [PipeLaserBeam] for the front-face micro
@@ -57,7 +57,7 @@ class ProcessingHandlerRenderer(context: BlockEntityRendererProvider.Context) :
     override fun createRenderState(): RenderState = RenderState()
 
     override fun extractConnectable(
-        blockEntity: ProcessingHandlerBlockEntity,
+        blockEntity: T,
         state: RenderState,
         partialTicks: Float,
         cameraPosition: Vec3,

@@ -84,7 +84,7 @@ object BlockHandlerRegistry {
     }
 
     /**
-     * Reconcile the registry with [handler]'s current `(networkId, processingApiName)`.
+     * Reconcile the registry with [handler]'s current network id and bound set names.
      * Idempotent: drops any stale entry pointing at this Handler's position, then
      * re-registers if the BE is currently bound and on a network.
      *
@@ -97,9 +97,7 @@ object BlockHandlerRegistry {
     fun syncFromBE(handler: damien.nodeworks.block.entity.ProcessingHandlerBlockEntity) {
         val pos = handler.blockPos
         unregisterByPos(pos)
-        val name = handler.processingApiName
-        if (name.isEmpty()) return
         val netId = handler.networkId ?: return
-        register(netId, name, pos)
+        for (name in handler.boundSetNames()) register(netId, name, pos)
     }
 }

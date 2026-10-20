@@ -115,6 +115,7 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
                 is damien.nodeworks.block.entity.UserBlockEntity -> "user"
                 is damien.nodeworks.block.entity.ImportChestBlockEntity -> "import_chest"
                 is damien.nodeworks.block.entity.ExportChestBlockEntity -> "export_chest"
+                is damien.nodeworks.block.entity.MultiProcessingHandlerBlockEntity -> "multi_processing_handler"
                 is damien.nodeworks.block.entity.ProcessingHandlerBlockEntity -> "processing_handler"
                 is damien.nodeworks.block.entity.CraftRequesterBlockEntity -> "craft_requester"
                 is damien.nodeworks.block.entity.StorageMeterBlockEntity -> "storage_meter"
@@ -243,6 +244,12 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
                         details.add("Filter rules: ${entity.filterRules.size}")
                         for (rule in entity.filterRules) details.add("  $rule")
                     }
+                }
+                is damien.nodeworks.block.entity.MultiProcessingHandlerBlockEntity -> {
+                    val names = entity.boundSetNames()
+                    details.add(if (names.isEmpty()) "Not bound" else "Recipes: ${names.size}")
+                    details.add("Inputs: ${channelFilterMarker(damien.nodeworks.network.ChannelFilter.Color(entity.inputChannel))}")
+                    details.add("Outputs: ${channelFilterMarker(damien.nodeworks.network.ChannelFilter.Color(entity.outputChannel))}")
                 }
                 is damien.nodeworks.block.entity.ProcessingHandlerBlockEntity -> {
                     // Recipe NAME is hidden, processing-set names from JEI etc.

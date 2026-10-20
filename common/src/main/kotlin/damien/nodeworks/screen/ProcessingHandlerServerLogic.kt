@@ -25,26 +25,34 @@ object ProcessingHandlerServerLogic {
         level: ServerLevel,
         self: ProcessingHandlerBlockEntity,
         apiName: String,
-    ): Boolean {
-        val parentSnapshot = NetworkDiscovery.discoverNetwork(
-            level, self.blockPos.relative(self.backFace),
-        )
-        // Check Lua handlers registered on any terminal of the parent network.
+    ): Boolean = claimedBy(level, self, apiName, parentSnapshot(level, self)) != null
+
+    /** The parent network as seen from [self]'s back face. */
+    fun parentSnapshot(level: ServerLevel, self: ProcessingHandlerBlockEntity): damien.nodeworks.network.NetworkSnapshot =
+        NetworkDiscovery.discoverNetwork(level, self.blockPos.relative(self.backFace))
+
+    /** Who else handles [apiName] on the parent network: a short player-facing label,
+     *  or null when nobody does. Both Handler kinds and both of their pickers decide
+     *  "can I take this set" through this one check. [parentSnapshot] is passed in so
+     *  a GUI asking about every set on a network walks it once, not once per set. */
+    fun claimedBy(
+        level: ServerLevel,
+        self: ProcessingHandlerBlockEntity,
+        apiName: String,
+        parentSnapshot: damien.nodeworks.network.NetworkSnapshot,
+    ): String? {
+        // Lua handlers registered on any terminal of the parent network.
         val hasLuaHandler = parentSnapshot.terminalPositions.any { terminalPos ->
-            val engine = damien.nodeworks.platform.PlatformServices.modState
-                .findProcessingEngine(level, listOf(terminalPos), apiName)
-            engine != null
+            damien.nodeworks.platform.PlatformServices.modState
+                .findProcessingEngine(level, listOf(terminalPos), apiName) != null
         }
-        if (hasLuaHandler) return true
-        // Check other block-side Processing Handlers on the same parent
-        // network via the BlockHandlerRegistry. Same-pos entries are this
-        // handler itself (re-binding to the same recipe is fine).
-        val networkId = parentSnapshot.networkId
-        if (networkId != null) {
-            val claimedBy = damien.nodeworks.script.cpu.BlockHandlerRegistry.find(networkId, apiName)
-            if (claimedBy != null && claimedBy != self.blockPos) return true
-        }
-        return false
+        if (hasLuaHandler) return "a script"
+        // Other handler blocks on the same parent network. Same-pos entries are this
+        // handler itself, re-binding to the same recipe is fine.
+        val networkId = parentSnapshot.networkId ?: return null
+        val owner = damien.nodeworks.script.cpu.BlockHandlerRegistry.find(networkId, apiName) ?: return null
+        if (owner == self.blockPos) return null
+        return "a handler at ${owner.x}, ${owner.y}, ${owner.z}"
     }
 
     /**

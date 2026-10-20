@@ -33,6 +33,9 @@ class CraftScheduler(
         object Completed : OpResult()
         /** Async op still running. Scheduler leaves it pending, re-invokes next tick. */
         object InProgress : OpResult()
+        /** Op could not start, its handler is taken, and has set its own ready time. It
+         *  holds no thread until then, so the slot goes to other ready work. */
+        object Deferred : OpResult()
         /** Op failed. Scheduler aborts the plan with [reason]. */
         data class Failed(val reason: String) : OpResult()
     }
@@ -166,6 +169,9 @@ class CraftScheduler(
                         is OpResult.InProgress -> {
                             op.inProgress = true
                             // Op stays in readyOps for future ticks, slot was spent here.
+                        }
+                        is OpResult.Deferred -> {
+                            op.inProgress = false
                         }
                         is OpResult.Failed -> {
                             val p = plan

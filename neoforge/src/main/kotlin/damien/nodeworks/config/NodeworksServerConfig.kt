@@ -32,6 +32,7 @@ object NodeworksServerConfig {
     val MAX_ITEMS_PER_PRESET_RUN: ModConfigSpec.IntValue
     val MAX_ITEM_MOVE_MS_PER_TICK_PER_NETWORK: ModConfigSpec.IntValue
     val MAX_CALLBACKS_PER_KIND: ModConfigSpec.IntValue
+    val MULTI_HANDLER_MAX_SETS: ModConfigSpec.IntValue
     val ENABLED_MODULES: ModConfigSpec.ConfigValue<List<String>>
     val DISABLED_METHODS: ModConfigSpec.ConfigValue<List<String>>
     val OBSERVER_DENIED_BLOCKS: ModConfigSpec.ConfigValue<List<String>>
@@ -307,6 +308,18 @@ object NodeworksServerConfig {
                 100_000,
             )
 
+        MULTI_HANDLER_MAX_SETS = builder
+            .comment(
+                " Processing Sets one Multi-Processing Handler may own. Raising it lets one",
+                " block drive more recipes through the same machines."
+            )
+            .defineInRange(
+                "multiHandlerMaxSets",
+                ServerSafetySettings.Defaults.multiHandlerMaxSets,
+                1,
+                64,
+            )
+
         builder.pop()
         builder.pop()
         builder
@@ -460,6 +473,7 @@ object NodeworksServerConfig {
         maxItemsPerPresetRun = MAX_ITEMS_PER_PRESET_RUN.get().toLong(),
         maxItemMoveMsPerTickPerNetwork = MAX_ITEM_MOVE_MS_PER_TICK_PER_NETWORK.get().toLong(),
         maxCallbacksPerKind = MAX_CALLBACKS_PER_KIND.get(),
+        multiHandlerMaxSets = MULTI_HANDLER_MAX_SETS.get(),
         enabledModules = ENABLED_MODULES.get().toSet(),
         disabledMethods = DISABLED_METHODS.get().toSet(),
         observerDeniedBlocks = OBSERVER_DENIED_BLOCKS.get().toList(),

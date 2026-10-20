@@ -17,6 +17,7 @@
     "nodeworks:instruction_storage",
     "nodeworks:processing_storage",
     "nodeworks:processing_handler",
+    "nodeworks:multi_processing_handler",
     "nodeworks:crafting_core",
     "nodeworks:crafting_storage",
     "nodeworks:co_processor",
