@@ -379,7 +379,9 @@ open class NodeBlockEntity(
         // Time comes from the Transfer Cards' own budget, items from the network's shared cap.
         val budget = damien.nodeworks.script.NetworkRateLimits.forTransferCards(networkId)
         val itemCap = damien.nodeworks.script.NetworkRateLimits.forNetwork(networkId)
-        val tick = level.gameTime
+        // Budgets count by the server tick, as scripts do. Mixing in the level's game time
+        // would reset the shared item cap every time a card and a script took turns.
+        val tick = damien.nodeworks.platform.PlatformServices.modState.tickCount
         // Only an existing cache is kept current, a terminal that is open somewhere.
         // Never create one, a poller on a network nobody looks at is pure cost.
         val cache = damien.nodeworks.script.NetworkInventoryCache.existing(snapshot.networkId)
@@ -404,7 +406,7 @@ open class NodeBlockEntity(
         val counterpart = snapshot.storageCards
             .firstOrNull { (it.capability as? StorageSideCapability)?.adjacentPos in excluded }
             ?.channel
-        if (tick % CURSOR_PRUNE_TICKS == 0L) pruneScanCursors(slot, snapshot)
+        if (level.gameTime % CURSOR_PRUNE_TICKS == 0L) pruneScanCursors(slot, snapshot)
 
         if (itemTarget != null) {
             // Never moves more than nine stacks' worth in one run however much cap is left.
