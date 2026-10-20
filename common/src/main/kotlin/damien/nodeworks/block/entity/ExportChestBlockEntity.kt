@@ -60,6 +60,9 @@ class ExportChestBlockEntity(
 ) : BlockEntity(ModBlockEntities.EXPORT_CHEST, pos, state), Container, Connectable, LidBlockEntity {
 
     companion object {
+        /** How long an edited rule list waits before the chest pulls by it. */
+        private const val RULE_SETTLE_TICKS = 40L
+
         const val SLOT_COUNT = 9
         const val DEFAULT_TICK_INTERVAL = 20
         const val MIN_TICK_INTERVAL = 1
@@ -93,9 +96,18 @@ class ExportChestBlockEntity(
      *  drain the network). */
     var filterRules: List<String> = emptyList()
         set(value) {
-            field = value.toList()
+            val next = value.toList()
+            // An edited list waits a moment before it acts, so a rule being typed does
+            // not pull the network through each of its half-finished forms. Saving is
+            // untouched, only the pull holds off.
+            if (next != field) rulesSettleAt = (level?.gameTime ?: 0L) + RULE_SETTLE_TICKS
+            field = next
             markDirtyAndSync()
         }
+
+    /** Game time from which the current rule list may pull. Not saved, a reload
+     *  starts with settled rules. */
+    private var rulesSettleAt: Long = 0L
 
     /** Channel scope for the network-pull side. ALL pulls from every storage
      *  card on the network, [ChannelFilter.Color] restricts to one channel. */
@@ -187,7 +199,7 @@ class ExportChestBlockEntity(
         // Empty rule list = no auto-pull (fresh chest doesn't drain the
         // network). Push side is independent so a buffer with manually-placed
         // items still drains even with no rules.
-        if (filterRules.isNotEmpty()) pullFromNetwork(level)
+        if (filterRules.isNotEmpty() && level.gameTime >= rulesSettleAt) pullFromNetwork(level)
         if (pushFace != null) pushToAdjacent(level, pushFace!!)
         // Wireless dispatch: if a Broadcast Antenna is sitting next to this
         // chest, fan items out to every Receiver Antenna paired with that

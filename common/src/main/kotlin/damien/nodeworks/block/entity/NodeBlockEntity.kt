@@ -247,7 +247,7 @@ open class NodeBlockEntity(
                     damien.nodeworks.card.TransferSideCapability(
                         adjacentPos, customSide?.resolve(side) ?: accessFace,
                         damien.nodeworks.card.TransferCard.getMode(stack),
-                        damien.nodeworks.card.TransferCard.getFilterRules(stack),
+                        damien.nodeworks.card.TransferCard.getFilterRules(stack).filter { it.isNotBlank() },
                         damien.nodeworks.card.TransferCard.getRoundRobin(stack),
                         damien.nodeworks.card.TransferCard.getTickInterval(stack),
                     )
@@ -377,7 +377,7 @@ open class NodeBlockEntity(
                 any = true
                 transferConfigs[slot] = TransferConfig(
                     damien.nodeworks.card.TransferCard.getMode(stack),
-                    damien.nodeworks.card.TransferCard.getFilterRules(stack),
+                    damien.nodeworks.card.TransferCard.getFilterRules(stack).filter { it.isNotBlank() },
                     damien.nodeworks.card.TransferCard.getRoundRobin(stack),
                     damien.nodeworks.card.TransferCard.getTickInterval(stack),
                     damien.nodeworks.card.TransferCard.getChannelFilter(stack),

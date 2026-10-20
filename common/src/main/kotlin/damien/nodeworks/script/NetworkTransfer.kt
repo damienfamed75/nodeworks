@@ -121,9 +121,11 @@ object NetworkTransfer {
         spill: (ItemStack) -> Unit,
         sink: (ItemStack) -> Int,
     ): Long {
-        if (rules.isEmpty() || maxItems <= 0L) return 0L
+        // A blank rule is one still being typed. It must not read as "everything".
+        val active = rules.filter { it.isNotBlank() }
+        if (active.isEmpty() || maxItems <= 0L) return 0L
         val registries = level.registryAccess()
-        val matches: (ItemStack) -> Boolean = { stack -> rules.any { CardHandle.matchesFilter(stack, it, registries) } }
+        val matches: (ItemStack) -> Boolean = { stack -> active.any { CardHandle.matchesFilter(stack, it, registries) } }
         var remaining = maxItems
         var total = 0L
         for (card in destinationCards(snapshot, channel, exclude)) {
