@@ -32,6 +32,19 @@ internal object CardStorage {
         return PlatformServices.storage.getItemStorage(level, cap.adjacentPos, face)
     }
 
+    /** The fluid side of the block a card faces, null when it has no tank. */
+    fun fluidForCard(level: ServerLevel, card: CardSnapshot, faceOverride: Direction? = null): damien.nodeworks.platform.FluidStorageHandle? {
+        val cap = card.capability
+        val face: Direction = faceOverride ?: when (cap) {
+            is IOSideCapability -> cap.defaultFace
+            is StorageSideCapability -> cap.defaultFace
+            is RedstoneSideCapability -> return null
+            else -> Direction.UP
+        }
+        if (cap is RedstoneSideCapability) return null
+        return PlatformServices.storage.getFluidStorage(level, cap.adjacentPos, face)
+    }
+
     /** The rules a Storage Card enforces on what goes into its block, as a check on each
      *  stack: its rule list, stackability and data filters. Null for cards with no rules,
      *  so the caller can skip the check. */

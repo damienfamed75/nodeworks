@@ -15,25 +15,6 @@ the same setup with filtering.
 
 ---
 
-## With Transfer Cards
-
-### Inserting items into your network
-
-<ItemLink id="transfer_card" />s can be used to import and export items to/from [Network Storage](../nodeworks-mechanics/network-storage.md)
-
-<GameScene zoom="5" interactive={true}>
-  <ImportStructure src="../assets/assemblies/moving_items_transfer_card.snbt" />
-  <IsometricCamera yaw="200" pitch="20" />
-  <BoxAnnotation min="1 0.1 0.1" max="1.25 0.9 0.9" color="#AA83E0">
-    <ItemImage id="nodeworks:storage_card" />
-  </BoxAnnotation>
-  <BoxAnnotation min="2 0.1 0.1" max="1.75 0.9 0.9" color="#668df0">
-    <ItemImage id="nodeworks:transfer_card" /> can be set to import or export from [Network Storage](../nodeworks-mechanics/network-storage.md)
-  </BoxAnnotation>
-</GameScene>
-
----
-
 ## With Import/Export Chests
 
 ### Inserting items into your network
@@ -67,6 +48,25 @@ Anything placed inside an <ItemLink id="import_chest"/> will be inserted into [N
     automatically be pulled into the network
   </BlockAnnotation>
 </GameScene>
+
+### Moving items from network to network
+
+If you need to move items between multiple chests to another network of multiple chests you can use import and export chests together. You can configure the export chest to push its contents into the import chest.
+
+<GameScene zoom="3" interactive={true} paddingTop="20" paddingBottom="20">
+  <ImportStructure src="../assets/assemblies/moving_items_net_to_net.snbt" />
+  <IsometricCamera yaw="200" pitch="20" />
+  <BoxAnnotation min="2 0.1 0.1" max="2.25 1.9 0.9" color="#AA83E0">
+    <ItemImage id="nodeworks:storage_card" />
+  </BoxAnnotation>
+  <BoxAnnotation min="8 0.1 0.1" max="7.75 1.9 0.9" color="#AA83E0">
+    <ItemImage id="nodeworks:storage_card" />
+  </BoxAnnotation>
+  <BlockAnnotation x="4">
+    ![](../assets/images/export_chest_push_left.png)
+  </BlockAnnotation>
+</GameScene>
+
 
 ---
 

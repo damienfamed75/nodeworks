@@ -39,6 +39,9 @@ object TransferCardTicker {
      *  of one-Node networks would have no ceiling on their sum. */
     private const val MAX_NANOS_PER_TICK = 5_000_000L
 
+    /** How long a Node in a non-ticking chunk waits before the ticker looks at it again. */
+    private const val UNLOADED_RECHECK_TICKS = 20L
+
     fun register(level: ServerLevel, pos: BlockPos) {
         if (byDimension.getOrPut(level.dimension()) { ConcurrentHashMap.newKeySet() }.add(pos.asLong())) {
             orderDirty.add(level.dimension())
@@ -46,6 +49,9 @@ object TransferCardTicker {
         // A card just arrived, so it runs on the next walk.
         dueAt[level.dimension()]?.remove(pos.asLong())
     }
+
+    fun isRegistered(level: ServerLevel, pos: BlockPos): Boolean =
+        byDimension[level.dimension()]?.contains(pos.asLong()) == true
 
     fun unregister(level: ServerLevel, pos: BlockPos) {
         if (byDimension[level.dimension()]?.remove(pos.asLong()) == true) orderDirty.add(level.dimension())
@@ -91,7 +97,12 @@ object TransferCardTicker {
             val pos = BlockPos.of(packed)
             // The same gate a block entity ticker runs under: a chunk that is loaded but
             // outside the ticking range does not run its cards. The entry stays for when it does.
-            if (!level.shouldTickBlocksAt(pos)) continue
+            if (!level.shouldTickBlocksAt(pos)) {
+                // Unloaded or out of simulation range. Look again in a second, so a Node
+                // whose chunk went away costs one lookup a second rather than one a tick.
+                due[packed] = now + UNLOADED_RECHECK_TICKS
+                continue
+            }
             // An entry whose Node is gone or no longer holds a card is stale, drop it.
             val node = level.getBlockEntity(pos) as? NodeBlockEntity
             if (node == null || node.isRemoved || !node.hasTransferCards) {

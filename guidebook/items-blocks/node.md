@@ -47,8 +47,6 @@ a capability:
   reads and emits redstone signals from this face.
 - <ItemImage scale="0.5" id="observer_card" /> <ItemLink id="observer_card" />:
   reads the state of the block it's facing
-- <ItemImage scale="0.5" id="transfer_card" /> <ItemLink id="transfer_card" />:
-  moves items between the adjacent block and network storage
 
 Multiple cards on one face stack. A face with both an IO card and a
 Redstone card can move items AND emit a redstone signal from the same

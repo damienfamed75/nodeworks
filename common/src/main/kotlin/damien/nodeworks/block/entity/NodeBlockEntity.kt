@@ -316,6 +316,46 @@ open class NodeBlockEntity(
      *  to [MAX_IDLE_BACKOFF_SHIFT] doublings, so an idle card costs little and a card
      *  that finds work again is back at its interval at once. */
     private val transferMisses = IntArray(TOTAL_SLOTS)
+    /** Game time of each slot's last run and whether it moved anything, for the
+     *  Diagnostic Tool. */
+    private val transferLastRun = LongArray(TOTAL_SLOTS)
+    private val transferLastMoved = BooleanArray(TOTAL_SLOTS)
+    private var transferLastTick = 0L
+
+    /** One line per Transfer Card for the Diagnostic Tool: what it is, when it next
+     *  runs, how far it has backed off, and what its last run did. */
+    fun transferStatus(): List<String> {
+        val out = ArrayList<String>()
+        val now = level?.gameTime ?: 0L
+        (level as? net.minecraft.server.level.ServerLevel)?.let { lvl ->
+            out.add("Ticker: " + (if (TransferCardTicker.isRegistered(lvl, worldPosition)) "registered" else "not registered") +
+                ", chunk " + (if (lvl.shouldTickBlocksAt(worldPosition)) "ticking" else "not ticking"))
+            out.add(if (transferLastTick == 0L) "  never ticked" else "  ticked ${now - transferLastTick}t ago")
+        }
+        for (slot in 0 until TOTAL_SLOTS) {
+            val config = transferConfigs[slot] ?: continue
+            val side = sideForSlot(slot).name.lowercase()
+            val mode = config.mode.name.lowercase()
+            val wait = (config.interval shl minOf(transferMisses[slot], MAX_IDLE_BACKOFF_SHIFT))
+                .coerceAtMost(damien.nodeworks.card.TransferCard.MAX_TICK_INTERVAL)
+            val due = (wait - transferCountdown[slot]).coerceAtLeast(0)
+            out.add("Transfer $mode, $side face")
+            out.add(
+                when {
+                    networkId == null -> "  no network"
+                    faceRole(sideForSlot(slot)) != FaceRole.DEVICE -> "  face is not a device face"
+                    else -> "  due in ${due}t, wait x${1 shl minOf(transferMisses[slot], MAX_IDLE_BACKOFF_SHIFT)}"
+                }
+            )
+            if (transferLastRun[slot] == 0L) {
+                out.add("  never ran")
+            } else {
+                out.add("  last run ${now - transferLastRun[slot]}t ago")
+                out.add(if (transferLastMoved[slot]) "  moved items" else "  moved nothing")
+            }
+        }
+        return out
+    }
     private val transferCursors =
         arrayOfNulls<damien.nodeworks.script.NetworkTransfer.RoundRobinCursor>(TOTAL_SLOTS)
 
@@ -368,6 +408,7 @@ open class NodeBlockEntity(
      *  many ticks until the next card is due, so the ticker can leave this Node alone
      *  until then instead of looking it up every tick. */
     fun serverTick(level: net.minecraft.server.level.ServerLevel, elapsed: Int): Int {
+        transferLastTick = level.gameTime
         if (!hasTransferCards) return Int.MAX_VALUE
         if (networkId == null) return NO_NETWORK_RECHECK_TICKS
         var nextDue = Int.MAX_VALUE
@@ -380,8 +421,10 @@ open class NodeBlockEntity(
                 transferCountdown[slot] = 0
                 val side = sideForSlot(slot)
                 if (faceRole(side) == FaceRole.DEVICE) {
-                    if (runTransferCard(level, slot, side, config)) transferMisses[slot] = 0
-                    else transferMisses[slot]++
+                    val moved = runTransferCard(level, slot, side, config)
+                    transferLastRun[slot] = level.gameTime
+                    transferLastMoved[slot] = moved
+                    if (moved) transferMisses[slot] = 0 else transferMisses[slot]++
                 }
             }
             val again = (config.interval shl minOf(transferMisses[slot], MAX_IDLE_BACKOFF_SHIFT))
@@ -952,7 +995,10 @@ open class NodeBlockEntity(
         val currentLevel = level
         if (currentLevel is net.minecraft.server.level.ServerLevel) {
             NodeConnectionHelper.removeAllConnections(currentLevel, this)
-            TransferCardTicker.unregister(currentLevel, worldPosition)
+            // The ticker entry stays. Looking up the world here would ask for a chunk that
+            // may be mid-unload and stall the save, and an instance swapped out for a new
+            // one at this position must not take the new one's entry with it. A broken or
+            // unloaded Node is dropped or skipped by the ticker on its own walk.
             // Only populated while this Node anchored a controller-less network, and only
             // dropped when the Node is really gone. A chunk unload must leave the cache an
             // open terminal elsewhere on the network is reading.

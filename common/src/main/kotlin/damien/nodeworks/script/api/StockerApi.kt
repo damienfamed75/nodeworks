@@ -79,10 +79,17 @@ val StockerBuilderApi: ApiSurface = api(StockerBuilder) {
     }
 
     method("filter") {
-        param("pattern", Filter, description = "Resource filter, defaults to `*`.")
+        param("rules", Filter, description = "One or more resource filter rules, or a table of them. Variadic at runtime. Called with nothing, clears the list.")
         returns(StockerBuilder)
-        description = "Pattern counted toward `:keep(n)` in the target."
+        description = "What counts toward `:keep(n)` in the target and what `:from` pulls: items matching any rule."
         guidebookRef = "nodeworks:lua-api/stocker.md#filter"
+    }
+
+    method("except") {
+        param("rules", Filter, description = "One or more resource filter rules, or a table of them. Variadic at runtime. Called with nothing, clears the list.")
+        returns(StockerBuilder)
+        description = "Items left out of the count and the pull, whatever `:filter` says."
+        guidebookRef = "nodeworks:lua-api/stocker.md#except"
     }
 
     method("verbose") {

@@ -50,17 +50,24 @@ val ImporterBuilderApi: ApiSurface = api(ImporterBuilder) {
     }
 
     method("roundrobin") {
-        param("step", Number.optional(), description = "Items per target per tick. Defaults to 1.")
+        param("step", Number.optional(), description = "Units per target per turn: items for items, millibuckets for fluids. Defaults to 1.")
         returns(ImporterBuilder)
         description = "Switch to round-robin distribution across the configured targets."
         guidebookRef = "nodeworks:lua-api/importer.md#roundrobin"
     }
 
     method("filter") {
-        param("pattern", Filter, description = "Resource filter, defaults to `*` (everything).")
+        param("rules", Filter, description = "One or more resource filter rules, or a table of them. Variadic at runtime. Called with nothing, clears the list.")
         returns(ImporterBuilder)
-        description = "Narrows the mover to items matching the pattern."
+        description = "Adds to what the mover takes: items and fluids matching any rule. Nothing set means everything."
         guidebookRef = "nodeworks:lua-api/importer.md#filter"
+    }
+
+    method("except") {
+        param("rules", Filter, description = "One or more resource filter rules, or a table of them. Variadic at runtime. Called with nothing, clears the list.")
+        returns(ImporterBuilder)
+        description = "Adds to what the mover leaves alone, whatever `:filter` says. Applies to items and fluids."
+        guidebookRef = "nodeworks:lua-api/importer.md#except"
     }
 
     method("every") {

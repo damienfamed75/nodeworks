@@ -772,7 +772,7 @@ class InventoryTerminalMenu(
                 // onTake consumes the grid and slotsChanged writes the
                 // next result. Refill inline, chaining must not rely on
                 // vanilla's QUICK_MOVE re-entry.
-                if (autoPull && !slot.hasItem()) autoPullRefill()
+                if (autoPull && !slot.hasItem()) autoPullRefill(bulk = craftAll)
             }
         } finally {
             batchCrafting = false
@@ -806,7 +806,7 @@ class InventoryTerminalMenu(
         // refill deferred to broadcastChanges would land a tick late with an empty result
         // slot in between.
         if (autoPullPattern != null) {
-            if (serverLevel != null) autoPullRefill() else predictRefill(resultBefore)
+            if (serverLevel != null) autoPullRefill(bulk = false) else predictRefill(resultBefore)
         }
     }
 
@@ -1570,7 +1570,10 @@ class InventoryTerminalMenu(
      * After a crafting result is taken, refill empty grid slots from network storage.
      * Only runs when autoPull is enabled.
      */
-    private fun autoPullRefill() {
+    /** [bulk] is a craft-all: whole stacks go into each slot so the next crafts draw from
+     *  the grid. A plain click or shift-click pulls one per slot, as a pattern would, so
+     *  the network is not emptied into the grid for a single craft. */
+    private fun autoPullRefill(bulk: Boolean) {
         if (!autoPull) return
         val lvl = serverLevel ?: return
         val snap = snapshot ?: return
@@ -1584,9 +1587,7 @@ class InventoryTerminalMenu(
         try {
             // Empty slots that want the same item share one pull, split evenly, so a recipe
             // using an item in four slots keeps crafting while the network holds enough for
-            // all four, instead of filling the first slot and starving the rest. Whole
-            // stacks per slot, so the next crafts draw from the grid and the network is
-            // asked once per stack rather than once per craft.
+            // all four, instead of filling the first slot and starving the rest.
             val groups = LinkedHashMap<damien.nodeworks.script.BufferKey.Key, MutableList<Int>>()
             for ((i, template) in pattern.withIndex()) {
                 if (template.isEmpty) continue
@@ -1596,9 +1597,8 @@ class InventoryTerminalMenu(
             for ((_, slots) in groups) {
                 val template = pattern[slots[0]]
                 val itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(template.item).toString()
-                val stacks = extractRealStacks(
-                    lvl, snap, c, itemId, template.maxStackSize.toLong() * slots.size, template.componentsPatch,
-                )
+                val perSlot = if (bulk) template.maxStackSize.toLong() else 1L
+                val stacks = extractRealStacks(lvl, snap, c, itemId, perSlot * slots.size, template.componentsPatch)
                 var total = 0L
                 for (stack in stacks) total += stack.count
                 if (total <= 0L) continue

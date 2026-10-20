@@ -27,6 +27,10 @@ import org.luaj.vm2.lib.TwoArgFunction
  * invokes [onSnapshotChanged] and updates the reference automatically,
  * so subclasses just need to rebuild their cached lookups in that hook.
  */
+/** Millibuckets one preset run may move, nine buckets, the fluid counterpart of the
+ *  per-run item cap. */
+private const val MAX_FLUID_MB_PER_RUN = 9_000L
+
 abstract class PresetBuilder<TSelf : PresetBuilder<TSelf>>(
     protected val engine: ScriptEngine,
 ) {
@@ -44,6 +48,9 @@ abstract class PresetBuilder<TSelf : PresetBuilder<TSelf>>(
      *  backlog drains over several runs instead of all in one tick. */
     protected var runItemsLeft: Long = Long.MAX_VALUE
 
+    /** Millibuckets this run may still move, the fluid counterpart of [runItemsLeft]. */
+    protected var runFluidLeft: Long = Long.MAX_VALUE
+
     /** When this run must stop moving, from
      *  [damien.nodeworks.script.ServerSafetySettings.maxItemMoveMsPerTickPerNetwork]. */
     private var runDeadline: Long = 0L
@@ -56,6 +63,16 @@ abstract class PresetBuilder<TSelf : PresetBuilder<TSelf>>(
         if (allowed <= 0L || timeLeft <= 0L) return 0L
         val moved = damien.nodeworks.platform.MoveDeadline.within(timeLeft) { move(allowed) }
         runItemsLeft -= moved
+        return moved
+    }
+
+    /** [capped] for fluids, in millibuckets. Shares the run's deadline with the items. */
+    protected fun cappedFluid(maxMb: Long, move: (Long) -> Long): Long {
+        val allowed = minOf(maxMb, runFluidLeft)
+        val timeLeft = runDeadline - System.nanoTime()
+        if (allowed <= 0L || timeLeft <= 0L) return 0L
+        val moved = damien.nodeworks.platform.MoveDeadline.within(timeLeft) { move(allowed) }
+        runFluidLeft -= moved
         return moved
     }
 
@@ -143,6 +160,7 @@ abstract class PresetBuilder<TSelf : PresetBuilder<TSelf>>(
             lastSnapshotSeen = snap
         }
         runItemsLeft = damien.nodeworks.script.NetworkBudget.presetRunCap()
+        runFluidLeft = MAX_FLUID_MB_PER_RUN
         runDeadline = System.nanoTime() +
             damien.nodeworks.script.ServerPolicy.current.maxItemMoveMsPerTickPerNetwork.coerceAtLeast(1L) * 1_000_000L
         try {

@@ -1,0 +1,300 @@
+{
+    DataVersion: 4790,
+    size: [8, 2, 1],
+    data: [
+        {
+            pos: [3, 0, 0],
+            state: "minecraft:stripped_dark_oak_log{axis:y}"
+        },
+        {
+            pos: [0, 0, 0],
+            state: "minecraft:chest{facing:north,type:left,waterlogged:false}",
+            nbt: {
+                components: {},
+                Items: [],
+                id: "minecraft:chest"
+            }
+        },
+        {
+            pos: [1, 0, 0],
+            state: "minecraft:chest{facing:north,type:right,waterlogged:false}",
+            nbt: {
+                components: {},
+                Items: [],
+                id: "minecraft:chest"
+            }
+        },
+        {
+            pos: [2, 0, 0],
+            state: "nodeworks:node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        count: 1,
+                        Slot: 36b,
+                        id: "nodeworks:storage_card"
+                    }
+                ],
+                networkId: "71a61ad5-8326-4ec7-bf32-99fc4e4b5ad7",
+                id: "nodeworks:node"
+            }
+        },
+        {
+            pos: [4, 0, 0],
+            state: "nodeworks:network_controller{waterlogged:false}",
+            nbt: {
+                chunkLoadingEnabled: 0b,
+                components: {},
+                laserEnabled: 1b,
+                networkName: "",
+                handlerRetryLimit: 50,
+                networkId: "71a61ad5-8326-4ec7-bf32-99fc4e4b5ad7",
+                nodeGlowStyle: 0,
+                id: "nodeworks:network_controller",
+                permanentId: "71a61ad5-8326-4ec7-bf32-99fc4e4b5ad7",
+                laserMode: 0,
+                redstoneMode: 0,
+                networkColor: 2420432
+            }
+        },
+        {
+            pos: [5, 0, 0],
+            state: "minecraft:furnace{facing:north,lit:true}",
+            nbt: {
+                lit_total_time: 1600,
+                components: {},
+                cooking_time_spent: 131,
+                cooking_total_time: 200,
+                Items: [
+                    {
+                        count: 16,
+                        Slot: 0b,
+                        id: "minecraft:raw_iron"
+                    },
+                    {
+                        count: 63,
+                        Slot: 1b,
+                        id: "minecraft:coal"
+                    }
+                ],
+                id: "minecraft:furnace",
+                lit_time_remaining: 270,
+                RecipesUsed: {
+                    "minecraft:iron_ingot_from_smelting_raw_iron": 6
+                }
+            }
+        },
+        {
+            pos: [6, 0, 0],
+            state: "minecraft:furnace{facing:north,lit:true}",
+            nbt: {
+                lit_total_time: 1600,
+                components: {},
+                cooking_time_spent: 131,
+                cooking_total_time: 200,
+                Items: [
+                    {
+                        count: 15,
+                        Slot: 0b,
+                        id: "minecraft:raw_iron"
+                    },
+                    {
+                        count: 63,
+                        Slot: 1b,
+                        id: "minecraft:coal"
+                    }
+                ],
+                id: "minecraft:furnace",
+                lit_time_remaining: 270,
+                RecipesUsed: {
+                    "minecraft:iron_ingot_from_smelting_raw_iron": 6
+                }
+            }
+        },
+        {
+            pos: [7, 0, 0],
+            state: "minecraft:furnace{facing:north,lit:true}",
+            nbt: {
+                lit_total_time: 1600,
+                components: {},
+                cooking_time_spent: 131,
+                cooking_total_time: 200,
+                Items: [
+                    {
+                        count: 15,
+                        Slot: 0b,
+                        id: "minecraft:raw_iron"
+                    },
+                    {
+                        count: 60,
+                        Slot: 1b,
+                        id: "minecraft:coal"
+                    }
+                ],
+                id: "minecraft:furnace",
+                lit_time_remaining: 270,
+                RecipesUsed: {
+                    "minecraft:iron_ingot_from_smelting_raw_iron": 6
+                }
+            }
+        },
+        {
+            pos: [0, 1, 0],
+            state: "minecraft:chest{facing:north,type:left,waterlogged:false}",
+            nbt: {
+                components: {},
+                Items: [],
+                id: "minecraft:chest"
+            }
+        },
+        {
+            pos: [1, 1, 0],
+            state: "minecraft:chest{facing:north,type:right,waterlogged:false}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        count: 12,
+                        Slot: 0b,
+                        id: "minecraft:iron_ingot"
+                    },
+                    {
+                        count: 6,
+                        Slot: 1b,
+                        id: "minecraft:iron_ingot"
+                    }
+                ],
+                id: "minecraft:chest"
+            }
+        },
+        {
+            pos: [2, 1, 0],
+            state: "nodeworks:node{pipe_down:true,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false,waterlogged:false}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        count: 1,
+                        Slot: 36b,
+                        id: "nodeworks:storage_card"
+                    }
+                ],
+                networkId: "71a61ad5-8326-4ec7-bf32-99fc4e4b5ad7",
+                id: "nodeworks:node"
+            }
+        },
+        {
+            pos: [3, 1, 0],
+            state: "nodeworks:inventory_terminal{facing:north}",
+            nbt: {
+                components: {},
+                layoutIndex: 0,
+                networkId: "71a61ad5-8326-4ec7-bf32-99fc4e4b5ad7",
+                id: "nodeworks:inventory_terminal"
+            }
+        },
+        {
+            pos: [4, 1, 0],
+            state: "nodeworks:terminal{facing:north}",
+            nbt: {
+                components: {},
+                ownerUuid: "380df991-f603-344c-a090-369bad2a924a",
+                autoRun: 0b,
+                layoutIndex: 3,
+                networkId: "71a61ad5-8326-4ec7-bf32-99fc4e4b5ad7",
+                id: "nodeworks:terminal",
+                scripts: [
+                    {
+                        name: "main",
+                        text: "local furnaces = network:cards(\"furnace_*\")
+-- put raw materials and ores into the furnaces
+importer
+    :from(network)
+    :to(furnaces:face(\"top\"))
+    :filter(\"#c:raw_materials\")
+    :filter(\"#c:ores\")
+    :roundrobin()
+    :start()
+-- take the finished ingots out of the furnaces
+importer
+    :from(furnaces:face(\"bottom\"))
+    :to(network)
+    :start()"
+                    }
+                ]
+            }
+        },
+        {
+            pos: [5, 1, 0],
+            state: "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        components: {
+                            "minecraft:custom_name": "furnace"
+                        },
+                        count: 1,
+                        Slot: 0b,
+                        id: "nodeworks:io_card"
+                    }
+                ],
+                networkId: "71a61ad5-8326-4ec7-bf32-99fc4e4b5ad7",
+                id: "nodeworks:node"
+            }
+        },
+        {
+            pos: [6, 1, 0],
+            state: "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        components: {
+                            "minecraft:custom_name": "furnace"
+                        },
+                        count: 1,
+                        Slot: 0b,
+                        id: "nodeworks:io_card"
+                    }
+                ],
+                networkId: "71a61ad5-8326-4ec7-bf32-99fc4e4b5ad7",
+                id: "nodeworks:node"
+            }
+        },
+        {
+            pos: [7, 1, 0],
+            state: "nodeworks:node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        components: {
+                            "minecraft:custom_name": "furnace"
+                        },
+                        count: 1,
+                        Slot: 0b,
+                        id: "nodeworks:io_card"
+                    }
+                ],
+                networkId: "71a61ad5-8326-4ec7-bf32-99fc4e4b5ad7",
+                id: "nodeworks:node"
+            }
+        }
+    ],
+    entities: [],
+    palette: [
+        "minecraft:stripped_dark_oak_log{axis:y}",
+        "minecraft:chest{facing:north,type:left,waterlogged:false}",
+        "minecraft:chest{facing:north,type:right,waterlogged:false}",
+        "nodeworks:node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
+        "nodeworks:network_controller{waterlogged:false}",
+        "minecraft:furnace{facing:north,lit:true}",
+        "nodeworks:node{pipe_down:true,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false,waterlogged:false}",
+        "nodeworks:inventory_terminal{facing:north}",
+        "nodeworks:terminal{facing:north}",
+        "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}",
+        "nodeworks:node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}"
+    ]
+}

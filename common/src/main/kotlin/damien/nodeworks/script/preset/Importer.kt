@@ -104,18 +104,22 @@ internal fun wildcardToRegex(alias: String): Regex {
  * selection like `"io_*"`), CardHandle objects, or the `network` global (meaning
  * "the whole Network Storage pool").
  *
- * Item-only in v1. Fluid filters (`$fluid:...`) won't move anything, add fluid
- * support in v1.1 by dispatching on filter kind.
+ * Items and fluids. Each run moves items first and then fluids, each under its own
+ * per-run cap. `:filter(...)` and `:except(...)` build the allow and deny lists, see
+ * [RuleSet], and a rule applies to both kinds unless it carries a kind sigil.
  */
 class ImporterBuilder(
     engine: ScriptEngine,
     internal val sources: List<CardRef>,
 ) : PresetBuilder<ImporterBuilder>(engine) {
 
-    /** Match pattern for items/fluids. Defaults to `"*"` (everything) so a bare
-     *  `importer:from(src):to(dst):start()` moves the entire contents without the
-     *  user having to type a filter for the common case. Narrow it with `:filter(...)`. */
-    internal var filter: String = "*"
+    /** What moves. Empty allow list means everything, so a bare
+     *  `importer:from(src):to(dst):start()` moves the entire contents. Narrow it with
+     *  `:filter(...)` and cut from it with `:except(...)`. */
+    internal val rules = RuleSet()
+
+    /** The run's stack check, built once per run from [rules]. */
+    private var stackPred: (net.minecraft.world.item.ItemStack) -> Boolean = { true }
     internal var targets: List<CardRef> = emptyList()
     internal var strategy: DistributionStrategy = DistributionStrategy.FILL
     internal var roundRobinStep: Int = 1
@@ -154,8 +158,13 @@ class ImporterBuilder(
         return this
     }
 
-    fun filter(pattern: String): ImporterBuilder {
-        filter = pattern
+    fun filter(patterns: List<String>): ImporterBuilder {
+        rules.filter(patterns)
+        return this
+    }
+
+    fun except(patterns: List<String>): ImporterBuilder {
+        rules.except(patterns)
         return this
     }
 
@@ -187,11 +196,18 @@ class ImporterBuilder(
     override fun tickOnce() {
         val snapshot = lastSnapshotSeen ?: return
         val level = engine.level
-        val filterPred: (String) -> Boolean = { CardHandle.matchesFilter(it, filter) }
+        stackPred = rules.stackPredicate(level.registryAccess())
+        // The id check narrows scans before stacks are in hand, the stack check decides.
+        val filterPred: (String) -> Boolean = rules.idPredicate(damien.nodeworks.platform.ResourceKind.ITEM)
 
-        when (strategy) {
-            DistributionStrategy.FILL -> tickFill(snapshot, level, filterPred)
-            DistributionStrategy.ROUND_ROBIN -> tickRoundRobin(snapshot, level, filterPred)
+        if (rules.mayMatch(damien.nodeworks.platform.ResourceKind.ITEM)) {
+            when (strategy) {
+                DistributionStrategy.FILL -> tickFill(snapshot, level, filterPred)
+                DistributionStrategy.ROUND_ROBIN -> tickRoundRobin(snapshot, level, filterPred)
+            }
+        }
+        if (rules.mayMatch(damien.nodeworks.platform.ResourceKind.FLUID)) {
+            tickFluids(snapshot, level, rules.idPredicate(damien.nodeworks.platform.ResourceKind.FLUID))
         }
     }
 
@@ -301,21 +317,25 @@ class ImporterBuilder(
                 when (target) {
                     is ResolvedRef.Card -> {
                         val dest = CardStorage.forCard(level, target.snapshot, target.faceOverride) ?: return 0L
-                        // A Storage Card target only takes what its own rules allow.
-                        val accept = CardStorage.acceptFilter(level, target.snapshot)
+                        // A Storage Card target only takes what its own rules allow, on top of ours.
+                        val cardAccept = CardStorage.acceptFilter(level, target.snapshot)
+                        val accept: (net.minecraft.world.item.ItemStack) -> Boolean =
+                            if (cardAccept == null) stackPred else { stack -> stackPred(stack) && cardAccept(stack) }
                         if (!CardStorage.hasRoom(srcStorage, dest, filterPred, maxCount, accept)) return 0L
                         val cursor = scanCursors.getOrPut(cursorKey(source, target)) { damien.nodeworks.platform.ScanCursor() }
                         PlatformServices.storage.moveItems(srcStorage, dest, filterPred, maxCount, cursor, accept)
                     }
                     is ResolvedRef.Pool -> NetworkStorageHelper.insertItems(
-                        level, snapshot, srcStorage, filter,
+                        level, snapshot, srcStorage, "*",
                         maxCount, engine.routeTable, null, engine.inventoryCache,
                         damien.nodeworks.network.ChannelFilter.All,
+                        stackPred = stackPred,
                     )
                     is ResolvedRef.ChannelPool -> NetworkStorageHelper.insertItems(
-                        level, snapshot, srcStorage, filter,
+                        level, snapshot, srcStorage, "*",
                         maxCount, engine.routeTable, null, engine.inventoryCache,
                         damien.nodeworks.network.ChannelFilter.Color(target.color),
+                        stackPred = stackPred,
                     )
                 }
             }
@@ -369,9 +389,10 @@ class ImporterBuilder(
             if (!sourceChannel.matches(srcCard.channel)) continue
             val srcStorage = NetworkStorageHelper.getStorage(level, srcCard) ?: continue
             val moved = NetworkStorageHelper.insertItems(
-                level, snapshot, srcStorage, filter,
+                level, snapshot, srcStorage, "*",
                 remaining, engine.routeTable, null, engine.inventoryCache,
                 targetChannel,
+                stackPred = stackPred,
             )
             totalMoved += moved
             remaining -= moved
@@ -415,7 +436,7 @@ class ImporterBuilder(
                     { stack ->
                         val sid = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
                         sid == info.itemId && damien.nodeworks.script.BufferKey.componentsHash(stack) == wantHash &&
-                            (accept == null || accept(stack))
+                            (accept == null || accept(stack)) && stackPred(stack)
                     },
                     remaining,
                 )
@@ -425,6 +446,207 @@ class ImporterBuilder(
             }
         }
         return totalMoved
+    }
+
+    // ---- Fluids ----
+
+    /** Round robin position and the millibuckets served to it, kept apart from the item
+     *  ring so the two passes rotate independently. */
+    private var rrFluidCursor: Int = 0
+    private var rrFluidServed: Long = 0L
+
+    /** The fluid pass runs after the item pass under its own per-run cap. Fill pours
+     *  into each target in order, round robin serves [roundRobinStep] millibuckets per
+     *  target per turn. */
+    private fun tickFluids(
+        snapshot: NetworkSnapshot,
+        level: net.minecraft.server.level.ServerLevel,
+        fluidPred: (String) -> Boolean,
+    ) {
+        if (resolvedTargets.isEmpty()) return
+        when (strategy) {
+            DistributionStrategy.FILL -> {
+                for (target in resolvedTargets) moveFluidIntoTarget(snapshot, level, target, fluidPred, Long.MAX_VALUE)
+            }
+            DistributionStrategy.ROUND_ROBIN -> {
+                val stepMb = roundRobinStep.toLong()
+                var ringsRemaining = resolvedTargets.size
+                if (rrFluidCursor >= resolvedTargets.size) {
+                    rrFluidCursor = 0
+                    rrFluidServed = 0L
+                }
+                while (ringsRemaining > 0) {
+                    val idx = rrFluidCursor % resolvedTargets.size
+                    val needed = stepMb - rrFluidServed
+                    if (needed <= 0L) {
+                        rrFluidCursor = (rrFluidCursor + 1) % resolvedTargets.size
+                        rrFluidServed = 0L
+                        ringsRemaining--
+                        continue
+                    }
+                    val moved = moveFluidIntoTarget(snapshot, level, resolvedTargets[idx], fluidPred, needed)
+                    rrFluidServed += moved
+                    if (rrFluidServed >= stepMb || moved == 0L) {
+                        rrFluidCursor = (rrFluidCursor + 1) % resolvedTargets.size
+                        rrFluidServed = 0L
+                        ringsRemaining--
+                    } else {
+                        break
+                    }
+                }
+            }
+        }
+    }
+
+    private fun moveFluidIntoTarget(
+        snapshot: NetworkSnapshot,
+        level: net.minecraft.server.level.ServerLevel,
+        target: ResolvedRef,
+        fluidPred: (String) -> Boolean,
+        maxMb: Long,
+    ): Long {
+        if (maxMb <= 0L) return 0L
+        var remaining = maxMb
+        for (source in resolvedSources) {
+            if (remaining <= 0L || damien.nodeworks.platform.MoveDeadline.expired()) break
+            remaining -= cappedFluid(remaining) { moveFluidPair(snapshot, level, source, target, fluidPred, it) }
+        }
+        return maxMb - remaining
+    }
+
+    private fun moveFluidPair(
+        snapshot: NetworkSnapshot,
+        level: net.minecraft.server.level.ServerLevel,
+        source: ResolvedRef,
+        target: ResolvedRef,
+        fluidPred: (String) -> Boolean,
+        maxMb: Long,
+    ): Long {
+        if (maxMb <= 0L) return 0L
+        return when (source) {
+            is ResolvedRef.Card -> {
+                val src = CardStorage.fluidForCard(level, source.snapshot, source.faceOverride) ?: return 0L
+                when (target) {
+                    is ResolvedRef.Card -> {
+                        val dst = CardStorage.fluidForCard(level, target.snapshot, target.faceOverride) ?: return 0L
+                        PlatformServices.storage.moveFluid(src, dst, fluidPred, maxMb)
+                    }
+                    is ResolvedRef.Pool -> moveFluidIntoPool(snapshot, level, src, null, fluidPred, maxMb, damien.nodeworks.network.ChannelFilter.All)
+                    is ResolvedRef.ChannelPool -> moveFluidIntoPool(snapshot, level, src, null, fluidPred, maxMb, damien.nodeworks.network.ChannelFilter.Color(target.color))
+                }
+            }
+            is ResolvedRef.Pool -> when (target) {
+                is ResolvedRef.Pool -> 0L
+                is ResolvedRef.Card -> moveFluidPoolToCard(snapshot, level, target, fluidPred, maxMb, damien.nodeworks.network.ChannelFilter.All)
+                is ResolvedRef.ChannelPool -> moveFluidPoolBetween(snapshot, level, fluidPred, maxMb, damien.nodeworks.network.ChannelFilter.All, damien.nodeworks.network.ChannelFilter.Color(target.color))
+            }
+            is ResolvedRef.ChannelPool -> when (target) {
+                is ResolvedRef.Pool -> moveFluidPoolBetween(snapshot, level, fluidPred, maxMb, damien.nodeworks.network.ChannelFilter.Color(source.color), damien.nodeworks.network.ChannelFilter.All)
+                is ResolvedRef.ChannelPool ->
+                    if (source.color == target.color) 0L
+                    else moveFluidPoolBetween(snapshot, level, fluidPred, maxMb, damien.nodeworks.network.ChannelFilter.Color(source.color), damien.nodeworks.network.ChannelFilter.Color(target.color))
+                is ResolvedRef.Card -> moveFluidPoolToCard(snapshot, level, target, fluidPred, maxMb, damien.nodeworks.network.ChannelFilter.Color(source.color))
+            }
+        }
+    }
+
+    /** Pours [src] into the pool's tanks on [channel], one fluid at a time so the
+     *  terminal cache hears which fluid landed where. [skip] is the card the source
+     *  belongs to when it is itself a pool card, so a pool to pool move never pours a
+     *  tank into itself. */
+    private fun moveFluidIntoPool(
+        snapshot: NetworkSnapshot,
+        level: net.minecraft.server.level.ServerLevel,
+        src: damien.nodeworks.platform.FluidStorageHandle,
+        skip: CardSnapshot?,
+        fluidPred: (String) -> Boolean,
+        maxMb: Long,
+        channel: damien.nodeworks.network.ChannelFilter,
+    ): Long {
+        val cache = engine.inventoryCache
+        var remaining = maxMb
+        var total = 0L
+        for (info in PlatformServices.storage.findAllFluidInfo(src, fluidPred)) {
+            if (remaining <= 0L || damien.nodeworks.platform.MoveDeadline.expired()) break
+            val fluidId = info.fluidId
+            var movedThisFluid = 0L
+            for (card in NetworkStorageHelper.getStorageCards(snapshot)) {
+                if (remaining <= 0L || damien.nodeworks.platform.MoveDeadline.expired()) break
+                if (!channel.matches(card.channel)) continue
+                if (skip != null && sameBlock(card, skip)) continue
+                val dst = NetworkStorageHelper.getFluidStorage(level, card) ?: continue
+                val moved = PlatformServices.storage.moveFluid(src, dst, { it == fluidId }, remaining)
+                if (moved <= 0L) continue
+                cache?.onChannelFluidDelta(card.channel, fluidId, moved)
+                movedThisFluid += moved
+                remaining -= moved
+            }
+            if (movedThisFluid > 0L) {
+                cache?.onFluidInserted(fluidId, movedThisFluid)
+                total += movedThisFluid
+            }
+        }
+        return total
+    }
+
+    private fun moveFluidPoolToCard(
+        snapshot: NetworkSnapshot,
+        level: net.minecraft.server.level.ServerLevel,
+        target: ResolvedRef.Card,
+        fluidPred: (String) -> Boolean,
+        maxMb: Long,
+        sourceChannel: damien.nodeworks.network.ChannelFilter,
+    ): Long {
+        val dst = CardStorage.fluidForCard(level, target.snapshot, target.faceOverride) ?: return 0L
+        val cache = engine.inventoryCache
+        var remaining = maxMb
+        var total = 0L
+        for (poolCard in NetworkStorageHelper.getStorageCards(snapshot)) {
+            if (remaining <= 0L || damien.nodeworks.platform.MoveDeadline.expired()) break
+            if (!sourceChannel.matches(poolCard.channel)) continue
+            if (sameBlock(poolCard, target.snapshot)) continue
+            val src = NetworkStorageHelper.getFluidStorage(level, poolCard) ?: continue
+            for (info in PlatformServices.storage.findAllFluidInfo(src, fluidPred)) {
+                if (remaining <= 0L || damien.nodeworks.platform.MoveDeadline.expired()) break
+                val fluidId = info.fluidId
+                val moved = PlatformServices.storage.moveFluid(src, dst, { it == fluidId }, remaining)
+                if (moved <= 0L) continue
+                cache?.onFluidExtracted(fluidId, moved)
+                cache?.onChannelFluidDelta(poolCard.channel, fluidId, -moved)
+                total += moved
+                remaining -= moved
+            }
+        }
+        return total
+    }
+
+    private fun moveFluidPoolBetween(
+        snapshot: NetworkSnapshot,
+        level: net.minecraft.server.level.ServerLevel,
+        fluidPred: (String) -> Boolean,
+        maxMb: Long,
+        sourceChannel: damien.nodeworks.network.ChannelFilter,
+        targetChannel: damien.nodeworks.network.ChannelFilter,
+    ): Long {
+        var remaining = maxMb
+        var total = 0L
+        for (srcCard in NetworkStorageHelper.getStorageCards(snapshot)) {
+            if (remaining <= 0L || damien.nodeworks.platform.MoveDeadline.expired()) break
+            if (!sourceChannel.matches(srcCard.channel)) continue
+            val src = NetworkStorageHelper.getFluidStorage(level, srcCard) ?: continue
+            val moved = moveFluidIntoPool(snapshot, level, src, srcCard, fluidPred, remaining, targetChannel)
+            total += moved
+            remaining -= moved
+        }
+        return total
+    }
+
+    /** Two cards on the same block see the same tank. */
+    private fun sameBlock(a: CardSnapshot, b: CardSnapshot): Boolean {
+        val pa = (a.capability as? damien.nodeworks.card.StorageSideCapability)?.adjacentPos
+        val pb = (b.capability as? damien.nodeworks.card.StorageSideCapability)?.adjacentPos
+            ?: (b.capability as? damien.nodeworks.card.IOSideCapability)?.adjacentPos
+        return pa != null && pa == pb
     }
 
     override fun populateMethods(t: LuaTable) {
@@ -444,9 +666,15 @@ class ImporterBuilder(
                 return selfRef.toLuaTable()
             }
         })
-        t.set("filter", object : org.luaj.vm2.lib.TwoArgFunction() {
-            override fun call(selfArg: LuaValue, patternArg: LuaValue): LuaValue {
-                selfRef.filter(patternArg.checkjstring())
+        t.set("filter", object : VarArgFunction() {
+            override fun invoke(args: Varargs): Varargs {
+                selfRef.filter(RuleSet.rulesFromArgs(args, 2))
+                return selfRef.toLuaTable()
+            }
+        })
+        t.set("except", object : VarArgFunction() {
+            override fun invoke(args: Varargs): Varargs {
+                selfRef.except(RuleSet.rulesFromArgs(args, 2))
                 return selfRef.toLuaTable()
             }
         })

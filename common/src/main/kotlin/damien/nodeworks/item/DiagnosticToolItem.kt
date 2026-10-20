@@ -149,6 +149,9 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
             // Build detail lines based on block type
             val details = mutableListOf<String>()
             when (entity) {
+                is NodeBlockEntity -> {
+                    for (line in entity.transferStatus()) details.add(line)
+                }
                 is NetworkControllerBlockEntity -> {
                     // Mirror the player-visible rows in [NetworkControllerScreen]
                     // so the diagnostic and the controller GUI stay in sync.
