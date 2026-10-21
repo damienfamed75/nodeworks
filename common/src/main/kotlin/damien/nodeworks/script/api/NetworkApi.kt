@@ -53,6 +53,18 @@ val InputItems: LuaType.Named = LuaTypes.type(
     guidebookRef = "nodeworks:lua-api/input-items.md",
 )
 
+val RecipeMatcher: LuaType.Named = LuaTypes.type(
+    name = "RecipeMatcher",
+    description = "Returned by `network:recipes`. Narrows which Processing Sets one handler takes, then `:handle` registers it.",
+    guidebookRef = "nodeworks:lua-api/network.md#recipes",
+)
+
+val RecipeHandler: LuaType.Named = LuaTypes.type(
+    name = "RecipeHandler",
+    description = "Returned by `RecipeMatcher:handle`. A running handler for every Processing Set its rules match.",
+    guidebookRef = "nodeworks:lua-api/network.md#recipes",
+)
+
 val NetworkApi: ApiSurface = api(Network) {
     method("get") {
         param("name", NetworkName, description = "Name of a card, variable, breaker, or placer on this network.")
@@ -186,6 +198,18 @@ val NetworkApi: ApiSurface = api(Network) {
         guidebookRef = "nodeworks:lua-api/network.md#handle"
     }
 
+    method("recipes") {
+        param(
+            "rules",
+            Filter,
+            description = "Every input of a set must match one of these. Variadic at runtime, or a table. None means every set.",
+        )
+        returns(RecipeMatcher)
+        description =
+            "Starts a handler for many Processing Sets at once. Narrow it with `:except` and `:outputs`, then register it with `:handle`."
+        guidebookRef = "nodeworks:lua-api/network.md#recipes"
+    }
+
     method("debug") {
         returns(Void)
         description = "Prints a summary of the network to the terminal log."
@@ -295,7 +319,64 @@ val CraftBuilderApi: ApiSurface = api(CraftBuilder) {
  *  per-handler dispatch. The empty surface here is enough to register the TYPE for
  *  hover and type-annotation autocomplete, the dynamic-properties path falls
  *  through to legacy when [LuaApiRegistry.propertiesOf] returns empty. */
-val InputItemsApi: ApiSurface = api(InputItems) {}
+val InputItemsApi: ApiSurface = api(InputItems) {
+    method("all") {
+        returns(ItemsHandle.list())
+        description = "Every input as a list, in recipe slot order. Handy when one handler serves many recipes."
+        guidebookRef = "nodeworks:lua-api/input-items.md#all"
+    }
+}
+
+val RecipeMatcherApi: ApiSurface = api(RecipeMatcher) {
+    method("except") {
+        param("rules", Filter, description = "Sets with any input matching one of these are left out. Variadic at runtime, or a table.")
+        returns(RecipeMatcher)
+        description = "Leaves out every set that uses one of these items, whatever `network:recipes` matched."
+        guidebookRef = "nodeworks:lua-api/network.md#recipes"
+    }
+
+    method("outputs") {
+        param("rules", Filter, description = "Every output a set is sure to make must match one of these. Variadic at runtime, or a table.")
+        returns(RecipeMatcher)
+        description = "Narrows the match by what the set makes. Chance outputs are not looked at. Called with nothing, clears it."
+        guidebookRef = "nodeworks:lua-api/network.md#recipes"
+    }
+
+    method("exclusive") {
+        returns(RecipeMatcher)
+        description = "Runs one craft at a time through this handler, for a single machine bank shared by every matched recipe."
+        guidebookRef = "nodeworks:lua-api/network.md#recipes"
+    }
+
+    method("handle") {
+        param(
+            "handler",
+            function {
+                param("job", Job)
+                param("inputs", InputItems)
+                returns(Void)
+            },
+            description = "Body invoked once per craft of any matched set. Read inputs with `inputs:all()`, emit outputs with `job:pull`.",
+        )
+        returns(RecipeHandler)
+        description = "Registers the handler. An exact `network:handle` for a set, or a Processing Handler block bound to it, wins over this."
+        guidebookRef = "nodeworks:lua-api/network.md#recipes"
+    }
+}
+
+val RecipeHandlerApi: ApiSurface = api(RecipeHandler) {
+    method("stop") {
+        returns(Void)
+        description = "Unregisters the handler. Crafts already running finish as they are."
+        guidebookRef = "nodeworks:lua-api/network.md#recipes"
+    }
+
+    method("sets") {
+        returns(String.list())
+        description = "The Processing Sets this handler takes right now, as `inputs -> outputs` lines."
+        guidebookRef = "nodeworks:lua-api/network.md#recipes"
+    }
+}
 
 val RouteBuilderApi: ApiSurface = api(RouteBuilder) {
     method("rule") {

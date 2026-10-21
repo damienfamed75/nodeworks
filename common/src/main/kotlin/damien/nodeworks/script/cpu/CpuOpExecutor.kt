@@ -632,8 +632,9 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             ?: return CraftScheduler.OpResult.Failed("No processing API for ${op.processingApiName} / $outputItemId")
         val searchPositions = apiMatch.apiStorage.remoteTerminalPositions ?: snapshot.terminalPositions
         val handlerEngine = PlatformServices.modState
-            .findProcessingEngine(lvl, searchPositions, apiMatch.api.name, apiMatch.apiStorage.remoteDimension) as? ScriptEngine
-        val handler = handlerEngine?.processingHandlers?.get(apiMatch.api.name)
+            .findProcessingEngine(lvl, searchPositions, apiMatch.api.name, apiMatch.apiStorage.remoteDimension, apiMatch.api) as? ScriptEngine
+        val resolved = handlerEngine?.handlerFor(apiMatch.api.name, apiMatch.api)
+        val handler = resolved?.function
         if (handlerEngine == null || handler == null) {
             // No Lua handler. Before backing off, see if a Processing Handler
             // BLOCK is bound to this api on the recipe's home network. For a
@@ -660,6 +661,17 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             return scheduleHandlerWaitRetry(op, "no handler for '${apiMatch.api.name}'")
         }
         val scheduler = handlerEngine.scheduler
+
+        // An exclusive rule feeds one machine bank, so while another op has a job in it
+        // this one steps aside, the same as a Multi-Processing Handler that is not parallel.
+        val exclusiveRule = resolved.rule?.takeIf { it.exclusive }
+        if (exclusiveRule != null) {
+            val holder = HandlerReservations.holder(exclusiveRule)
+            if (holder != null && (holder.cpuPos != cpu.blockPos || holder.opId != op.id)) {
+                op.readyAt = lvl.gameTime + HANDLER_BUSY_BACKOFF_TICKS
+                return CraftScheduler.OpResult.Deferred
+            }
+        }
 
         // FRESH INVOCATION PATH
         val progress = when (val setup = resolveBatchProgress(op, apiMatch, outputItemId)) {
@@ -707,6 +719,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             )
         }
         val itemsTable = LuaTable()
+        val allInputs = ArrayList<LuaValue>(progress.perBatchInputs.size)
         for ((idx, slotData) in progress.perBatchInputs.withIndex()) {
             val (itemId, batchCount) = slotData
             val id = Identifier.tryParse(itemId)
@@ -720,23 +733,32 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             val ingr = effectiveInputs(op, apiMatch.api).getOrNull(idx)
             val ingrStack = ingr?.stack ?: ItemStack(item)
             val bufferKey = ingr?.bufferKey() ?: damien.nodeworks.script.BufferKey.Key(itemId, "")
-            itemsTable.set(
-                paramNames[idx],
-                ItemsHandle.toLuaTable(
-                    ItemsHandle(
-                        itemId = itemId,
-                        itemName = ingrStack.hoverName.string,
-                        count = batchCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
-                        maxStackSize = item.getDefaultMaxStackSize(),
-                        hasData = !bufferKey.isPlain,
-                        filter = itemId,
-                        sourceStorage = { null },
-                        level = lvl,
-                        bufferSource = BufferSource(cpu, bufferKey, batchCount)
-                    )
+            val handle = ItemsHandle.toLuaTable(
+                ItemsHandle(
+                    itemId = itemId,
+                    itemName = ingrStack.hoverName.string,
+                    count = batchCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                    maxStackSize = item.getDefaultMaxStackSize(),
+                    hasData = !bufferKey.isPlain,
+                    filter = itemId,
+                    sourceStorage = { null },
+                    level = lvl,
+                    bufferSource = BufferSource(cpu, bufferKey, batchCount)
                 )
             )
+            itemsTable.set(paramNames[idx], handle)
+            allInputs.add(handle)
         }
+        // `items:all()` hangs off the metatable, so `pairs(items)` in an existing handler
+        // still sees only the inputs. The handles are the same ones the named fields hold.
+        itemsTable.setmetatable(LuaTable().also { meta ->
+            meta.set(LuaValue.INDEX, LuaTable().also { methods ->
+                methods.set("all", object : org.luaj.vm2.lib.OneArgFunction() {
+                    override fun call(selfArg: LuaValue): LuaValue =
+                        LuaTable().also { list -> for ((i, h) in allInputs.withIndex()) list.set(i + 1, h) }
+                })
+            })
+        })
         val luaArgs: List<LuaValue> = listOf(jobTable, itemsTable)
 
         cpu.setCrafting(true, outputItemId.substringAfter(':').replace('_', ' '))
@@ -756,6 +778,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             .mapValues { (_, pairs) -> pairs.sumOf { it.second } }
         if (apiMatch.api.serial) {
             val result = invokeHandlerAndAnalyze(op, state, perBatchInputMap, apiMatch.api.name, apiMatch.api.outputsAsPairs)
+            reserveWhileInFlight(exclusiveRule, op, state)
             // Outputs already waiting finish the batch on the spot, that is one batch, not the op.
             if (result !is CraftScheduler.OpResult.Completed) return result
             if (!finishBatch(op, progress)) return CraftScheduler.OpResult.InProgress
@@ -763,7 +786,17 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             processBatchProgress.remove(op.id)
             return result
         }
-        return invokeLuaChunk(op, state, perBatchInputMap, apiMatch, progress)
+        val result = invokeLuaChunk(op, state, perBatchInputMap, apiMatch, progress)
+        reserveWhileInFlight(exclusiveRule, op, state)
+        return result
+    }
+
+    /** Holds [rule] for this op while its job waits on outputs. Only a job that is
+     *  really in flight reserves, one that finished at once or failed leaves the rule
+     *  free, and the reservation ends by itself when the job's pulls complete. */
+    private fun reserveWhileInFlight(rule: damien.nodeworks.script.RecipeHandlerRule?, op: Operation.Process, state: ProcessState) {
+        if (rule == null || processState[op.id] !== state || state.pending.isComplete) return
+        HandlerReservations.reserve(rule, HandlerReservations.Holder(cpu.blockPos, op.id, state.pending))
     }
 
     /** Parallel Lua-handler call for the next chunk of the op's batches. A handler can't be

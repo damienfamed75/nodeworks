@@ -747,6 +747,9 @@ interface ModStateService {
         terminalPositions: List<BlockPos>,
         cardName: String,
         overrideDimension: net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level>? = null,
+        /** The set itself, so `network:recipes` rules can match it. Without it only an
+         *  exact `network:handle` counts, which is what a claim check wants. */
+        api: damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo? = null,
     ): Any? = null
 
     /** Find any active ScriptEngine at the given terminal positions. Same dimension

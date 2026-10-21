@@ -22,12 +22,17 @@ object HandlerReservations {
 
     class Holder(val cpuPos: BlockPos, val opId: Int, val pending: CraftingHelper.PendingHandlerJob)
 
-    private val byHandler = HashMap<Pair<ResourceKey<Level>, BlockPos>, Holder>()
+    /** Keyed by a handler block's dimension and position, or by an exclusive
+     *  `network:recipes` rule itself, which compares by identity. */
+    private val byHandler = HashMap<Any, Holder>()
 
     /** The op holding [pos], or null when it is free or its job has already finished. */
+    fun holder(dimension: ResourceKey<Level>, pos: BlockPos): Holder? = holder(dimension to pos)
+
+    fun reserve(dimension: ResourceKey<Level>, pos: BlockPos, holder: Holder) = reserve(dimension to pos, holder)
+
     @Synchronized
-    fun holder(dimension: ResourceKey<Level>, pos: BlockPos): Holder? {
-        val key = dimension to pos
+    fun holder(key: Any): Holder? {
         val holder = byHandler[key] ?: return null
         if (holder.pending.isComplete) {
             byHandler.remove(key)
@@ -37,8 +42,8 @@ object HandlerReservations {
     }
 
     @Synchronized
-    fun reserve(dimension: ResourceKey<Level>, pos: BlockPos, holder: Holder) {
-        byHandler[dimension to pos] = holder
+    fun reserve(key: Any, holder: Holder) {
+        byHandler[key] = holder
     }
 
     /** Drops every reservation held by ops of the CPU at [cpuPos]. */

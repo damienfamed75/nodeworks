@@ -50,10 +50,14 @@ object HandlerParamNames {
         val occurrence = mutableMapOf<String, Int>()
         for ((itemId, _) in inputs) {
             val base = itemIdToParamName(itemId)
-            val n = (occurrence[base] ?: 0) + 1
+            // A reserved name starts at 2, so an item called `all` never hides `items:all()`.
+            val n = (occurrence[base] ?: if (base in RESERVED) 1 else 0) + 1
             occurrence[base] = n
             result.add(if (n == 1) base else "$base$n")
         }
         return result
     }
+
+    /** Names InputItems keeps for its own methods. */
+    private val RESERVED = setOf("all")
 }

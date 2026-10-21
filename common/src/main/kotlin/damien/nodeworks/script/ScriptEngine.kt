@@ -147,6 +147,97 @@ class ScriptEngine(
         presets.add(p)
     }
 
+    /** The builder `network:recipes(...)` returns. Holds rules until `:handle` copies
+     *  them into a [RecipeHandlerRule], so a builder reused afterwards changes nothing
+     *  already registered. */
+    private fun recipeMatcherTable(allow: List<String>): LuaTable {
+        val inputs = damien.nodeworks.script.preset.RuleSet().apply { setAllow(allow) }
+        val outputs = ArrayList<String>()
+        var exclusive = false
+        val t = LuaTable()
+        t.set("except", object : VarArgFunction() {
+            override fun invoke(args: Varargs): Varargs {
+                inputs.except(damien.nodeworks.script.preset.RuleSet.rulesFromArgs(args, 2))
+                return t
+            }
+        })
+        t.set("outputs", object : VarArgFunction() {
+            override fun invoke(args: Varargs): Varargs {
+                val rules = damien.nodeworks.script.preset.RuleSet.rulesFromArgs(args, 2)
+                if (rules.isEmpty()) outputs.clear() else outputs.addAll(rules)
+                return t
+            }
+        })
+        t.set("exclusive", object : VarArgFunction() {
+            override fun invoke(args: Varargs): Varargs {
+                exclusive = args.arg(2).isnil() || args.arg(2).toboolean()
+                return t
+            }
+        })
+        t.set("handle", object : VarArgFunction() {
+            override fun invoke(args: Varargs): Varargs {
+                val fn = args.checkfunction(2)
+                assertCallbackCap(recipeRules.size, "recipe-handler")
+                val label = buildString {
+                    append("recipes(").append(inputs.allow.joinToString(", ").ifEmpty { "*" }).append(")")
+                    if (inputs.deny.isNotEmpty()) append(" except(").append(inputs.deny.joinToString(", ")).append(")")
+                    if (outputs.isNotEmpty()) append(" outputs(").append(outputs.joinToString(", ")).append(")")
+                    if (exclusive) append(" exclusive")
+                }
+                val rule = RecipeHandlerRule(
+                    inputs = damien.nodeworks.script.preset.RuleSet().apply {
+                        setAllow(inputs.allow.toList())
+                        except(inputs.deny.toList())
+                    },
+                    outputs = if (outputs.isEmpty()) null
+                        else damien.nodeworks.script.preset.RuleSet().apply { setAllow(outputs.toList()) },
+                    handler = fn,
+                    exclusive = exclusive,
+                    label = label,
+                )
+                recipeRules.add(rule)
+                return recipeHandlerTable(rule)
+            }
+        })
+        return t
+    }
+
+    /** What `:handle` returns, to stop the rule or see what it takes right now. */
+    private fun recipeHandlerTable(rule: RecipeHandlerRule): LuaTable {
+        val t = LuaTable()
+        t.set("stop", object : OneArgFunction() {
+            override fun call(selfArg: LuaValue): LuaValue {
+                rule.active = false
+                recipeRules.remove(rule)
+                return LuaValue.NIL
+            }
+        })
+        t.set("sets", object : OneArgFunction() {
+            override fun call(selfArg: LuaValue): LuaValue {
+                val out = LuaTable()
+                if (!rule.active) return out
+                val snapshot = networkSnapshot ?: return out
+                var i = 1
+                for (storage in snapshot.processingApis) {
+                    // A set pulled in over an antenna is handled on the network it came from.
+                    if (storage.remoteTerminalPositions != null) continue
+                    for (api in storage.apis) {
+                        if (i > MAX_LISTED_SETS) return out
+                        if (handlerFor(api.name, api)?.rule !== rule) continue
+                        out.set(i++, LuaValue.valueOf(describeSet(api)))
+                    }
+                }
+                return out
+            }
+        })
+        return t
+    }
+
+    /** `minecraft:raw_iron -> minecraft:iron_ingot`, for `:sets()`. */
+    private fun describeSet(api: damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo): String =
+        api.inputs.joinToString(", ") { if (it.count > 1) "${it.count}x ${it.itemId}" else it.itemId } + " -> " +
+            api.outputs.filterNot { it.optional }.joinToString(", ") { if (it.count > 1) "${it.count}x ${it.itemId}" else it.itemId }
+
     /** Current network snapshot. Rebuilt by [start] and refreshed periodically.
      *  Presets compare identity (`!==`) to decide when to re-resolve card names. */
     internal fun currentSnapshot(): NetworkSnapshot? = networkSnapshot
@@ -206,6 +297,27 @@ class ScriptEngine(
 
     /** Processing handlers registered by network:handle(). Keyed by card name. */
     val processingHandlers = mutableMapOf<String, LuaFunction>()
+
+    /** `network:recipes(...):handle(fn)` rules, in registration order. */
+    internal val recipeRules = mutableListOf<RecipeHandlerRule>()
+
+    /** What runs a Processing Set on this engine, and the rule it came from if any. */
+    class ResolvedHandler(val function: LuaFunction, val rule: RecipeHandlerRule?)
+
+    /** What runs [apiName] here: its exact `network:handle`, else the first rule that
+     *  matches [api]. A rule steps aside for a set a Processing Handler block is bound
+     *  to, so a broad rule never takes a set the player ticked on a block. With no
+     *  [api] only exact handlers count, which is what claim checks ask about. */
+    fun handlerFor(apiName: String, api: damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo?): ResolvedHandler? {
+        processingHandlers[apiName]?.let { return ResolvedHandler(it, null) }
+        if (api == null || recipeRules.isEmpty()) return null
+        if (damien.nodeworks.script.cpu.BlockHandlerRegistry.find(networkSnapshot?.networkId, apiName) != null) return null
+        val registries = level.registryAccess()
+        for (rule in recipeRules) {
+            if (rule.active && rule.matches(api, registries)) return ResolvedHandler(rule.handler, rule)
+        }
+        return null
+    }
 
     /** Redstone onChange callbacks. Keyed by card alias → (capability, lastStrength, callback).
      *  [slotIndex] pins the registration to a specific physical card slot so removing the
@@ -363,6 +475,9 @@ class ScriptEngine(
         routeTable = null
         inventoryCache = null // clear local reference, cache lives in global registry
         processingHandlers.clear()
+        // Inactive first, a CPU still holding a rule then sees it gone.
+        for (rule in recipeRules) rule.active = false
+        recipeRules.clear()
         redstoneCallbacks.clear()
         observerCallbacks.clear()
         blockDataCache.clear()
@@ -479,6 +594,7 @@ class ScriptEngine(
     /** Whether this engine should stay alive, has scheduler tasks, handlers, or routing. */
     fun hasWork(): Boolean = scheduler.hasActiveTasks()
         || processingHandlers.isNotEmpty()
+        || recipeRules.isNotEmpty()
         || redstoneCallbacks.isNotEmpty()
         || observerCallbacks.isNotEmpty()
         || routeTable?.hasRoutes() == true
@@ -686,6 +802,9 @@ class ScriptEngine(
     }
 
     companion object {
+        /** Most entries `:sets()` returns, a bound on one call's work and table size. */
+        private const val MAX_LISTED_SETS = 512
+
         /**
          * Strips Luau-style type annotations from script text before Lua compilation.
          * Handles: function params `(x: Type)`, return types `): Type`, local vars `local x: Type =`
@@ -2265,6 +2384,13 @@ class ScriptEngine(
                 processingHandlers[name] = handler
                 return LuaValue.NIL
             }
+        })
+
+        // network:recipes(rules...) → RecipeMatcher, then :handle(fn) runs every matching
+        // Processing Set through one function. See [handlerFor] for who wins an overlap.
+        networkTable.setGuarded("Network", "recipes", object : VarArgFunction() {
+            override fun invoke(args: Varargs): Varargs =
+                recipeMatcherTable(damien.nodeworks.script.preset.RuleSet.rulesFromArgs(args, 2))
         })
 
         // (network:var was removed, variables are now first-class members of the

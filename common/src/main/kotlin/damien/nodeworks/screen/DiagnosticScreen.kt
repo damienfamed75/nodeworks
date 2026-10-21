@@ -1596,9 +1596,9 @@ class DiagnosticScreen(
                     // minus the scrollbar gutter (6px track + 2px pad on each side).
                     val stripX = px + 6
                     val stripW = pw - 12
-                    damien.nodeworks.screen.widget.RecipeHintRenderer.renderById(
-                        graphics, font, row.text, stripX, curY,
-                        stripW, damien.nodeworks.screen.widget.RecipeHintRenderer.HINT_HEIGHT,
+                    // A `network:recipes` rule has a label, not a recipe id, and lists as text.
+                    damien.nodeworks.screen.widget.RecipeHintRenderer.renderHandlers(
+                        graphics, font, listOf(row.text), stripX, curY, stripW, rowGap = 0,
                         resolver = { hash -> menu.processingApis.firstOrNull { it.name == hash } }
                     )
                     curY += damien.nodeworks.screen.widget.RecipeHintRenderer.HINT_HEIGHT + 1

@@ -148,6 +148,18 @@ class ProcessingJob(
     fun toLuaTable(): LuaTable {
         val table = LuaTable()
 
+        // What the set is, so one handler for many sets can tell them apart.
+        table.set("name", api.name)
+        val inputsTable = LuaTable()
+        for ((i, ingr) in api.inputs.withIndex()) {
+            val entry = LuaTable()
+            entry.set("id", ingr.itemId)
+            entry.set("count", ingr.count)
+            ingr.tag?.let { entry.set("tag", it) }
+            inputsTable.set(i + 1, entry)
+        }
+        table.set("inputs", inputsTable)
+
         val outputsTable = LuaTable()
         for ((i, ingr) in api.outputs.withIndex()) {
             val entry = LuaTable()

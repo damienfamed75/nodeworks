@@ -354,8 +354,11 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
             val terminal = level.getBlockEntity(tPos) as? damien.nodeworks.block.entity.TerminalBlockEntity ?: return@mapNotNull null
             val isRunning = PlatformServices.modState.isScriptRunning(serverLevel, tPos)
             val handlers = if (isRunning) {
-                val engine = PlatformServices.modState.getScriptEngine(serverLevel, tPos)
-                (engine as? damien.nodeworks.script.ScriptEngine)?.processingHandlers?.keys?.toList() ?: emptyList()
+                val engine = PlatformServices.modState.getScriptEngine(serverLevel, tPos) as? damien.nodeworks.script.ScriptEngine
+                if (engine == null) emptyList()
+                // The open packet carries each name in at most 64 chars, a long rule is cut.
+                else engine.processingHandlers.keys.toList() +
+                    engine.recipeRules.filter { it.active }.map { if (it.label.length > 64) it.label.take(61) + "..." else it.label }
             } else emptyList()
             DiagnosticOpenData.TerminalInfo(
                 tPos, isRunning, terminal.scripts.keys.toList(), handlers, terminal.autoRun

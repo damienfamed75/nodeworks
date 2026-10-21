@@ -198,7 +198,7 @@ object CraftTreeBuilder {
 
             val searchPositions = apiMatch.apiStorage.remoteTerminalPositions ?: snapshot.terminalPositions
             val handlerEngine = PlatformServices.modState.findProcessingEngine(
-                level, searchPositions, api.name, apiMatch.apiStorage.remoteDimension
+                level, searchPositions, api.name, apiMatch.apiStorage.remoteDimension, api
             )
             // A recipe is considered "handled" when EITHER a Lua handler is
             // registered on a connected Terminal OR a Processing Handler
@@ -370,6 +370,7 @@ object CraftTreeBuilder {
                 match.apiStorage.remoteTerminalPositions ?: snapshot.terminalPositions,
                 api.name,
                 match.apiStorage.remoteDimension,
+                api,
             ) != null
             val hasBlockHandler = damien.nodeworks.script.cpu.BlockHandlerRegistry.find(handlerNetworkId, api.name) != null
             var score = 0

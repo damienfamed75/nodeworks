@@ -127,6 +127,7 @@ object NeoForgeTerminalPackets {
         terminalPositions: List<BlockPos>,
         cardName: String,
         overrideDimension: ResourceKey<Level>? = null,
+        api: damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo? = null,
     ): ScriptEngine? {
         val dimKey = overrideDimension ?: level.dimension()
         for (pos in terminalPositions) {
@@ -134,6 +135,13 @@ object NeoForgeTerminalPackets {
             if (engine.isRunning() && engine.processingHandlers.containsKey(cardName)) {
                 return engine
             }
+        }
+        // Rules only after every terminal had its say, an exact handler on any of them
+        // beats a rule on another.
+        if (api == null) return null
+        for (pos in terminalPositions) {
+            val engine = activeEngines[GlobalPos.of(dimKey, pos)] ?: continue
+            if (engine.isRunning() && engine.handlerFor(cardName, api) != null) return engine
         }
         return null
     }

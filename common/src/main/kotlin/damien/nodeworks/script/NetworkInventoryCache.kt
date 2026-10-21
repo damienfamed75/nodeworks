@@ -629,7 +629,7 @@ class NetworkInventoryCache(
             for (api in snapshot.processingApis) {
                 for (procApi in api.apis) {
                     val warning = if (noController) baseWarning
-                        else if (hasProcessingHandler(snapshot, api, procApi.name)) damien.nodeworks.platform.CraftWarning.NONE
+                        else if (hasProcessingHandler(snapshot, api, procApi)) damien.nodeworks.platform.CraftWarning.NONE
                         else damien.nodeworks.platform.CraftWarning.NO_HANDLER
                     for (output in procApi.outputs) {
                         if (output.itemId.isEmpty()) continue
@@ -668,10 +668,11 @@ class NetworkInventoryCache(
     private fun hasProcessingHandler(
         snapshot: NetworkSnapshot,
         apiStorage: damien.nodeworks.network.ProcessingApiSnapshot,
-        apiName: String,
+        api: damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo,
     ): Boolean {
+        val apiName = api.name
         val terminals = apiStorage.remoteTerminalPositions ?: snapshot.terminalPositions
-        if (PlatformServices.modState.findProcessingEngine(level, terminals, apiName, apiStorage.remoteDimension) != null) return true
+        if (PlatformServices.modState.findProcessingEngine(level, terminals, apiName, apiStorage.remoteDimension, api) != null) return true
         val handlerNetworkId = apiStorage.remoteNetworkId ?: snapshot.networkId
         val pos = damien.nodeworks.script.cpu.BlockHandlerRegistry.find(handlerNetworkId, apiName) ?: return false
         val handlerLevel = apiStorage.remoteDimension?.let { level.server.getLevel(it) } ?: level

@@ -238,7 +238,8 @@ object RecipeHintRenderer {
             if (RecipeId.isRecipeId(id)) {
                 renderById(graphics, font, id, x, cy, w, HINT_HEIGHT, resolver)
             } else {
-                graphics.drawString(font, id, x, cy + (HINT_HEIGHT - font.lineHeight) / 2 + 1, 0xFF888888.toInt(), false)
+                val text = if (font.width(id) <= w) id else font.plainSubstrByWidth(id, (w - font.width("…")).coerceAtLeast(0)) + "…"
+                graphics.drawString(font, text, x, cy + (HINT_HEIGHT - font.lineHeight) / 2 + 1, 0xFF888888.toInt(), false)
             }
             cy += HINT_HEIGHT + rowGap
         }

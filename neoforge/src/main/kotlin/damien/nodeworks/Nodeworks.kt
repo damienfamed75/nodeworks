@@ -99,6 +99,10 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
         NeoForge.EVENT_BUS.addListener(::onRegisterCommands)
         NeoForge.EVENT_BUS.addListener(::onDatapackSync)
         NeoForge.EVENT_BUS.addListener(::onBlockBreak)
+        // A tag rule in `network:recipes` may match other sets once tags change.
+        NeoForge.EVENT_BUS.addListener { _: net.neoforged.neoforge.event.TagsUpdatedEvent ->
+            damien.nodeworks.script.RecipeHandlerRule.onTagsReloaded()
+        }
 
         // Register client setup (bypasses KFF's AutoKotlinEventBusSubscriber). Gated
         // on `Dist.CLIENT` because [NeoForgeClientSetup.register] eagerly calls
@@ -1418,8 +1422,9 @@ class NeoForgeModStateService : ModStateService {
         terminalPositions: List<BlockPos>,
         cardName: String,
         overrideDimension: net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level>?,
+        api: damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo?,
     ): Any? {
-        return NeoForgeTerminalPackets.findEngineWithHandler(level, terminalPositions, cardName, overrideDimension)
+        return NeoForgeTerminalPackets.findEngineWithHandler(level, terminalPositions, cardName, overrideDimension, api)
     }
 
     override fun getScriptEngine(level: ServerLevel, pos: BlockPos): Any? {

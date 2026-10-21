@@ -1673,12 +1673,13 @@ object LuaDiagnostics {
 
     /** Patterns that imply the handler accesses `items` opaquely, in which
      *  case the literal-name substring check would produce false positives.
-     *  Bracket access, iteration, and full-reassignment all suppress the
+     *  `items:all()`, bracket access, iteration, and full-reassignment all suppress the
      *  unused-input hint. The reassignment branch uses a negative lookahead
      *  so `local x = items.copperIngot` (a field access, not an alias) does
      *  *not* trigger suppression. */
     private val HANDLER_INDIRECT_ITEMS_USE: Regex = Regex(
-        """\bitems\s*\[""" +
+        """\bitems\s*:\s*all\s*\(""" +
+            """|\bitems\s*\[""" +
             """|\bfor\s+\w+(?:\s*,\s*\w+)?\s+in\s+items\b""" +
             """|\blocal\s+\w+\s*=\s*items(?![.\[\w])"""
     )
