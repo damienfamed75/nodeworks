@@ -1,6 +1,6 @@
 ---
 navigation:
-  parent: example-setups/index.md
+  parent: nodeworks-mechanics/index.md
   icon: minecraft:hopper
   title: Moving Items
 categories:

@@ -36,6 +36,6 @@ connected chests as you'd like using an Inventory Terminal.
 
 ### Expanding your Nodeworks Network
 
-- [Moving items](./example-setups/moving-items.md)
+- [Moving items](./nodeworks-mechanics/moving-items.md)
 - [Autocrafting](./nodeworks-mechanics/autocrafting.md)
 - [Example Setups](./example-setups/index.md)
