@@ -74,6 +74,7 @@ class DiagnosticScreen(
             "import_chest" to 0xFFB8915C.toInt(),
             "export_chest" to 0xFFB8915C.toInt(),
             "processing_handler" to 0xFFDD55DD.toInt(),
+            "multi_processing_handler" to 0xFFDD55DD.toInt(),
             "craft_requester" to 0xFFFFAA55.toInt(),
             "storage_meter" to 0xFF9DC88D.toInt(),
             "monitor" to 0xFFAE8FE0.toInt(),
@@ -105,12 +106,16 @@ class DiagnosticScreen(
             "import_chest" to "Import Chest",
             "export_chest" to "Export Chest",
             "processing_handler" to "Processing Handler",
+            "multi_processing_handler" to "Multi-Processing Handler",
             "craft_requester" to "Craft Requester",
             "storage_meter" to "Storage Meter",
             "monitor" to "Monitor",
         )
 
         private val TAB_NAMES = listOf("Topology", "Route", "Craft", "Jobs")
+
+        private val ICONS_TEXTURE: net.minecraft.resources.Identifier =
+            net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
 
         private val BLOCK_ITEMS: Map<String, ItemStack> by lazy {
             val reg = damien.nodeworks.registry.ModBlocks
@@ -133,6 +138,7 @@ class DiagnosticScreen(
                 "import_chest" to ItemStack(reg.IMPORT_CHEST),
                 "export_chest" to ItemStack(reg.EXPORT_CHEST),
                 "processing_handler" to ItemStack(reg.PROCESSING_HANDLER),
+                "multi_processing_handler" to ItemStack(reg.MULTI_PROCESSING_HANDLER),
                 "craft_requester" to ItemStack(reg.CRAFT_REQUESTER),
                 "storage_meter" to ItemStack(reg.STORAGE_METER),
                 "monitor" to ItemStack(reg.MONITOR),
@@ -183,6 +189,17 @@ class DiagnosticScreen(
     /** Map from BlockPos to its group index (only for stacked blocks). */
     private val blockToGroup = mutableMapOf<BlockPos, Int>()
 
+    /** One connection to draw, in rotated world space from its owner to its target, with
+     *  every waypoint that only continues a straight run dropped. A pipe run sends one
+     *  waypoint per pipe, and a hundred pipes in a line draw as one segment. */
+    private class EdgePath(val xs: FloatArray, val zs: FloatArray)
+
+    private val edgePaths = ArrayList<EdgePath>()
+
+    /** Per-block card types and error flag, worked out with the layout instead of every frame. */
+    private val cardTypesByBlock = HashMap<BlockPos, List<String>>()
+    private val erroredBlocks = HashSet<BlockPos>()
+
     /** Snapshot of [menu.blocks.size] last time the layout was rebuilt.
      *  Triggers a rebuild when topology chunks have grown the list since the
      *  last frame, otherwise the rotated positions / stack groups stay frozen
@@ -203,6 +220,9 @@ class DiagnosticScreen(
         rotatedPositions.clear()
         stackGroups.clear()
         blockToGroup.clear()
+        edgePaths.clear()
+        cardTypesByBlock.clear()
+        erroredBlocks.clear()
 
         val player = net.minecraft.client.Minecraft.getInstance().player
         val playerX = player?.x?.toFloat() ?: 0f
@@ -238,6 +258,20 @@ class DiagnosticScreen(
             }
         }
 
+        val posSet = blocks.mapTo(HashSet()) { it.pos }
+        for (block in blocks) {
+            for (path in block.connections) {
+                if (path.isEmpty()) continue
+                val target = path.last()
+                if (target !in posSet) continue
+                // Either end could own the edge, the lower position draws it.
+                if (block.pos.asLong() > target.asLong()) continue
+                edgePaths.add(simplifiedPath(block.pos, path))
+            }
+            if (block.cards.isNotEmpty()) cardTypesByBlock[block.pos] = block.cards.map { it.cardType }.distinct()
+            if (block.details.any { it.startsWith("__error:") }) erroredBlocks.add(block.pos)
+        }
+
         val byXZ = blocks.groupBy {
             val p = rotatedPositions[it.pos]!!
             (p.first * 10).roundToInt() to (p.second * 10).roundToInt()
@@ -252,6 +286,38 @@ class DiagnosticScreen(
                 }
             }
         }
+    }
+
+    /** The polyline from [start] through [path], in rotated world space. The view drops
+     *  height, so a step straight up or down lands on the same spot and goes, and a point
+     *  that only carries on in the direction already heading goes too. */
+    private fun simplifiedPath(start: BlockPos, path: List<BlockPos>): EdgePath {
+        val pts = ArrayList<BlockPos>(minOf(path.size + 1, 16))
+        pts.add(start)
+        for (p in path) {
+            val last = pts.last()
+            if (p.x == last.x && p.z == last.z) continue
+            if (pts.size >= 2) {
+                val a = pts[pts.size - 2]
+                val ax = (last.x - a.x).toLong()
+                val az = (last.z - a.z).toLong()
+                val bx = (p.x - last.x).toLong()
+                val bz = (p.z - last.z).toLong()
+                if (ax * bz - az * bx == 0L && ax * bx + az * bz > 0L) {
+                    pts[pts.size - 1] = p
+                    continue
+                }
+            }
+            pts.add(p)
+        }
+        val xs = FloatArray(pts.size)
+        val zs = FloatArray(pts.size)
+        for ((i, p) in pts.withIndex()) {
+            val r = rotatedPositions[p]
+            xs[i] = r?.first ?: 0f
+            zs[i] = r?.second ?: 0f
+        }
+        return EdgePath(xs, zs)
     }
 
     override fun init() {
@@ -409,40 +475,27 @@ class DiagnosticScreen(
 
         graphics.enableScissor(contentLeft, contentTop, contentLeft + contentW, contentTop + contentH)
 
-        val posSet = blocks.map { it.pos }.toSet()
+        // What is on screen, with room for an icon, its card pill and its badges, so a
+        // network of thousands only draws the part in view.
+        val margin = 24
+        val viewL = contentLeft - margin
+        val viewT = contentTop - margin
+        val viewR = contentLeft + contentW + margin
+        val viewB = contentTop + contentH + margin
 
-        // Draw connections as polylines along their actual pipe path. Each
-        // logical neighbour ships with a waypoint list, intermediate entries
-        // are pipe positions and the last entry is the non-pipe target. Drawing
-        // segment-by-segment keeps the line aligned with the world layout
-        // instead of cutting a diagonal between the two endpoints.
-        for (block in blocks) {
-            val sx1 = blockScreenX(block.pos)
-            val sy1 = blockScreenY(block.pos)
-            for (path in block.connections) {
-                if (path.isEmpty()) continue
-                val target = path.last()
-                if (target !in posSet) continue
-                // Dedup symmetric edges. Either direction owns the draw based
-                // on pos ordering of the two non-pipe endpoints, intermediates
-                // don't affect the decision.
-                if (block.pos.asLong() > target.asLong()) continue
-                var px = sx1
-                var py = sy1
-                for (wp in path) {
-                    val nx = blockScreenX(wp)
-                    val ny = blockScreenY(wp)
-                    drawLine(
-                        graphics,
-                        px.roundToInt(),
-                        py.roundToInt(),
-                        nx.roundToInt(),
-                        ny.roundToInt(),
-                        networkLineColor
-                    )
-                    px = nx
-                    py = ny
-                }
+        // Connections along their pipe paths, one segment per straight run, see [EdgePath].
+        for (edge in edgePaths) {
+            var px = worldToScreenX(edge.xs[0])
+            var py = worldToScreenY(edge.zs[0])
+            for (i in 1 until edge.xs.size) {
+                val nx = worldToScreenX(edge.xs[i])
+                val ny = worldToScreenY(edge.zs[i])
+                // Off one side of the view entirely, nothing of it shows.
+                val off = (px < viewL && nx < viewL) || (px > viewR && nx > viewR) ||
+                    (py < viewT && ny < viewT) || (py > viewB && ny > viewB)
+                if (!off) drawLine(graphics, px, py, nx, ny, networkLineColor)
+                px = nx
+                py = ny
             }
         }
 
@@ -455,6 +508,7 @@ class DiagnosticScreen(
 
             val sx = blockScreenX(block.pos).roundToInt()
             val sy = blockScreenY(block.pos).roundToInt()
+            if (sx < viewL || sx > viewR || sy < viewT || sy > viewB) continue
             renderBlockIcon(graphics, block, sx, sy, halfBlock, mouseX, mouseY)
         }
 
@@ -502,6 +556,7 @@ class DiagnosticScreen(
                 // Collapsed: render stacked item icons with slight offset + count badge
                 val sx = worldToScreenX(group.displayPos.first).roundToInt()
                 val sy = worldToScreenY(group.displayPos.second).roundToInt()
+                if (sx < viewL || sx > viewR || sy < viewT || sy > viewB) continue
                 val stackOffset = 3 // pixel offset per stacked icon
                 val totalStackOffset = (group.blocks.size - 1) * stackOffset
 
@@ -1667,10 +1722,8 @@ class DiagnosticScreen(
         }
 
         // Card icons in a visible pill below the block
-        if (block.cards.isNotEmpty()) {
-            val iconsTexture =
-                net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
-            val uniqueTypes = block.cards.map { it.cardType }.distinct()
+        val uniqueTypes = cardTypesByBlock[block.pos]
+        if (uniqueTypes != null) {
             val iconSize = 12
             val iconSpacing = 0
             val pillW = uniqueTypes.size * (iconSize + iconSpacing) - iconSpacing
@@ -1687,7 +1740,7 @@ class DiagnosticScreen(
                 val iconY = pillY
                 // Render the full 16x16 atlas tile scaled down to iconSize
                 graphics.blit(
-                    iconsTexture, iconX, iconY, iconSize, iconSize,
+                    ICONS_TEXTURE, iconX, iconY, iconSize, iconSize,
                     iconU.toFloat(), 16f, 16, 16, 256, 256
                 )
             }
@@ -1695,18 +1748,16 @@ class DiagnosticScreen(
 
         // Pinned indicator icon (top-left corner of block)
         if (damien.nodeworks.render.NodeConnectionRenderer.pinnedBlock == block.pos) {
-            val pinIconTex =
-                net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
             // 26.1: `RenderSystem.setShaderColor` is gone, tint goes via the per-call
             //  ARGB arg on the stretched-blit overload. 0xFF54CCFF = rgb(0.33, 0.8, 1.0).
-            graphics.blit(pinIconTex, sx - 11, sy - 11, 6, 6, 80f, 0f, 16, 16, 256, 256, 0xFF54CCFF.toInt())
+            graphics.blit(ICONS_TEXTURE, sx - 11, sy - 11, 6, 6, 80f, 0f, 16, 16, 256, 256, 0xFF54CCFF.toInt())
         }
 
         // Warning indicator (top-right corner of block) when the block has an
         // undismissed error, currently only Crafting Cores emit this via the
         // "__error:" detail prefix. renderItem draws at a higher Z than normal
         // blits, so we translate the pose up to sit on top of the block icon.
-        if (block.details.any { it.startsWith("__error:") }) {
+        if (block.pos in erroredBlocks) {
             graphics.pose().pushMatrix()
             graphics.pose().translate((0f).toFloat(), (0f).toFloat())
             Icons.WARNING.draw(graphics, sx + 3, sy - 11, 10)
@@ -1721,20 +1772,20 @@ class DiagnosticScreen(
         }
     }
 
-    private fun drawLine(graphics: GuiGraphicsExtractor, x1: Int, y1: Int, x2: Int, y2: Int, color: Int) {
+    /** A one pixel line as a single quad, turned to the segment's angle. Drawing it a pixel
+     *  at a time cost one quad per pixel, which at high zoom on a large network meant
+     *  hundreds of thousands of quads a frame. */
+    private fun drawLine(graphics: GuiGraphicsExtractor, x1: Float, y1: Float, x2: Float, y2: Float, color: Int) {
         val dx = x2 - x1
         val dy = y2 - y1
-        val steps = maxOf(kotlin.math.abs(dx), kotlin.math.abs(dy))
-        if (steps == 0) return
-        val xInc = dx.toFloat() / steps
-        val yInc = dy.toFloat() / steps
-        var x = x1.toFloat()
-        var y = y1.toFloat()
-        for (i in 0..steps) {
-            graphics.fill(x.roundToInt(), y.roundToInt(), x.roundToInt() + 1, y.roundToInt() + 1, color)
-            x += xInc
-            y += yInc
-        }
+        val length = kotlin.math.sqrt(dx * dx + dy * dy)
+        if (length < 0.5f) return
+        val pose = graphics.pose()
+        pose.pushMatrix()
+        pose.translate(x1, y1)
+        pose.rotate(kotlin.math.atan2(dy, dx))
+        graphics.fill(0, 0, kotlin.math.ceil(length).toInt(), 1, color)
+        pose.popMatrix()
     }
 
     // ========== Input ==========
