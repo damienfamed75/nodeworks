@@ -182,11 +182,13 @@ class InstructionStorageBlockEntity(
             // Deferring via the revalidation queue (instead of propagating now)
             // avoids traversing this about-to-be-removed position as a cluster
             // neighbor.
-            for (dir in Direction.entries) {
-                val neighbor = worldPosition.relative(dir)
-                if (lvl.isLoaded(neighbor) && lvl.getBlockEntity(neighbor) is InstructionStorageBlockEntity) {
-                    NodeConnectionHelper.queueRevalidation(lvl, neighbor)
-                }
+            // A broken member may have cut the cluster, so each sibling's walk must still
+            // reach every other to keep an id from before. An unload names nothing.
+            val siblings = Direction.entries.map { worldPosition.relative(it) }
+                .filter { lvl.isLoaded(it) && lvl.getBlockEntity(it) is InstructionStorageBlockEntity }
+            val joined = if (blockDestroyed) siblings else emptyList()
+            for (neighbor in siblings) {
+                NodeConnectionHelper.queueRevalidation(lvl, neighbor, joined)
             }
         }
         super.setRemoved()

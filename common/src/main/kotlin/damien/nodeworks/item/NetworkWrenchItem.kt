@@ -196,8 +196,10 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
         refreshPipeState(serverLevel, pos)
         refreshPipeState(serverLevel, neighborPos)
 
-        NodeConnectionHelper.propagateNetworkId(serverLevel, pos)
-        NodeConnectionHelper.propagateNetworkId(serverLevel, neighborPos)
+        // A toggle may cut the two apart, so each walk must still reach the other.
+        val joined = listOf(pos, neighborPos)
+        NodeConnectionHelper.propagateNetworkId(serverLevel, pos, joined)
+        NodeConnectionHelper.propagateNetworkId(serverLevel, neighborPos, joined)
 
         return InteractionResult.SUCCESS
     }
