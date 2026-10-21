@@ -356,7 +356,8 @@ class InstructionSetTransferHandler :
         doTransfer: Boolean
     ): IRecipeTransferError? {
         if (doTransfer) {
-            val grid = Array(9) { "" }
+            // Stacks, not ids, so an ingredient that only matches with its components keeps them.
+            val grid = Array(9) { ItemStack.EMPTY }
             val inputSlots = recipeSlots.getSlotViews(RecipeIngredientRole.INPUT)
             for ((index, slotView) in inputSlots.withIndex()) {
                 if (index >= 9) break
@@ -364,7 +365,7 @@ class InstructionSetTransferHandler :
                 if (displayed.isPresent) {
                     val ingredient = displayed.get().ingredient
                     if (ingredient is ItemStack && !ingredient.isEmpty) {
-                        grid[index] = BuiltInRegistries.ITEM.getKey(ingredient.item)?.toString() ?: ""
+                        grid[index] = ingredient.copyWithCount(1)
                     }
                 }
             }

@@ -1,6 +1,7 @@
 package damien.nodeworks.registry
 
 import damien.nodeworks.item.InstalledCrystal
+import damien.nodeworks.item.InstructionSetIngredients
 import net.minecraft.core.Registry
 import net.minecraft.core.component.DataComponentType
 import net.minecraft.core.registries.BuiltInRegistries
@@ -65,6 +66,14 @@ object ModDataComponents {
         private set
 
     /**
+     * The nine ingredient stacks of an Instruction Set, kept only when a slot needs its
+     * components to match the recipe. Absent on plain cards and older cards, whose grid
+     * is rebuilt from the item ids alone.
+     */
+    lateinit var INSTRUCTION_SET_INGREDIENTS: DataComponentType<InstructionSetIngredients>
+        private set
+
+    /**
      * Register all component types. Call from the block-registry RegisterEvent after
      * blocks are registered and before items, so any item that wants a component as a
      * default value has the component available.
@@ -96,6 +105,14 @@ object ModDataComponents {
             DataComponentType.builder<InstalledCrystal>()
                 .persistent(InstalledCrystal.CODEC)
                 .networkSynchronized(InstalledCrystal.STREAM_CODEC)
+                .build(),
+        )
+
+        INSTRUCTION_SET_INGREDIENTS = register(
+            "instruction_set_ingredients",
+            DataComponentType.builder<InstructionSetIngredients>()
+                .persistent(InstructionSetIngredients.CODEC)
+                .networkSynchronized(InstructionSetIngredients.STREAM_CODEC)
                 .build(),
         )
     }

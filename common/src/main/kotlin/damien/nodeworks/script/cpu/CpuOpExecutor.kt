@@ -224,19 +224,27 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
     ): CraftScheduler.OpResult {
         val recipeManager = lvl.recipeAccess() ?: return CraftScheduler.OpResult.Failed("No recipe manager")
 
-        val ingredientCounts = mutableMapOf<String, Int>()
-        for (id in op.recipe) if (id.isNotEmpty()) ingredientCounts.merge(id, 1, Int::plus)
-
-        val items = op.recipe.map { itemId ->
-            if (itemId.isEmpty()) ItemStack.EMPTY
-            else {
-                val id = Identifier.tryParse(itemId)
-                    ?: return CraftScheduler.OpResult.Failed("Bad item id in recipe: $itemId")
-                val item = BuiltInRegistries.ITEM.getValue(id)
-                    ?: return CraftScheduler.OpResult.Failed("Unknown item in recipe: $itemId")
-                ItemStack(item, 1)
+        // The grid as stacks. A slot kept with components is that variant, every other
+        // slot is the plain item of its id, which is also how older plans read.
+        val items = ArrayList<ItemStack>(op.recipe.size)
+        for ((slot, itemId) in op.recipe.withIndex()) {
+            if (itemId.isEmpty()) {
+                items.add(ItemStack.EMPTY)
+                continue
             }
+            val id = Identifier.tryParse(itemId)
+                ?: return CraftScheduler.OpResult.Failed("Bad item id in recipe: $itemId")
+            val item = BuiltInRegistries.ITEM.getValue(id)
+                ?: return CraftScheduler.OpResult.Failed("Unknown item in recipe: $itemId")
+            val kept = op.recipeStacks.getOrNull(slot)
+            items.add(if (kept != null && !kept.isEmpty && kept.item === item) kept.copyWithCount(1) else ItemStack(item, 1))
         }
+        // What each slot takes from the buffer, a variant bucket for a slot kept with
+        // components and the plain bucket for the rest.
+        val slotKeys: List<damien.nodeworks.script.BufferKey.Key?> =
+            items.map { if (it.isEmpty) null else damien.nodeworks.script.BufferKey.of(it) }
+        val ingredientCounts = mutableMapOf<damien.nodeworks.script.BufferKey.Key, Int>()
+        for (key in slotKeys) if (key != null) ingredientCounts.merge(key, 1, Int::plus)
         val craftingInput = CraftingInput.of(3, 3, items)
         val recipeHolder = recipeManager
             .getRecipeFor(RecipeType.CRAFTING, craftingInput, lvl)
@@ -260,7 +268,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         // one of the recipe's own ingredients is used again by the next craft, the way it stays
         // in a player's grid. Everything else, and whatever is still held at the end, goes
         // straight to network storage in one pass, so leftovers never fill the CPU buffer.
-        val held = mutableMapOf<String, ArrayDeque<ItemStack>>()
+        val held = mutableMapOf<damien.nodeworks.script.BufferKey.Key, ArrayDeque<ItemStack>>()
         val spare = LinkedHashMap<damien.nodeworks.script.BufferKey.Key, Pair<ItemStack, Long>>()
         fun keepLeftover(stack: ItemStack) {
             if (stack.isEmpty) return
@@ -286,18 +294,18 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
                 val standby = arrayOfNulls<ItemStack>(op.recipe.size)
                 inHand = taken
                 inStandby = standby
-                fun underflow(ing: String): CraftScheduler.OpResult {
-                    val had = taken.count { it != null && BuiltInRegistries.ITEM.getKey(it.item).toString() == ing }
+                fun underflow(ing: damien.nodeworks.script.BufferKey.Key): CraftScheduler.OpResult {
+                    val had = taken.count { it != null && BuiltInRegistries.ITEM.getKey(it.item).toString() == ing.itemId }
                     inHand = null
                     inStandby = null
                     for (s in taken) if (s != null) keepLeftover(s)
                     for (s in standby) if (s != null) keepLeftover(s)
                     return CraftScheduler.OpResult.Failed(
-                        "Execute iteration underflow: $ing x${ingredientCounts[ing]} (had $had)"
+                        "Execute iteration underflow: ${ing.itemId} x${ingredientCounts[ing]} (had $had)"
                     )
                 }
-                for ((slot, ing) in op.recipe.withIndex()) {
-                    if (ing.isEmpty()) continue
+                for ((slot, ing) in slotKeys.withIndex()) {
+                    if (ing == null) continue
                     val reused = held[ing]?.removeFirstOrNull()
                     if (reused != null) {
                         taken[slot] = reused
@@ -315,8 +323,8 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
                 // The output was worked out from fresh ingredients. If a worn copy would change it,
                 // like repairing damaged tools, those slots take fresh copies instead.
                 if (worn.any { it } && !craftsAsPlanned(recipeHolder.value(), taken, expected, lvl)) {
-                    for ((slot, ing) in op.recipe.withIndex()) {
-                        if (!worn[slot]) continue
+                    for ((slot, ing) in slotKeys.withIndex()) {
+                        if (ing == null || !worn[slot]) continue
                         taken[slot]?.let { keepLeftover(it) }
                         taken[slot] = null
                         taken[slot] = standby[slot]?.also { standby[slot] = null }
@@ -357,8 +365,12 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
                 }
                 for (left in leftovers) {
                     if (left.isEmpty) continue
-                    val leftId = BuiltInRegistries.ITEM.getKey(left.item).toString()
-                    if (leftId in ingredientCounts) held.getOrPut(leftId) { ArrayDeque() }.addLast(left)
+                    // Back to its own variant slot when the recipe has one, else to a plain
+                    // slot of the same item, where a worn copy is as welcome as it always was.
+                    val leftKey = damien.nodeworks.script.BufferKey.of(left)
+                    val slotKey = if (leftKey in ingredientCounts) leftKey
+                        else ingredientCounts.keys.firstOrNull { it.isPlain && it.itemId == leftKey.itemId }
+                    if (slotKey != null) held.getOrPut(slotKey) { ArrayDeque() }.addLast(left)
                     else keepLeftover(left)
                 }
                 done++
@@ -390,13 +402,15 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         false
     }
 
-    /** One [itemId] out of the buffer as a real stack, paired with true when it is a fresh
-     *  copy. The plain bucket goes first, then, with [allowWorn], a copy that differs only by
-     *  wear, so a worn crystal back in storage still crafts. A renamed or enchanted copy is
-     *  never used up. */
-    private fun takeIngredient(itemId: String, allowWorn: Boolean): Pair<ItemStack, Boolean>? {
-        takeOne(damien.nodeworks.script.BufferKey.Key(itemId, ""), itemId)?.let { return it to true }
-        if (!allowWorn) return null
+    /** One item for [slotKey] out of the buffer as a real stack, paired with true when it is
+     *  a fresh copy. Its own bucket goes first, then, for a plain slot with [allowWorn], a
+     *  copy that differs only by wear, so a worn crystal back in storage still crafts. A
+     *  renamed or enchanted copy is never used up, and a slot kept with components takes
+     *  that variant alone. */
+    private fun takeIngredient(slotKey: damien.nodeworks.script.BufferKey.Key, allowWorn: Boolean): Pair<ItemStack, Boolean>? {
+        val itemId = slotKey.itemId
+        takeOne(slotKey, itemId)?.let { return it to true }
+        if (!allowWorn || !slotKey.isPlain) return null
         for ((key, entry) in cpu.bufferState.contents()) {
             if (key.itemId != itemId || key.isPlain) continue
             val patch = entry.template.componentsPatch

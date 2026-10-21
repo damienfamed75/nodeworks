@@ -31,6 +31,10 @@ object CraftTreeBuilder {
          *  "use the Instruction Set's stored recipe verbatim", which is also
          *  the default for substitution-disabled patterns. */
         val resolvedRecipe: List<String>? = null,
+        /** For craft_template nodes whose grid keeps a slot with components: the nine
+         *  slots as stacks, parallel to the recipe pattern, so the Execute op lays out
+         *  the variant the recipe needs. Null when every slot is plain. */
+        val resolvedStacks: List<net.minecraft.world.item.ItemStack>? = null,
         /** For process_template nodes whose Processing Set has substitutions on: the
          *  concrete item each recipe input uses in this craft, parallel to the set's
          *  inputs. Null means the set's own inputs. */
@@ -117,8 +121,13 @@ object CraftTreeBuilder {
         }
 
         val itemName = getItemName(itemId, componentsPatch)
-        val inStorageTotal = NetworkStorageHelper.countItemsInt(level, snapshot, itemId)
-        val reservedAmount = reserved[itemId] ?: 0
+        // A request naming a variant only counts and reserves that variant, under the same
+        // key [resolveIngredient] uses, so other variants in storage never stand in for it.
+        val requestHash = damien.nodeworks.script.BufferKey.componentsHash(componentsPatch)
+        val reservedKey = if (requestHash.isEmpty()) itemId else "$itemId#$requestHash"
+        val inStorageTotal = if (requestHash.isEmpty()) NetworkStorageHelper.countItemsInt(level, snapshot, itemId)
+            else NetworkStorageHelper.countVariantAcrossNetworkInt(level, snapshot, itemId, componentsPatch)
+        val reservedAmount = reserved[reservedKey] ?: 0
         val availableFromStorage = maxOf(0, inStorageTotal - reservedAmount)
 
         // Prevent infinite loops for circular recipes. Key by (itemId,
@@ -134,40 +143,59 @@ object CraftTreeBuilder {
         visited.add(variantKey)
 
         // 1. Try Instruction Set (3x3 crafting)
-        val instructionMatch = snapshot.findInstructionSet(itemId)
+        val instructionMatch = findInstructionSetFor(snapshot, itemId, componentsPatch)
         if (instructionMatch != null) {
             val info = instructionMatch.instructionSet
-            val originalRecipe = info.recipe
+            // The grid as stacks, so a slot that only matches with its components plans
+            // and crafts that variant. A card without kept stacks reads as plain items.
+            val originalStacks = info.ingredients.takeIf { it.size == 9 }
+                ?: info.recipe.map { damien.nodeworks.card.InstructionSet.plainStack(it) }
             val alias = info.alias ?: info.outputItemId.substringAfter(':')
 
             // Recipes can yield >1 per craft (e.g. 1 ingot → 9 nuggets). Scale ingredient
             // demand by the number of crafts actually needed, and round the node's own
             // count up to a full batch, you can't craft fractions, so a request for 1
             // nugget via a 1→9 recipe actually produces (and delivers) 9.
-            val perBatch = resolveRecipeOutputCount(originalRecipe, level).coerceAtLeast(1)
+            val perBatch = resolveRecipeOutputCount(originalStacks, level).coerceAtLeast(1)
             val batches = (count + perBatch - 1) / perBatch
             val actualCount = batches * perBatch
 
             // Swap exemplar ingredients for in-stock alternatives when the
             // pattern allows substitutions. No-op when substitutions are off.
-            val (concreteRecipe, swapped) = resolveSubstitutedRecipe(
-                originalRecipe, info.allowSubstitutions, level, snapshot, batches, reserved, visited,
+            val (concreteStacks, swapped) = resolveSubstitutedRecipe(
+                originalStacks, info.allowSubstitutions, level, snapshot, batches, reserved, visited,
             )
 
-            val ingredientCounts = mutableMapOf<String, Int>()
-            for (ingredient in concreteRecipe) {
-                if (ingredient.isEmpty()) continue
-                ingredientCounts[ingredient] = (ingredientCounts[ingredient] ?: 0) + 1
+            // Demand per variant, so two slots wanting different variants of one item
+            // resolve apart and a slot kept with components only counts its own variant.
+            // An id the registry no longer knows still shows up as a missing ingredient.
+            val ingredientCounts = LinkedHashMap<damien.nodeworks.script.BufferKey.Key, Pair<net.minecraft.core.component.DataComponentPatch, Int>>()
+            for (slot in 0 until 9) {
+                val stack = concreteStacks[slot]
+                val ingId = if (stack.isEmpty) info.recipe.getOrNull(slot).orEmpty()
+                    else BuiltInRegistries.ITEM.getKey(stack.item).toString()
+                if (ingId.isEmpty()) continue
+                val patch = if (stack.isEmpty) net.minecraft.core.component.DataComponentPatch.EMPTY else stack.componentsPatch
+                val key = damien.nodeworks.script.BufferKey.Key(ingId, damien.nodeworks.script.BufferKey.componentsHash(patch))
+                val prev = ingredientCounts[key]
+                ingredientCounts[key] = patch to ((prev?.second ?: 0) + 1)
             }
 
-            val children = ingredientCounts.flatMap { (ingId, ingCount) ->
-                resolveIngredient(ingId, ingCount * batches, level, snapshot, depth, visited, reserved)
+            val children = ingredientCounts.entries.flatMap { (key, entry) ->
+                val (patch, ingCount) = entry
+                resolveIngredient(
+                    key.itemId, ingCount * batches, level, snapshot, depth, visited, reserved,
+                    ingredientPatch = patch,
+                    exactVariant = patch.size() > 0,
+                )
             }
 
+            val anyComponents = concreteStacks.any { !it.isEmpty && it.componentsPatch.size() > 0 }
             visited.remove(variantKey)
             return CraftTreeNode(
                 itemId, itemName, actualCount, "craft_template", alias, "", availableFromStorage, children,
-                resolvedRecipe = if (swapped) concreteRecipe else null,
+                resolvedRecipe = if (swapped) damien.nodeworks.card.InstructionSet.idsOf(concreteStacks) else null,
+                resolvedStacks = if (anyComponents) concreteStacks else null,
                 componentsPatch = componentsPatch,
             )
         }
@@ -256,7 +284,7 @@ object CraftTreeBuilder {
 
         // 3. Fall back to storage, but only for the portion that isn't already reserved
         if (availableFromStorage >= count) {
-            reserved[itemId] = reservedAmount + count
+            reserved[reservedKey] = reservedAmount + count
             visited.remove(variantKey)
             return CraftTreeNode(
                 itemId, itemName, count, "storage", "", "storage", availableFromStorage, emptyList(),
@@ -337,6 +365,23 @@ object CraftTreeBuilder {
                 ingId, needed, level, snapshot, depth + 1, visited, reserved, ingredientPatch,
             ))
         }
+    }
+
+    /** The card for [itemId]. A plain request takes the lookup by alias and id. A request
+     *  naming a variant takes the card whose output carries exactly [patch], else a card
+     *  saved before outputs were stored, whose real output is unknown and may well be the
+     *  variant. A card known to make a different variant is never used, so a tier 1 module
+     *  request without a tier 1 card is reported missing rather than routed to the tier 2
+     *  card that shares the item. */
+    private fun findInstructionSetFor(
+        snapshot: NetworkSnapshot,
+        itemId: String,
+        patch: net.minecraft.core.component.DataComponentPatch,
+    ): damien.nodeworks.network.InstructionSetMatch? {
+        if (patch.size() == 0) return snapshot.findInstructionSet(itemId)
+        val byOutput = snapshot.findInstructionSetsByOutput(itemId)
+        return byOutput.firstOrNull { it.instructionSet.outputComponents == patch }
+            ?: byOutput.firstOrNull { !it.instructionSet.outputKnown }
     }
 
     /** Rank competing recipes that all produce the same requested variant.
@@ -422,26 +467,18 @@ object CraftTreeBuilder {
      *  rather than picking 8 of one type that only has 4 in stock. No-op when
      *  the pattern has substitutions disabled. */
     private fun resolveSubstitutedRecipe(
-        recipe: List<String>,
+        recipe: List<ItemStack>,
         allowSubstitutions: Boolean,
         level: ServerLevel,
         snapshot: NetworkSnapshot,
         batches: Int,
         reserved: MutableMap<String, Int>,
         visited: Set<damien.nodeworks.script.BufferKey.Key>,
-    ): Pair<List<String>, Boolean> {
+    ): Pair<List<ItemStack>, Boolean> {
         if (!allowSubstitutions) return recipe to false
 
         val rm = level.recipeAccess() ?: return recipe to false
-        val exemplarItems = recipe.map { itemId ->
-            if (itemId.isEmpty()) ItemStack.EMPTY
-            else {
-                val id = Identifier.tryParse(itemId) ?: return recipe to false
-                val item = BuiltInRegistries.ITEM.getValue(id) ?: return recipe to false
-                ItemStack(item, 1)
-            }
-        }
-        val input = CraftingInput.of(3, 3, exemplarItems)
+        val input = CraftingInput.of(3, 3, recipe)
         val holder = rm.getRecipeFor(RecipeType.CRAFTING, input, level).orElse(null)
             ?: return recipe to false
         val placement = holder.value().placementInfo()
@@ -468,8 +505,12 @@ object CraftTreeBuilder {
         val concrete = recipe.toMutableList()
         var swapped = false
         for (slot in 0 until 9) {
-            val originalId = concrete[slot]
-            if (originalId.isEmpty()) continue
+            val original = concrete[slot]
+            if (original.isEmpty) continue
+            // A slot kept with components is that variant alone. The candidates are bare
+            // items and none of them could satisfy it.
+            if (original.componentsPatch.size() > 0) continue
+            val originalId = BuiltInRegistries.ITEM.getKey(original.item).toString()
             // Map the slot's authored item to its ingredient by candidate
             // membership. Indexing by slot doesn't work, the recipe's
             // [PlacementInfo] is laid out over its own bounding box, not the
@@ -480,8 +521,12 @@ object CraftTreeBuilder {
             val candidates = candidatesPerIngredient[ingredientIdx]
 
             val choice = pickSlotCandidate(originalId, candidates, batches, ::availableFor, ::craftable) ?: continue
-            if (choice != originalId) swapped = true
-            concrete[slot] = choice
+            if (choice != originalId) {
+                val chosen = damien.nodeworks.card.InstructionSet.plainStack(choice)
+                if (chosen.isEmpty) continue
+                concrete[slot] = chosen
+                swapped = true
+            }
             local[choice] = (local[choice] ?: 0) + batches
         }
         return concrete to swapped
@@ -605,17 +650,9 @@ object CraftTreeBuilder {
     /** Assemble the 9-slot pattern against the vanilla RecipeManager and return the per-craft
      *  output count. Returns 1 if no matching recipe (safe default, planner will still fail
      *  downstream with a clearer error). */
-    private fun resolveRecipeOutputCount(recipe: List<String>, level: ServerLevel): Int {
+    private fun resolveRecipeOutputCount(recipe: List<ItemStack>, level: ServerLevel): Int {
         val rm = level.recipeAccess() ?: return 1
-        val items = recipe.map { itemId ->
-            if (itemId.isEmpty()) ItemStack.EMPTY
-            else {
-                val id = Identifier.tryParse(itemId) ?: return 1
-                val item = BuiltInRegistries.ITEM.getValue(id) ?: return 1
-                ItemStack(item, 1)
-            }
-        }
-        val input = CraftingInput.of(3, 3, items)
+        val input = CraftingInput.of(3, 3, recipe)
         val holder = rm.getRecipeFor(RecipeType.CRAFTING, input, level).orElse(null)
             ?: return 1
         val result = holder.value().assemble(input)

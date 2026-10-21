@@ -147,7 +147,8 @@ object CraftPlanner {
                         recipe = recipe,
                         outputItemId = node.itemId,
                         outputCount = node.count.toLong(),
-                        executions = node.count.toLong()
+                        executions = node.count.toLong(),
+                        recipeStacks = node.resolvedStacks ?: emptyList(),
                     )
                     op.outputNodeId = node.nodeId
                     ops += op

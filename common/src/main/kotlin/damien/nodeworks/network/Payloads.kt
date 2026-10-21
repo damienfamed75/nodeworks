@@ -132,19 +132,26 @@ data class OpenInstructionSetPayload(val nodePos: BlockPos, val sideOrdinal: Int
     override fun type() = TYPE
 }
 
-data class SetInstructionGridPayload(val containerId: Int, val items: List<String>) : CustomPacketPayload {
+/** C2S: fill the Instruction Set grid from a recipe view (JEI). Each slot is a stack so an
+ *  ingredient that only matches with components arrives as the recipe shows it. */
+data class SetInstructionGridPayload(val containerId: Int, val items: List<net.minecraft.world.item.ItemStack>) : CustomPacketPayload {
     companion object {
         val TYPE: CustomPacketPayload.Type<SetInstructionGridPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "set_instruction_grid"))
         val CODEC: StreamCodec<FriendlyByteBuf, SetInstructionGridPayload> = CustomPacketPayload.codec(
             { p, buf ->
+                val regBuf = buf as net.minecraft.network.RegistryFriendlyByteBuf
                 buf.writeVarInt(p.containerId)
-                buf.writeVarInt(p.items.size)
-                for (item in p.items) buf.writeUtf(item, 256)
+                buf.writeVarInt(p.items.size.coerceAtMost(9))
+                for (i in 0 until p.items.size.coerceAtMost(9)) {
+                    net.minecraft.world.item.ItemStack.OPTIONAL_STREAM_CODEC.encode(regBuf, p.items[i])
+                }
             },
             { buf ->
+                val regBuf = buf as net.minecraft.network.RegistryFriendlyByteBuf
                 val id = buf.readVarInt()
                 val count = buf.readVarInt()
-                val items = (0 until count).map { buf.readUtf(256) }
+                if (count > 9) throw io.netty.handler.codec.DecoderException("Instruction grid has $count slots")
+                val items = (0 until count).map { readBoundedStack(regBuf) }
                 SetInstructionGridPayload(id, items)
             }
         )

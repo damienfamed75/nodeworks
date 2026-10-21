@@ -106,7 +106,11 @@ sealed class Operation {
         val recipe: List<String>,
         val outputItemId: String,
         val outputCount: Long,
-        val executions: Long
+        val executions: Long,
+        /** The nine slots as stacks, parallel to [recipe], when a slot keeps components
+         *  the recipe needs. Empty means every slot is the plain item of its id, which is
+         *  also how plans saved before the stacks were kept read. */
+        val recipeStacks: List<net.minecraft.world.item.ItemStack> = emptyList(),
     ) : Operation() {
         override val baseCost: Int get() = CpuRules.EXECUTE_BASE_COST
     }
@@ -181,6 +185,21 @@ sealed class Operation {
                 tag.putString("out", outputItemId)
                 tag.putLong("outCount", outputCount)
                 tag.putLong("executions", executions)
+                if (recipeStacks.any { !it.isEmpty && it.componentsPatch.size() > 0 }) {
+                    val ops = net.minecraft.resources.RegistryOps.create(net.minecraft.nbt.NbtOps.INSTANCE, registries)
+                    val list = ListTag()
+                    var complete = true
+                    for (s in recipeStacks) {
+                        val stackTag = net.minecraft.world.item.ItemStack.OPTIONAL_CODEC
+                            .encodeStart(ops, s.copyWithCount(1)).result().orElse(null)
+                        if (stackTag == null) {
+                            complete = false
+                            break
+                        }
+                        list.add(stackTag)
+                    }
+                    if (complete) tag.put("recipeStacks", list)
+                }
             }
             is Deliver -> {
                 tag.putString("kind", "deliver")
@@ -240,7 +259,8 @@ sealed class Operation {
                         id, deps, recipe,
                         tag.getStringOr("out", ""),
                         tag.getLongOr("outCount", 0L),
-                        tag.getLongOr("executions", 0L)
+                        tag.getLongOr("executions", 0L),
+                        readRecipeStacks(tag, registries, recipe.size),
                     )
                 }
                 "deliver" -> Deliver(
@@ -267,6 +287,27 @@ sealed class Operation {
                 list.add(c)
             }
             tag.put(key, list)
+        }
+
+        /** The saved grid stacks, or an empty list when absent, the wrong length or any entry
+         *  fails to parse, so the op falls back to plain items rather than a shifted grid. */
+        private fun readRecipeStacks(
+            tag: CompoundTag,
+            registries: net.minecraft.core.HolderLookup.Provider,
+            slots: Int,
+        ): List<net.minecraft.world.item.ItemStack> {
+            if (!tag.contains("recipeStacks")) return emptyList()
+            val ops = net.minecraft.resources.RegistryOps.create(net.minecraft.nbt.NbtOps.INSTANCE, registries)
+            val list = tag.getListOrEmpty("recipeStacks")
+            if (list.size != slots) return emptyList()
+            val out = ArrayList<net.minecraft.world.item.ItemStack>(list.size)
+            for (i in 0 until list.size) {
+                val stackTag = list.get(i) ?: return emptyList()
+                val stack = net.minecraft.world.item.ItemStack.OPTIONAL_CODEC.parse(ops, stackTag).result().orElse(null)
+                    ?: return emptyList()
+                out.add(stack)
+            }
+            return out
         }
 
         /** The saved substituted inputs, or null when absent or any entry fails to parse,

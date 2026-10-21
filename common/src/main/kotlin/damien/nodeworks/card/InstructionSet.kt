@@ -36,7 +36,7 @@ class InstructionSet(properties: Properties) : Item(properties) {
         if (level.isClientSide) return InteractionResult.SUCCESS
 
         val stack = player.getItemInHand(hand)
-        val recipe = getRecipe(stack)
+        val recipe = getRecipeStacks(stack)
         val subs = getSubstitutions(stack)
         val serverPlayer = player as ServerPlayer
 
@@ -63,14 +63,7 @@ class InstructionSet(properties: Properties) : Item(properties) {
      *  recipe yielding 3 doors shows the correct "3" badge. Returns absent
      *  when the card hasn't been configured. */
     override fun getTooltipImage(stack: ItemStack): java.util.Optional<net.minecraft.world.inventory.tooltip.TooltipComponent> {
-        val recipe = getRecipe(stack)
-        val inputs = recipe.map { id ->
-            if (id.isEmpty()) ItemStack.EMPTY
-            else Identifier.tryParse(id)
-                ?.let { BuiltInRegistries.ITEM.getValue(it) }
-                ?.let { ItemStack(it) }
-                ?: ItemStack.EMPTY
-        }
+        val inputs = getRecipeStacks(stack)
         val outputStack = getOutputStack(stack).takeIf { !it.isEmpty }?.copyWithCount(getOutputCount(stack))
         val anyInput = inputs.any { !it.isEmpty }
         if (!anyInput && outputStack == null) return java.util.Optional.empty()
@@ -90,6 +83,36 @@ class InstructionSet(properties: Properties) : Item(properties) {
             val list = tag.getList(RECIPE_KEY).orElse(null) ?: return List(9) { "" }
             if (list.size != 9) return List(9) { "" }
             return (0 until 9).map { list.getStringOr(it, "") }
+        }
+
+        /** The grid as stacks, one per slot. A slot whose stored stack carries components
+         *  and still names the id in the recipe list is returned as that stack, every
+         *  other slot is the plain item of its id, so cards saved before the stacks were
+         *  kept read exactly as they always did. */
+        fun getRecipeStacks(stack: ItemStack): List<ItemStack> {
+            val ids = getRecipe(stack)
+            val stored = stack.get(damien.nodeworks.registry.ModDataComponents.INSTRUCTION_SET_INGREDIENTS)?.stacks
+                ?.takeIf { it.size == 9 }
+            return List(9) { i ->
+                val id = ids[i]
+                if (id.isEmpty()) return@List ItemStack.EMPTY
+                val kept = stored?.get(i)
+                if (kept != null && !kept.isEmpty && BuiltInRegistries.ITEM.getKey(kept.item).toString() == id) {
+                    return@List kept.copyWithCount(1)
+                }
+                plainStack(id)
+            }
+        }
+
+        /** Item ids of the nine slots in [stacks], empty string for an empty slot. */
+        fun idsOf(stacks: List<ItemStack>): List<String> = stacks.map { s ->
+            if (s.isEmpty) "" else BuiltInRegistries.ITEM.getKey(s.item)?.toString() ?: ""
+        }
+
+        fun plainStack(id: String): ItemStack {
+            if (id.isEmpty()) return ItemStack.EMPTY
+            val item = Identifier.tryParse(id)?.let { BuiltInRegistries.ITEM.getValue(it) } ?: return ItemStack.EMPTY
+            return ItemStack(item)
         }
 
         fun getOutput(stack: ItemStack): String {
@@ -141,6 +164,9 @@ class InstructionSet(properties: Properties) : Item(properties) {
             outputCount: Int = 1,
             allowSubstitutions: Boolean = true,
             outputStack: ItemStack = ItemStack.EMPTY,
+            /** The grid as laid out, parallel to [recipe]. Slots carrying components are
+             *  kept beside the ids, a grid of plain items leaves the card as it was. */
+            ingredientStacks: List<ItemStack> = emptyList(),
         ) {
             require(recipe.size == 9)
             val tag = CompoundTag()
@@ -156,6 +182,17 @@ class InstructionSet(properties: Properties) : Item(properties) {
             // The previous recipe's result no longer applies.
             stack.remove(damien.nodeworks.registry.ModDataComponents.INSTRUCTION_SET_OUTPUT)
             setOutputStack(stack, outputStack)
+            stack.remove(damien.nodeworks.registry.ModDataComponents.INSTRUCTION_SET_INGREDIENTS)
+            if (ingredientStacks.size == 9 && ingredientStacks.any { !it.isEmpty && it.componentsPatch.size() > 0 }) {
+                val kept = List(9) { i ->
+                    val s = ingredientStacks[i]
+                    if (s.isEmpty || idsOf(listOf(s))[0] != recipe[i]) ItemStack.EMPTY else s.copyWithCount(1)
+                }
+                stack.set(
+                    damien.nodeworks.registry.ModDataComponents.INSTRUCTION_SET_INGREDIENTS,
+                    damien.nodeworks.item.InstructionSetIngredients(kept),
+                )
+            }
         }
     }
 }

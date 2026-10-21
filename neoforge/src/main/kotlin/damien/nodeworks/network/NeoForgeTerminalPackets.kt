@@ -217,7 +217,7 @@ object NeoForgeTerminalPackets {
             val globalSlot = side.ordinal * NodeBlockEntity.SLOTS_PER_SIDE + payload.slotIndex
             val cardStack = nodeEntity.getItem(globalSlot)
             if (cardStack.item !is InstructionSet) return@enqueueWork
-            val recipe = InstructionSet.getRecipe(cardStack)
+            val recipe = InstructionSet.getRecipeStacks(cardStack)
             val subs = InstructionSet.getSubstitutions(cardStack)
 
             PlatformServices.menu.openExtendedMenu(
@@ -263,7 +263,7 @@ object NeoForgeTerminalPackets {
             val player = context.player()
             val menu = player.containerMenu
             if (menu is InstructionSetScreenHandler && menu.containerId == payload.containerId) {
-                menu.setRecipeFromIds(payload.items)
+                menu.setRecipeFromStacks(payload.items)
             }
         }
     }
