@@ -132,6 +132,12 @@ class InventoryTerminalMenu(
     private var lastShiftInserted: ItemStack = ItemStack.EMPTY
     private var autoPullPattern: List<ItemStack>? = null  // captured right before craft output is taken
     private var suppressSlotsChanged = false
+
+    /** Set for the grid change a batch craft's take causes. That change leaves the grid
+     *  short of the recipe, so recomputing the result there misses the cached recipe and
+     *  scans every crafting recipe, once per craft. The refill that follows recomputes
+     *  on the restored grid, where the cached recipe matches at once. */
+    private var skipGridRecompute = false
     // Scoped to one [clicked] call. Any other route into [quickMoveStack]
     // (other mods, vanilla paths) gets the one-stack default.
     private var craftAllOnQuickMove = false
@@ -149,15 +155,24 @@ class InventoryTerminalMenu(
     /** A shift-click craft in progress: what it makes, whether it is a craft-all, and the
      *  items made so far, so a plain shift-click stops at one stack's worth however many
      *  ticks it takes. */
-    private class PendingCraft(val result: ItemStack, val craftAll: Boolean, var crafted: Int)
+    private class PendingCraft(val result: ItemStack, val craftAll: Boolean, var crafted: Int) {
+        /** Ingredients a plain shift-click pulled ahead for the whole stack, by variant, so
+         *  each craft refills the grid from here instead of asking network storage again.
+         *  Null until pulled, and once handed back. */
+        var reserve: LinkedHashMap<damien.nodeworks.script.BufferKey.Key, Long>? = null
+        val reserveTemplates = HashMap<damien.nodeworks.script.BufferKey.Key, ItemStack>()
+    }
 
     /** A shift-click craft that used up its slice of the tick with more to craft. Carried on
      *  a slice per tick by [broadcastChanges] until the recipe stops matching, the inventory
-     *  is full, a plain shift-click reaches its stack, or the player does anything else. With
-     *  auto-pull every craft also pulls from storage, so even one stack can take several
-     *  slices on a large network. */
+     *  is full, a plain shift-click reaches its stack, or the player does anything else. A
+     *  plain shift-click pulls its stack's ingredients up front, see [pullReserve], so it
+     *  usually finishes in one slice. */
     private var pendingCraft: PendingCraft? = null
         set(value) {
+            // A craft that ends early, a click, a close, gives back what it pulled ahead.
+            val old = field
+            if (old != null && old !== value) releaseReserve(old)
             if ((field == null) != (value == null)) activeCraftAll += if (value != null) 1 else -1
             field = value
         }
@@ -217,6 +232,10 @@ class InventoryTerminalMenu(
      *  Other containers fall through to super. */
     override fun slotsChanged(container: net.minecraft.world.Container) {
         if (suppressSlotsChanged) return
+        if (container === craftingContainer && skipGridRecompute) {
+            skipGridRecompute = false
+            return
+        }
         if (container === craftingContainer) {
             // slotsChanged fires server-side for a server menu, on the client copy
             // serverLevel is null and we have nothing to look up. Bail cleanly
@@ -749,6 +768,9 @@ class InventoryTerminalMenu(
         var crafted = pending.crafted
         var safety = 0
         var outOfTime = false
+        // A plain shift-click knows its whole stack up front, so it pulls those ingredients
+        // in one go per item rather than one trip to storage per craft.
+        if (autoPull && !craftAll && pending.reserve == null) pullReserve(player, pending)
         batchCrafting = true
         try {
             while (slot.hasItem() && safety < CRAFT_BATCH_SAFETY) {
@@ -781,18 +803,116 @@ class InventoryTerminalMenu(
                 // Refill consumes the pattern, re-snapshot while the
                 // grid still holds the ingredients.
                 if (autoPull) autoPullPattern = snapshotCraftPattern()
+                // With auto-pull the grid is refilled right after the take, so the result
+                // is recomputed once, on the refilled grid, see [skipGridRecompute].
+                if (autoPull) skipGridRecompute = true
                 slot.onTake(player, nextResult)
+                skipGridRecompute = false
                 // onTake consumes the grid and slotsChanged writes the
                 // next result. Refill inline, chaining must not rely on
                 // vanilla's QUICK_MOVE re-entry.
-                if (autoPull && !slot.hasItem()) autoPullRefill(bulk = craftAll)
+                if (autoPull) {
+                    val recomputed = autoPullRefill(bulk = craftAll, reserve = pending.reserve)
+                    // A refill that could not run leaves the result as the take left it, so
+                    // recompute here, the slot must never offer what the grid cannot make.
+                    if (!recomputed) slotsChanged(craftingContainer)
+                }
             }
         } finally {
             batchCrafting = false
+            // Done, or thrown out of: the grid holds its last refill and the rest of what
+            // was pulled goes back. Only a run stopped on time keeps its reserve, for the
+            // next slice. Items pulled ahead must never outlive the craft they were for.
+            if (!outOfTime) releaseReserve(pending)
         }
         if (crafted > pending.crafted) needsImmediateSync = true
         pending.crafted = crafted
         return outOfTime
+    }
+
+    /**
+     * Pulls the ingredients for the rest of a plain shift-click's stack into [pending]'s
+     * reserve. One craft is in the grid already, and every craft after it, the last
+     * included, refills each slot by one, so the stack needs one item per slot per craft
+     * and the grid ends holding one of each, as it always has.
+     *
+     * A slot the recipe hands back, a crystal that only wears or a bucket left behind, is
+     * not used up and is not pulled ahead. Whatever storage cannot supply simply is not
+     * in the reserve, the craft then runs dry and stops as it would have anyway.
+     */
+    private fun pullReserve(player: Player, pending: PendingCraft) {
+        val reserve = LinkedHashMap<damien.nodeworks.script.BufferKey.Key, Long>()
+        pending.reserve = reserve
+        val lvl = serverLevel ?: return
+        val snap = snapshot ?: return
+        val perCraft = pending.result.count.coerceAtLeast(1)
+        // One stack's worth, or as many crafts as the player can still carry when that is
+        // less, so a nearly full inventory does not pull a stack's ingredients only to hand
+        // most of them straight back.
+        val stackCrafts = pending.result.maxStackSize / perCraft
+        val roomCrafts = roomFor(pending.result) / perCraft
+        val crafts = minOf(stackCrafts, roomCrafts).toLong()
+        if (crafts <= 0L) return
+        val returned = slotsHandedBack(player)
+        // A slot holding c items lasts c crafts and then needs one per craft after, plus the
+        // one it is left with. A slot stocked by hand for the whole stack needs nothing.
+        val needPerKey = LinkedHashMap<damien.nodeworks.script.BufferKey.Key, Long>()
+        for (i in 0 until craftingContainer.containerSize) {
+            val stack = craftingContainer.getItem(i)
+            if (stack.isEmpty || i in returned) continue
+            val need = (crafts - stack.count + 1).coerceAtLeast(0L)
+            if (need == 0L) continue
+            val key = damien.nodeworks.script.BufferKey.of(stack)
+            needPerKey.merge(key, need, Long::plus)
+            pending.reserveTemplates.putIfAbsent(key, stack.copyWithCount(1))
+        }
+        for ((key, need) in needPerKey) {
+            val template = pending.reserveTemplates[key] ?: continue
+            val itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(template.item).toString()
+            var got = 0L
+            for (s in extractRealStacks(lvl, snap, cache, itemId, need, template.componentsPatch)) got += s.count
+            if (got > 0L) reserve[key] = got
+        }
+    }
+
+    /** Grid slots the current recipe gives something back into, by grid index. */
+    private fun slotsHandedBack(player: Player): Set<Int> {
+        val lvl = serverLevel ?: return emptySet()
+        val recipe = lastRecipe ?: return emptySet()
+        val positioned = craftingContainer.asPositionedCraftInput()
+        val input = positioned.input()
+        if (!recipe.value().matches(input, lvl)) return emptySet()
+        val remaining = damien.nodeworks.platform.PlatformServices.crafting.withCraftingPlayer(player) {
+            recipe.value().getRemainingItems(input)
+        }
+        val out = HashSet<Int>()
+        for (y in 0 until input.height()) {
+            for (x in 0 until input.width()) {
+                if (remaining[x + y * input.width()].isEmpty) continue
+                out.add(x + positioned.left() + (y + positioned.top()) * craftingContainer.width)
+            }
+        }
+        return out
+    }
+
+    /** Hands back what [pending] pulled ahead and did not use: to network storage, or the
+     *  player's inventory when storage is full. Safe to call twice. */
+    private fun releaseReserve(pending: PendingCraft) {
+        val reserve = pending.reserve ?: return
+        pending.reserve = null
+        val lvl = serverLevel ?: return
+        for ((key, count) in reserve) {
+            if (count <= 0L) continue
+            val template = pending.reserveTemplates[key] ?: continue
+            var rest = count
+            while (rest > 0L) {
+                val n = minOf(rest, template.maxStackSize.toLong()).toInt()
+                val snap = snapshot
+                val stored = if (snap != null) NetworkStorageHelper.insertItemStack(lvl, snap, template.copyWithCount(n), cache, channel = channel) else 0
+                if (stored < n) playerInventory.placeItemBackInInventory(template.copyWithCount(n - stored))
+                rest -= n
+            }
+        }
     }
 
     override fun clicked(slotId: Int, button: Int, clickType: net.minecraft.world.inventory.ContainerInput, player: Player) {
@@ -864,8 +984,14 @@ class InventoryTerminalMenu(
      * plus offhand, empty slots in the main 36 only. Gates shift-click
      * crafts so a partial fit never consumes ingredients and voids overflow.
      */
-    private fun canFitFully(stack: ItemStack): Boolean {
-        if (stack.isEmpty) return true
+    private fun canFitFully(stack: ItemStack): Boolean = stack.isEmpty || roomFor(stack) >= stack.count
+
+    /** How many of [stack] the player's inventory takes right now: empty slots at the
+     *  item's stack size, plus the space left in stacks of the same item, offhand included.
+     *  The same count Inventory.add fills, so a reserve sized by it is never pulled for
+     *  crafts that cannot land. */
+    private fun roomFor(stack: ItemStack): Int {
+        if (stack.isEmpty) return 0
         var room = 0
         for (slotStack in playerInventory.nonEquipmentItems) {
             room += if (slotStack.isEmpty) {
@@ -873,13 +999,12 @@ class InventoryTerminalMenu(
             } else if (ItemStack.isSameItemSameComponents(slotStack, stack) && slotStack.isStackable) {
                 (playerInventory.getMaxStackSize(slotStack) - slotStack.count).coerceAtLeast(0)
             } else 0
-            if (room >= stack.count) return true
         }
         val offhand = playerInventory.getItem(net.minecraft.world.entity.player.Inventory.SLOT_OFFHAND)
         if (!offhand.isEmpty && ItemStack.isSameItemSameComponents(offhand, stack) && offhand.isStackable) {
             room += (playerInventory.getMaxStackSize(offhand) - offhand.count).coerceAtLeast(0)
         }
-        return room >= stack.count
+        return room
     }
 
     /** One-item copy of each grid slot, so auto-pull refills the same variant. */
@@ -1587,12 +1712,17 @@ class InventoryTerminalMenu(
     /** [bulk] is a craft-all: whole stacks go into each slot so the next crafts draw from
      *  the grid. A plain click or shift-click pulls one per slot, as a pattern would, so
      *  the network is not emptied into the grid for a single craft. */
-    private fun autoPullRefill(bulk: Boolean) {
-        if (!autoPull) return
-        val lvl = serverLevel ?: return
-        val snap = snapshot ?: return
+    private fun autoPullRefill(
+        bulk: Boolean,
+        /** Ingredients pulled ahead by a shift-click. An item it holds is refilled from
+         *  here with no storage access, and what a refill cannot place goes back into it. */
+        reserve: MutableMap<damien.nodeworks.script.BufferKey.Key, Long>? = null,
+    ): Boolean {
+        if (!autoPull) return false
+        val lvl = serverLevel ?: return false
+        val snap = snapshot ?: return false
         val c = cache
-        val pattern = autoPullPattern ?: return
+        val pattern = autoPullPattern ?: return false
         autoPullPattern = null
 
         // Suppress slotsChanged during refill, intermediate states can match
@@ -1608,13 +1738,18 @@ class InventoryTerminalMenu(
                 if (!craftingContainer.getItem(i).isEmpty) continue
                 groups.getOrPut(damien.nodeworks.script.BufferKey.of(template)) { ArrayList() }.add(i)
             }
-            for ((_, slots) in groups) {
+            for ((key, slots) in groups) {
                 val template = pattern[slots[0]]
                 val itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(template.item).toString()
                 val perSlot = if (bulk) template.maxStackSize.toLong() else 1L
-                val stacks = extractRealStacks(lvl, snap, c, itemId, perSlot * slots.size, template.componentsPatch)
+                val held = reserve?.get(key)
                 var total = 0L
-                for (stack in stacks) total += stack.count
+                if (held != null) {
+                    total = minOf(held, perSlot * slots.size)
+                    reserve[key] = held - total
+                } else {
+                    for (stack in extractRealStacks(lvl, snap, c, itemId, perSlot * slots.size, template.componentsPatch)) total += stack.count
+                }
                 if (total <= 0L) continue
                 val per = (total / slots.size).toInt()
                 var placed = 0L
@@ -1627,6 +1762,11 @@ class InventoryTerminalMenu(
                 // The pulled stacks are one variant, the patch narrowed them, so the share
                 // that found no slot goes back as copies of the template.
                 var rest = total - placed
+                // From the reserve, the share stays there for the craft's own hand back.
+                if (held != null) {
+                    if (rest > 0L) reserve[key] = (reserve[key] ?: 0L) + rest
+                    continue
+                }
                 while (rest > 0L) {
                     val n = minOf(rest, template.maxStackSize.toLong()).toInt()
                     val back = template.copyWithCount(n)
@@ -1642,6 +1782,7 @@ class InventoryTerminalMenu(
         // Single slotsChanged call with the final grid state
         slotsChanged(craftingContainer)
         needsImmediateSync = true
+        return true
     }
 
     /** Whether a distribute drag may place into [slotIndex]: empty, or the same item
