@@ -245,14 +245,22 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
                         details.add("Filter: (none, idle)")
                     } else {
                         details.add("Filter rules: ${entity.filterRules.size}")
-                        for (rule in entity.filterRules) details.add("  $rule")
+                        // Marked so the inspector draws the rule with an example item beside it. A
+                        // rule may be as long as the line cap itself, so it is cut to leave room.
+                        val roomForRule = damien.nodeworks.screen.DiagnosticOpenData.MAX_DETAIL_CHARS - "__rule:".length
+                        for (rule in entity.filterRules) {
+                            val shown = if (rule.length > roomForRule) rule.take(roomForRule - 1) + "\u2026" else rule
+                            details.add("__rule:$shown")
+                        }
                     }
                 }
                 is damien.nodeworks.block.entity.MultiProcessingHandlerBlockEntity -> {
                     val names = entity.boundSetNames()
                     details.add(if (names.isEmpty()) "Not bound" else "Recipes: ${names.size}")
-                    details.add("Inputs: ${channelFilterMarker(damien.nodeworks.network.ChannelFilter.Color(entity.inputChannel))}")
-                    details.add("Outputs: ${channelFilterMarker(damien.nodeworks.network.ChannelFilter.Color(entity.outputChannel))}")
+                    details.add(labelledChannelMarker("Inputs", damien.nodeworks.network.ChannelFilter.Color(entity.inputChannel)))
+                    details.add(labelledChannelMarker("Outputs", damien.nodeworks.network.ChannelFilter.Color(entity.outputChannel)))
+                    // The inspector draws each as a grid from the streamed Processing Sets.
+                    for (name in names) details.add("__mset:$name")
                 }
                 is damien.nodeworks.block.entity.ProcessingHandlerBlockEntity -> {
                     // Recipe NAME is hidden, processing-set names from JEI etc.
@@ -491,6 +499,11 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
         is damien.nodeworks.network.ChannelFilter.All -> "__channel:ALL"
         is damien.nodeworks.network.ChannelFilter.Color -> channelMarker(channel.color)
     }
+
+    /** [channelFilterMarker] with its own label in place of "Channel", so a device with
+     *  two channels can show "Inputs" and "Outputs" as swatches. */
+    private fun labelledChannelMarker(label: String, channel: damien.nodeworks.network.ChannelFilter): String =
+        "__channelL:$label|" + channelFilterMarker(channel).removePrefix("__channel:")
 
     /** Marker for one Processing Handler ingredient row, used for both the
      *  inputs and outputs lists. Renders as `[item icon] [wool swatch] <ChannelName>`.

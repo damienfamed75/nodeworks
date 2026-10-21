@@ -65,6 +65,9 @@ data class DiagnosticOpenData(
     )
 
     companion object {
+        /** Longest detail line on the wire. The tool item keeps its lines under this. */
+        const val MAX_DETAIL_CHARS = 256
+
         val STREAM_CODEC: StreamCodec<FriendlyByteBuf, DiagnosticOpenData> = object : StreamCodec<FriendlyByteBuf, DiagnosticOpenData> {
             override fun decode(buf: FriendlyByteBuf): DiagnosticOpenData {
                 val blockCount = buf.readVarInt()
@@ -81,7 +84,7 @@ data class DiagnosticOpenData(
                         CardInfo(buf.readVarInt(), buf.readUtf(32), buf.readUtf(64), buf.readUtf(128))
                     }
                     val detailCount = buf.readVarInt()
-                    val details = (0 until detailCount).map { buf.readUtf(256) }
+                    val details = (0 until detailCount).map { buf.readUtf(MAX_DETAIL_CHARS) }
                     NetworkBlock(pos, type, connections, cards, details)
                 }
                 val networkName = buf.readUtf(64)
@@ -130,7 +133,9 @@ data class DiagnosticOpenData(
                     }
                     buf.writeVarInt(block.details.size)
                     for (detail in block.details) {
-                        buf.writeUtf(detail, 256)
+                        // writeUtf throws past its cap and the throw drops the player, so a
+                        // line that grew past it, a long filter rule, is cut instead.
+                        buf.writeUtf(if (detail.length > MAX_DETAIL_CHARS) detail.take(MAX_DETAIL_CHARS) else detail, MAX_DETAIL_CHARS)
                     }
                 }
                 buf.writeUtf(data.networkName, 64)

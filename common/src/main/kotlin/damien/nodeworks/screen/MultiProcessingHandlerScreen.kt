@@ -216,6 +216,10 @@ class MultiProcessingHandlerScreen(
         visible = rows
             // A missing set's row only exists to be unchecked, so it goes once it is.
             .filter { it.entry.set.inputs.isNotEmpty() || it.entry.set.outputs.isNotEmpty() || it.entry.set.name in boundSet }
+            // Only what this handler owns and what nothing handles yet. A set another
+            // handler or a script has taken would only be a greyed row, and on a network
+            // with hundreds of recipes those would bury the ones still to assign.
+            .filter { it.entry.set.name in boundSet || it.entry.claimedBy.isEmpty() }
             .filter { query.isEmpty() || it.searchText.contains(query) }
             .sortedWith(compareBy({ it.entry.set.name !in boundSet }, { it.sortKey }, { it.entry.set.name }))
         scroll = scroll.coerceIn(0, maxScroll())
