@@ -79,7 +79,6 @@ object ModCreativeTab {
                 output.accept(ModItems.BLANK_CARD)
                 output.accept(ModItems.IO_CARD)
                 output.accept(ModItems.STORAGE_CARD)
-                output.accept(ModItems.TRANSFER_CARD)
                 output.accept(ModItems.REDSTONE_CARD)
                 output.accept(ModItems.OBSERVER_CARD)
                 output.accept(ModItems.INSTRUCTION_SET)
