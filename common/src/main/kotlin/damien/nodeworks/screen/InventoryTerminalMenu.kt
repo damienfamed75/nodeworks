@@ -146,10 +146,17 @@ class InventoryTerminalMenu(
      *  broadcast every slot and sync the terminal on its own. One sync follows the batch. */
     private var batchCrafting = false
 
-    /** A craft-all that used up its slice of the tick with more to craft. Carried on a
-     *  slice per tick by [broadcastChanges] until the recipe stops matching, the inventory
-     *  is full, or the player does anything else. */
-    private var craftAllResult: ItemStack? = null
+    /** A shift-click craft in progress: what it makes, whether it is a craft-all, and the
+     *  items made so far, so a plain shift-click stops at one stack's worth however many
+     *  ticks it takes. */
+    private class PendingCraft(val result: ItemStack, val craftAll: Boolean, var crafted: Int)
+
+    /** A shift-click craft that used up its slice of the tick with more to craft. Carried on
+     *  a slice per tick by [broadcastChanges] until the recipe stops matching, the inventory
+     *  is full, a plain shift-click reaches its stack, or the player does anything else. With
+     *  auto-pull every craft also pulls from storage, so even one stack can take several
+     *  slices on a large network. */
+    private var pendingCraft: PendingCraft? = null
         set(value) {
             if ((field == null) != (value == null)) activeCraftAll += if (value != null) 1 else -1
             field = value
@@ -686,9 +693,10 @@ class InventoryTerminalMenu(
             // (always, in creative) and would void the overflow. The 4096
             // bound covers a full 9-input 64-per-stack grid.
             if (serverLevel != null) {
-                craftAllResult = null
-                val more = craftBatch(player, slot, firstResult, craftAllOnQuickMove, System.nanoTime() + craftSliceNanos())
-                if (more && craftAllOnQuickMove) craftAllResult = firstResult
+                pendingCraft = null
+                val pending = PendingCraft(firstResult, craftAllOnQuickMove, 0)
+                val more = craftBatch(player, slot, pending, System.nanoTime() + craftSliceNanos())
+                if (more) pendingCraft = pending
                 // Always EMPTY. A non-empty return re-enters vanilla's
                 // QUICK_MOVE loop while auto-pull keeps the slot populated,
                 // spinning the server thread forever once the inventory fills.
@@ -733,9 +741,12 @@ class InventoryTerminalMenu(
      *  stack's worth, or the slice of time runs out. The fit gate is [canFitFully], not
      *  Inventory.add, which reports success on partial inserts (always, in creative)
      *  and would void the overflow. Nothing is broadcast while it runs. Returns true
-     *  when it stopped on time with more to craft. */
-    private fun craftBatch(player: Player, slot: Slot, firstResult: ItemStack, craftAll: Boolean, deadline: Long): Boolean {
-        var crafted = 0
+     *  when it stopped on time with more to craft, and [pending] then carries the count
+     *  into the next slice. */
+    private fun craftBatch(player: Player, slot: Slot, pending: PendingCraft, deadline: Long): Boolean {
+        val firstResult = pending.result
+        val craftAll = pending.craftAll
+        var crafted = pending.crafted
         var safety = 0
         var outOfTime = false
         batchCrafting = true
@@ -779,13 +790,14 @@ class InventoryTerminalMenu(
         } finally {
             batchCrafting = false
         }
-        if (crafted > 0) needsImmediateSync = true
+        if (crafted > pending.crafted) needsImmediateSync = true
+        pending.crafted = crafted
         return outOfTime
     }
 
     override fun clicked(slotId: Int, button: Int, clickType: net.minecraft.world.inventory.ContainerInput, player: Player) {
         // Any click ends a craft-all still running from an earlier one.
-        craftAllResult = null
+        pendingCraft = null
         // Capture the grid pattern BEFORE super.clicked() consumes ingredients
         var resultBefore: ItemStack? = null
         if (slotId == CRAFT_OUTPUT_SLOT && !resultContainer.getItem(0).isEmpty && autoPull) {
@@ -1918,7 +1930,7 @@ class InventoryTerminalMenu(
 
     override fun removed(player: Player) {
         super.removed(player)
-        craftAllResult = null
+        pendingCraft = null
         // The screen's removed() runs this on the client too, including when JEI swaps
         // its recipe view in front. Only the server owns the grid, the client copy must
         // keep showing it. Vanilla's crafting table gets the same guard from its
@@ -2035,11 +2047,11 @@ class InventoryTerminalMenu(
 
     override fun broadcastChanges() {
         if (batchCrafting) return
-        if (!inSlotsChanged) craftAllResult?.let { result ->
+        if (!inSlotsChanged) pendingCraft?.let { pending ->
             val slot = slots[CRAFT_OUTPUT_SLOT]
             val more = slot.hasItem() &&
-                craftBatch(playerInventory.player, slot, result, craftAll = true, System.nanoTime() + craftSliceNanos())
-            if (!more) craftAllResult = null
+                craftBatch(playerInventory.player, slot, pending, System.nanoTime() + craftSliceNanos())
+            if (!more) pendingCraft = null
         }
         super.broadcastChanges()
 
