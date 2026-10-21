@@ -1,0 +1,61 @@
+{
+    DataVersion: 4790,
+    size: [4, 1, 1],
+    data: [
+        {
+            pos: [0, 0, 0],
+            state: "minecraft:chest{facing:north,type:single,waterlogged:false}",
+            nbt: {
+                components: {},
+                Items: [],
+                id: "minecraft:chest"
+            }
+        },
+        {
+            pos: [1, 0, 0],
+            state: "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false,waterlogged:false}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        count: 1,
+                        Slot: 36b,
+                        id: "nodeworks:storage_card"
+                    }
+                ],
+                networkId: "00000040-0002-f038-3fff-8337feee0000",
+                id: "nodeworks:node"
+            }
+        },
+        {
+            pos: [2, 0, 0],
+            state: "nodeworks:export_chest{facing:north,waterlogged:false}",
+            nbt: {
+                filterRules: "*",
+                components: {},
+                pushFace: "EAST",
+                tickInterval: 20,
+                channel: -1,
+                Items: [],
+                networkId: "00000040-0002-f038-3fff-8337feee0000",
+                id: "nodeworks:export_chest",
+                redstoneMode: 0
+            }
+        },
+        {
+            pos: [3, 0, 0],
+            state: "minecraft:shulker_box{facing:up}",
+            nbt: {
+                components: {},
+                id: "minecraft:shulker_box"
+            }
+        }
+    ],
+    entities: [],
+    palette: [
+        "minecraft:chest{facing:north,type:single,waterlogged:false}",
+        "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false,waterlogged:false}",
+        "nodeworks:export_chest{facing:north,waterlogged:false}",
+        "minecraft:shulker_box{facing:up}"
+    ]
+}

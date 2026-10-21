@@ -1,6 +1,6 @@
 {
     DataVersion: 4790,
-    size: [10, 2, 1],
+    size: [8, 2, 1],
     data: [
         {
             pos: [3, 1, 0],
@@ -8,14 +8,6 @@
         },
         {
             pos: [4, 1, 0],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 1, 0],
-            state: "minecraft:air"
-        },
-        {
-            pos: [6, 1, 0],
             state: "minecraft:air"
         },
         {
@@ -48,36 +40,26 @@
                         id: "nodeworks:storage_card"
                     }
                 ],
-                networkId: "fffffd00-0002-6038-3fff-8337feee0000",
+                networkId: "fffffd80-0002-6038-3fff-8337feee0000",
                 id: "nodeworks:node"
             }
         },
         {
             pos: [3, 0, 0],
-            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}",
-            nbt: {
-                components: {},
-                networkId: "fffffd00-0002-6038-3fff-8337feee0000",
-                id: "nodeworks:pipe"
-            }
-        },
-        {
-            pos: [4, 0, 0],
             state: "nodeworks:export_chest{facing:north,waterlogged:false}",
             nbt: {
-                filterRules: "*",
+                filterRules: "",
                 components: {},
-                pushFace: "EAST",
                 tickInterval: 20,
                 channel: -1,
                 Items: [],
-                networkId: "fffffd00-0002-6038-3fff-8337feee0000",
+                networkId: "fffffd80-0002-6038-3fff-8337feee0000",
                 id: "nodeworks:export_chest",
                 redstoneMode: 0
             }
         },
         {
-            pos: [5, 0, 0],
+            pos: [4, 0, 0],
             state: "nodeworks:import_chest{facing:north,waterlogged:false}",
             nbt: {
                 components: {},
@@ -92,16 +74,7 @@
             }
         },
         {
-            pos: [6, 0, 0],
-            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}",
-            nbt: {
-                components: {},
-                networkId: "fffffe40-0002-6038-3fff-8337feee0000",
-                id: "nodeworks:pipe"
-            }
-        },
-        {
-            pos: [7, 0, 0],
+            pos: [5, 0, 0],
             state: "nodeworks:node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:true,waterlogged:false}",
             nbt: {
                 components: {},
@@ -117,7 +90,7 @@
             }
         },
         {
-            pos: [8, 0, 0],
+            pos: [6, 0, 0],
             state: "minecraft:chest{facing:north,type:left,waterlogged:false}",
             nbt: {
                 components: {},
@@ -126,7 +99,7 @@
             }
         },
         {
-            pos: [9, 0, 0],
+            pos: [7, 0, 0],
             state: "minecraft:chest{facing:north,type:right,waterlogged:false}",
             nbt: {
                 components: {},
@@ -135,6 +108,46 @@
                         count: 1,
                         Slot: 0b,
                         id: "minecraft:diamond_axe"
+                    },
+                    {
+                        count: 2,
+                        Slot: 1b,
+                        id: "minecraft:gold_ingot"
+                    },
+                    {
+                        count: 5,
+                        Slot: 2b,
+                        id: "minecraft:diamond"
+                    },
+                    {
+                        count: 1,
+                        Slot: 3b,
+                        id: "nodeworks:export_chest"
+                    },
+                    {
+                        count: 4,
+                        Slot: 4b,
+                        id: "minecraft:emerald"
+                    },
+                    {
+                        count: 1,
+                        Slot: 5b,
+                        id: "nodeworks:storage_card"
+                    },
+                    {
+                        count: 1,
+                        Slot: 6b,
+                        id: "nodeworks:storage_card"
+                    },
+                    {
+                        count: 1,
+                        Slot: 7b,
+                        id: "nodeworks:storage_card"
+                    },
+                    {
+                        count: 1,
+                        Slot: 8b,
+                        id: "nodeworks:storage_card"
                     }
                 ],
                 id: "minecraft:chest"
@@ -170,12 +183,12 @@
                         id: "nodeworks:storage_card"
                     }
                 ],
-                networkId: "fffffd00-0002-6038-3fff-8337feee0000",
+                networkId: "fffffd80-0002-6038-3fff-8337feee0000",
                 id: "nodeworks:node"
             }
         },
         {
-            pos: [7, 1, 0],
+            pos: [5, 1, 0],
             state: "nodeworks:node{pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false,waterlogged:false}",
             nbt: {
                 components: {},
@@ -191,7 +204,7 @@
             }
         },
         {
-            pos: [8, 1, 0],
+            pos: [6, 1, 0],
             state: "minecraft:chest{facing:north,type:left,waterlogged:false}",
             nbt: {
                 components: {},
@@ -200,7 +213,7 @@
             }
         },
         {
-            pos: [9, 1, 0],
+            pos: [7, 1, 0],
             state: "minecraft:chest{facing:north,type:right,waterlogged:false}",
             nbt: {
                 components: {},
@@ -215,7 +228,6 @@
         "minecraft:chest{facing:north,type:left,waterlogged:false}",
         "minecraft:chest{facing:north,type:right,waterlogged:false}",
         "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false,waterlogged:false}",
-        "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true,waterlogged:false}",
         "nodeworks:export_chest{facing:north,waterlogged:false}",
         "nodeworks:import_chest{facing:north,waterlogged:false}",
         "nodeworks:node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:true,waterlogged:false}",
