@@ -342,9 +342,9 @@ val RecipeMatcherApi: ApiSurface = api(RecipeMatcher) {
         guidebookRef = "nodeworks:lua-api/network.md#recipes"
     }
 
-    method("exclusive") {
+    method("parallel") {
         returns(RecipeMatcher)
-        description = "Runs one craft at a time through this handler, for a single machine bank shared by every matched recipe."
+        description = "Lets several crafts run through this handler at once. Off by default, use it only when the matched recipes never share a machine."
         guidebookRef = "nodeworks:lua-api/network.md#recipes"
     }
 

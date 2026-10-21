@@ -153,7 +153,9 @@ class ScriptEngine(
     private fun recipeMatcherTable(allow: List<String>): LuaTable {
         val inputs = damien.nodeworks.script.preset.RuleSet().apply { setAllow(allow) }
         val outputs = ArrayList<String>()
-        var exclusive = false
+        // One handler for many recipes usually means one machine bank, and two crafts
+        // in one bank stall each other, so one craft at a time unless asked otherwise.
+        var exclusive = true
         val t = LuaTable()
         t.set("except", object : VarArgFunction() {
             override fun invoke(args: Varargs): Varargs {
@@ -168,9 +170,9 @@ class ScriptEngine(
                 return t
             }
         })
-        t.set("exclusive", object : VarArgFunction() {
+        t.set("parallel", object : VarArgFunction() {
             override fun invoke(args: Varargs): Varargs {
-                exclusive = args.arg(2).isnil() || args.arg(2).toboolean()
+                exclusive = !(args.arg(2).isnil() || args.arg(2).toboolean())
                 return t
             }
         })
@@ -182,7 +184,7 @@ class ScriptEngine(
                     append("recipes(").append(inputs.allow.joinToString(", ").ifEmpty { "*" }).append(")")
                     if (inputs.deny.isNotEmpty()) append(" except(").append(inputs.deny.joinToString(", ")).append(")")
                     if (outputs.isNotEmpty()) append(" outputs(").append(outputs.joinToString(", ")).append(")")
-                    if (exclusive) append(" exclusive")
+                    if (!exclusive) append(" parallel")
                 }
                 val rule = RecipeHandlerRule(
                     inputs = damien.nodeworks.script.preset.RuleSet().apply {

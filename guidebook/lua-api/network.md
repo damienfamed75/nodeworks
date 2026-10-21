@@ -392,15 +392,17 @@ so item ids, `#tags` and `*` wildcards all work.
   stays with that block. A broad rule never takes a set you ticked on a block.
 - When two `recipes` handlers match the same set, the one registered first wins.
 
-### Sharing one machine bank
+### One craft at a time
 
-When every matched recipe goes into the same machines, call `:exclusive()`
-so only one craft runs through them at a time. Without it, two crafts can
-fill the same furnaces.
+A `recipes` handler runs one craft at a time, since its recipes usually share
+the same machines. Another craft that needs it waits its turn instead of
+fighting over the furnace. When the recipes never share a machine, for example
+a bank where each furnace takes a different input, call `:parallel()` so
+crafts can run side by side.
 
 <LuaCode>
 ```lua
-network:recipes("#c:raw_materials"):exclusive():handle(smelt)
+network:recipes("#c:raw_materials"):parallel():handle(smelt)
 ```
 </LuaCode>
 
