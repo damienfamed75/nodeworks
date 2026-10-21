@@ -43,7 +43,11 @@ internal class RuleSet {
 
     fun matchesId(id: String, kind: ResourceKind): Boolean =
         (allow.isEmpty() || allow.any { CardHandle.matchesFilter(id, kind, it) }) &&
-            deny.none { CardHandle.matchesFilter(id, kind, it) }
+            // By id a component rule reads as its bare item, which would deny every
+            // variant. Such a rule only ever denies on the stack check.
+            deny.none { !hasComponents(it) && CardHandle.matchesFilter(id, kind, it) }
+
+    private fun hasComponents(rule: String): Boolean = rule.indexOf('[') >= 0
 
     fun stackPredicate(registries: HolderLookup.Provider): (ItemStack) -> Boolean =
         { stack -> matchesStack(stack, registries) }

@@ -49,7 +49,7 @@ object Stocker {
                     sources = listOf(CardRef.Pool),
                     mode = StockerMode.POOL_OR_CRAFT,
                     craftItemId = id
-                ).apply { rules.setAllow(listOf(id)) } // ensure uses the concrete item id as the filter so target counts match
+                ).apply { rules.setAllow(listOf(id)); seededFilter = true } // ensure uses the concrete item id as the filter so target counts match
                 engine.registerPreset(b)
                 return b.toLuaTable()
             }
@@ -63,7 +63,7 @@ object Stocker {
                     sources = emptyList(),
                     mode = StockerMode.CRAFT_ONLY,
                     craftItemId = id
-                ).apply { rules.setAllow(listOf(id)) }
+                ).apply { rules.setAllow(listOf(id)); seededFilter = true }
                 engine.registerPreset(b)
                 return b.toLuaTable()
             }
@@ -147,8 +147,17 @@ class StockerBuilder(
         return this
     }
 
+    /** True while the allow list holds only the item `:ensure` or `:craft` seeded, so a
+     *  following `:filter` replaces it as it always did rather than adding to it. */
+    internal var seededFilter = false
+
     fun filter(patterns: List<String>): StockerBuilder {
-        rules.filter(patterns)
+        if (seededFilter) {
+            rules.setAllow(patterns)
+            seededFilter = false
+        } else {
+            rules.filter(patterns)
+        }
         return this
     }
 

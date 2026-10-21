@@ -41,9 +41,14 @@ object HandlerReservations {
         return holder
     }
 
+    /** Takes the key for [holder] unless another op still holds it. False when it does,
+     *  so a CPU resuming after a reload cannot take a handler another CPU is using. */
     @Synchronized
-    fun reserve(key: Any, holder: Holder) {
+    fun reserve(key: Any, holder: Holder): Boolean {
+        val current = holder(key)
+        if (current != null && (current.cpuPos != holder.cpuPos || current.opId != holder.opId)) return false
         byHandler[key] = holder
+        return true
     }
 
     /** Drops every reservation held by ops of the CPU at [cpuPos]. */

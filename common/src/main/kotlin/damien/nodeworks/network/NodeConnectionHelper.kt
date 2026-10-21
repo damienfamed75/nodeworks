@@ -468,7 +468,11 @@ object NodeConnectionHelper {
         } else if (controllerCount == 0 && microAnchor != null) {
             foundId = microAnchor.microNetworkPermanentId
         } else if (controllerCount == 0 && fallbackAnchor != null) {
-            foundId = fallbackAnchor.fallbackAnchorId
+            // The id the subgraph already carries stays while its anchor Node is among
+            // the walked, so placing or loading a lower Node does not re-id a whole
+            // network. A merge, two ids, or an anchor out of reach falls back to the
+            // lowest Node.
+            foundId = carriedAnchorId(level, visited) ?: fallbackAnchor.fallbackAnchorId
         }
 
         // Apply the new id. For PHandler, the destination field depends on which
@@ -544,7 +548,31 @@ object NodeConnectionHelper {
         // The network's inventory cache follows the id, so a chunk loading a lower Node
         // or a controller coming back changes nothing a terminal on it can see: no
         // rescan, no resync.
-        if (foundId != null) for (id in previousIds) damien.nodeworks.script.NetworkInventoryCache.renameKey(id, foundId)
+        if (foundId != null) for (id in previousIds) {
+            // Only an id whose anchor Node was walked has no holders left behind, so only
+            // then does its cache follow. After a split the half that kept the old id keeps
+            // its cache, and a controller id waits for its controller to come back.
+            if (NetworkIds.isNodeAnchor(id) && visited.containsKey(BlockPos.of(id.mostSignificantBits))) {
+                damien.nodeworks.script.NetworkInventoryCache.renameKey(id, foundId)
+            }
+        }
+    }
+
+    /** The one Node anchor id every walked Connectable with an id agrees on, when that
+     *  anchor Node was itself walked and still lends that id. Null when the ids differ,
+     *  nothing carries one, or the anchor is out of reach. */
+    private fun carriedAnchorId(level: ServerLevel, visited: Map<BlockPos, *>): java.util.UUID? {
+        var carried: java.util.UUID? = null
+        for (pos in visited.keys) {
+            val id = getConnectable(level, pos)?.networkId ?: continue
+            if (!NetworkIds.isNodeAnchor(id)) continue
+            if (carried == null) carried = id else if (carried != id) return null
+        }
+        val id = carried ?: return null
+        val anchorPos = BlockPos.of(id.mostSignificantBits)
+        if (!visited.containsKey(anchorPos)) return null
+        val anchor = getConnectable(level, anchorPos) ?: return null
+        return if (anchor.isFallbackAnchor() && anchor.fallbackAnchorId == id) id else null
     }
 
     /** Face-adjacent Connectable BEs. Both endpoints must opt into adjacency, and both

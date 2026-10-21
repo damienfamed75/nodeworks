@@ -625,7 +625,8 @@ class ScriptEngine(
         // second so a pulled controller stops the script within that second.
         val entry = level.getBlockEntity(networkEntryNode) as? damien.nodeworks.network.Connectable
         val controllerGone = entry?.networkId == null ||
-            (tickCount % 20L == 0L && !NetworkDiscovery.discoverNetwork(level, networkEntryNode).hasController)
+            ((tickCount + (networkEntryNode.hashCode().toLong() and 0x7FFFFFFFL)) % 20L == 0L &&
+                !NetworkDiscovery.discoverNetwork(level, networkEntryNode).hasController)
         if (controllerGone) {
             logCallback("Network disconnected, no controller reachable.", true)
             stop()

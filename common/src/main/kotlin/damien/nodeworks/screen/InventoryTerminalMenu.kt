@@ -531,6 +531,8 @@ class InventoryTerminalMenu(
         if (live !== current) {
             cache = live
             networkNeedsSync = true
+            // A new cache numbers its rows from one again, so the client gets the grid afresh.
+            needsFullSync = true
             fullSyncChunks = null
         }
     }
