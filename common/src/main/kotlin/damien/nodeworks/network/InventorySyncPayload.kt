@@ -36,6 +36,8 @@ data class InventorySyncPayload(
          *  the client render durability bars, custom names, and enchantment
          *  glints. EMPTY for plain items, fluids, and craftable phantoms. */
         val componentsPatch: DataComponentPatch = DataComponentPatch.EMPTY,
+        /** Why a craftable entry cannot autocraft, see [damien.nodeworks.platform.CraftWarning]. */
+        val craftWarning: Byte = damien.nodeworks.platform.CraftWarning.NONE,
     ) {
         val isFluid: Boolean get() = kind == 1.toByte()
     }
@@ -65,6 +67,7 @@ data class InventorySyncPayload(
                         buf.writeVarInt(entry.maxStackSize)
                         buf.writeBoolean(entry.hasData)
                         buf.writeBoolean(entry.craftable)
+                        buf.writeByte(entry.craftWarning.toInt())
                         buf.writeByte(entry.kind.toInt())
                         // Skip the patch codec for plain stacks, saves the
                         // registry lookup and a few bytes per entry.
@@ -93,6 +96,7 @@ data class InventorySyncPayload(
                     val maxStackSize: Int
                     val hasData: Boolean
                     val craftable: Boolean
+                    var craftWarning = damien.nodeworks.platform.CraftWarning.NONE
                     val kind: Byte
                     var patch = DataComponentPatch.EMPTY
                     if (hasItemId) {
@@ -101,6 +105,7 @@ data class InventorySyncPayload(
                         maxStackSize = buf.readVarInt()
                         hasData = buf.readBoolean()
                         craftable = buf.readBoolean()
+                        craftWarning = buf.readByte()
                         kind = buf.readByte()
                         if (hasData) patch = DataComponentPatch.STREAM_CODEC.decode(regBuf)
                     } else {
@@ -112,7 +117,7 @@ data class InventorySyncPayload(
                         kind = 0
                     }
                     val count = buf.readVarLong()
-                    SyncEntry(serial, itemId, name, count, maxStackSize, hasData, craftable, kind, patch)
+                    SyncEntry(serial, itemId, name, count, maxStackSize, hasData, craftable, kind, patch, craftWarning)
                 }
                 val removedCount = buf.readVarInt()
                 val removedSerials = (0 until removedCount).map { buf.readVarLong() }

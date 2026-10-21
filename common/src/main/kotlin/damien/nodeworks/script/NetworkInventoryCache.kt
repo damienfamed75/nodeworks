@@ -606,6 +606,10 @@ class NetworkInventoryCache(
         if (stray) logger.debug("Inventory cache at {} ended a cycle with a storage half-read, discarded it", networkEntryNode)
         val snapshot = cycleSnapshot
         if (snapshot != null) {
+            // Without a controller nothing autocrafts, whatever the recipe.
+            val noController = !snapshot.hasController
+            val baseWarning = if (noController) damien.nodeworks.platform.CraftWarning.NO_CONTROLLER
+                else damien.nodeworks.platform.CraftWarning.NONE
             // Phantom craftable entries for recipe outputs not already in storage.
             // Done at cycle end (not per-card) so the phantom logic only runs once.
             for (crafter in snapshot.crafters) {
@@ -613,17 +617,20 @@ class NetworkInventoryCache(
                     val outputId = iset.outputItemId
                     if (outputId.isEmpty()) continue
                     if (iset.outputComponents.isEmpty) {
-                        addCraftablePhantom(outputId)
+                        addCraftablePhantom(outputId, baseWarning)
                         continue
                     }
                     // Shown as the variant the recipe makes, e.g. an oak barrel.
                     val item = net.minecraft.resources.Identifier.tryParse(outputId)
                         ?.let { net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(it) } ?: continue
-                    addCraftablePhantom(ItemStack(item).also { it.applyComponents(iset.outputComponents) })
+                    addCraftablePhantom(ItemStack(item).also { it.applyComponents(iset.outputComponents) }, baseWarning)
                 }
             }
             for (api in snapshot.processingApis) {
                 for (procApi in api.apis) {
+                    val warning = if (noController) baseWarning
+                        else if (hasProcessingHandler(snapshot, api, procApi.name)) damien.nodeworks.platform.CraftWarning.NONE
+                        else damien.nodeworks.platform.CraftWarning.NO_HANDLER
                     for (output in procApi.outputs) {
                         if (output.itemId.isEmpty()) continue
                         // A chance output can't be crafted on demand, the planner skips it too.
@@ -633,7 +640,7 @@ class NetworkInventoryCache(
                         // enchantments) and renders as the proper variant
                         // in the Inventory Terminal instead of falling back
                         // to "Uncraftable Potion" / blank-glint placeholders.
-                        addCraftablePhantom(output.stack)
+                        addCraftablePhantom(output.stack, warning)
                     }
                 }
             }
@@ -647,10 +654,30 @@ class NetworkInventoryCache(
 
     /** Mark [outputId] as craftable, plain-components variant. Used by
      *  Instruction Set recipes whose output is always a plain itemId. */
-    private fun addCraftablePhantom(outputId: String) {
+    private fun addCraftablePhantom(outputId: String, warning: Byte) {
         val id = net.minecraft.resources.Identifier.tryParse(outputId) ?: return
         val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) ?: return
-        addCraftablePhantom(ItemStack(item))
+        addCraftablePhantom(ItemStack(item), warning)
+    }
+
+    /** Whether something on the network would run the Processing Set [apiName] if a
+     *  craft asked for it: a script handler on one of the terminals, or a Processing
+     *  Handler block bound to it. Resolved the way the CPU resolves it, against the
+     *  provider network for a set that came in over an antenna. Only map lookups, a
+     *  handler block in an unloaded chunk counts by its registration. */
+    private fun hasProcessingHandler(
+        snapshot: NetworkSnapshot,
+        apiStorage: damien.nodeworks.network.ProcessingApiSnapshot,
+        apiName: String,
+    ): Boolean {
+        val terminals = apiStorage.remoteTerminalPositions ?: snapshot.terminalPositions
+        if (PlatformServices.modState.findProcessingEngine(level, terminals, apiName, apiStorage.remoteDimension) != null) return true
+        val handlerNetworkId = apiStorage.remoteNetworkId ?: snapshot.networkId
+        val pos = damien.nodeworks.script.cpu.BlockHandlerRegistry.find(handlerNetworkId, apiName) ?: return false
+        val handlerLevel = apiStorage.remoteDimension?.let { level.server.getLevel(it) } ?: level
+        if (!handlerLevel.isLoaded(pos)) return true
+        val handler = handlerLevel.getBlockEntity(pos) as? damien.nodeworks.block.entity.ProcessingHandlerBlockEntity
+        return handler != null && handler.handles(apiName)
     }
 
     /** Mark the variant identified by [template] as craftable in the front
@@ -658,13 +685,15 @@ class NetworkInventoryCache(
      *  a phantom 0-count entry. Keyed on the template's component-aware
      *  [BufferKey.Key] so component-bearing recipe outputs (potions, dyed
      *  armor) get distinct phantom rows from plain variants of the same
-     *  itemId. */
-    private fun addCraftablePhantom(template: ItemStack) {
+     *  itemId. An item with several recipes keeps the best [warning] among them, so
+     *  one working recipe clears it. */
+    private fun addCraftablePhantom(template: ItemStack, warning: Byte) {
         if (template.isEmpty) return
         val key = BufferKey.of(template)
         val existing = frontBuffer[key]
         if (existing != null) {
-            frontBuffer[key] = existing.copy(isCraftable = true)
+            val best = if (existing.isCraftable) minOf(existing.craftWarning, warning) else warning
+            frontBuffer[key] = existing.copy(isCraftable = true, craftWarning = best)
         } else {
             frontBuffer[key] = ItemInfo(
                 itemId = key.itemId,
@@ -674,6 +703,7 @@ class NetworkInventoryCache(
                 hasData = !key.isPlain,
                 isCraftable = true,
                 componentsPatch = template.componentsPatch,
+                craftWarning = warning,
             )
         }
     }
@@ -729,13 +759,15 @@ class NetworkInventoryCache(
                 // poll has the real components and we want them to land.
                 val patchChanged = existing.info.componentsPatch != info.componentsPatch
                 val countChanged = existing.info.count != info.count
-                val craftableChanged = existing.info.isCraftable != info.isCraftable
+                val craftableChanged = existing.info.isCraftable != info.isCraftable ||
+                    existing.info.craftWarning != info.craftWarning
                 if (countChanged || craftableChanged || patchChanged) {
                     putEntry(key, existing.copy(
                         info = existing.info.copy(
                             count = info.count,
                             isCraftable = info.isCraftable,
                             componentsPatch = info.componentsPatch,
+                            craftWarning = info.craftWarning,
                         )
                     ))
                     changedSerials.add(existing.serial)

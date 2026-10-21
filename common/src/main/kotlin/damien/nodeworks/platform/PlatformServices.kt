@@ -567,8 +567,24 @@ data class ItemInfo(
     val hasData: Boolean,
     val isCraftable: Boolean = false,
     val componentsPatch: DataComponentPatch = DataComponentPatch.EMPTY,
+    /** Why a craftable entry cannot be crafted right now, one of [CraftWarning]. */
+    val craftWarning: Byte = CraftWarning.NONE,
 ) {
     val stackable: Boolean get() = maxStackSize > 1
+}
+
+/** Why the Inventory Terminal flags a recipe output. Lower is better, so when an
+ *  item has several recipes the best one decides. */
+object CraftWarning {
+    const val NONE: Byte = 0
+    const val NO_CONTROLLER: Byte = 1
+    const val NO_HANDLER: Byte = 2
+
+    fun message(warning: Byte): String? = when (warning) {
+        NO_CONTROLLER -> "Network Controller missing, cannot autocraft"
+        NO_HANDLER -> "Recipe missing handler"
+        else -> null
+    }
 }
 
 /** One destination of [StorageService.moveItemsRoundRobin]. [tag] rides along to the

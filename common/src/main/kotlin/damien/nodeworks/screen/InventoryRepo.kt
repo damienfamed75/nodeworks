@@ -119,6 +119,7 @@ class InventoryRepo {
                         hasData = syncEntry.hasData,
                         isCraftable = syncEntry.craftable,
                         componentsPatch = syncEntry.componentsPatch,
+                        craftWarning = syncEntry.craftWarning,
                     ),
                     kind = syncEntry.kind
                 )

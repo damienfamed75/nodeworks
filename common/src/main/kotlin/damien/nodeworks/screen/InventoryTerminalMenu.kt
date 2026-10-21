@@ -2117,6 +2117,7 @@ class InventoryTerminalMenu(
                         hasData = entry.info.hasData,
                         craftable = entry.info.isCraftable,
                         componentsPatch = entry.info.componentsPatch,
+                        craftWarning = entry.info.craftWarning,
                     )
                 }
                 val fluidEntries = c.getAllFluidEntries().map { entry ->
@@ -2200,6 +2201,7 @@ class InventoryTerminalMenu(
                     hasData = entry.info.hasData,
                     craftable = entry.info.isCraftable,
                     componentsPatch = entry.info.componentsPatch,
+                    craftWarning = entry.info.craftWarning,
                 )
             }
             val fluidEntries = changedFluids.map { entry ->
@@ -2242,6 +2244,7 @@ class InventoryTerminalMenu(
             live?.add(entry.serial)
             val prev = since?.get(entry.serial)
             if (prev != null && prev.count == count && prev.craftable == info.isCraftable &&
+                prev.craftWarning == info.craftWarning &&
                 prev.name == info.name && prev.componentsPatch == info.componentsPatch
             ) return@forEachEntry
             out += InventorySyncPayload.SyncEntry(
@@ -2253,6 +2256,7 @@ class InventoryTerminalMenu(
                 hasData = info.hasData,
                 craftable = info.isCraftable,
                 componentsPatch = info.componentsPatch,
+                craftWarning = info.craftWarning,
             )
         }
         val fluidCounts = c.channelFluidCounts(color)

@@ -827,11 +827,16 @@ class InventoryTerminalScreen(
             if (entry.info.isCraftable) {
                 val ix = slot.x + 1
                 val iy = slot.y + 1
+                val warned = entry.info.craftWarning != damien.nodeworks.platform.CraftWarning.NONE
                 if (entry.info.count == 0L) {
-                    // Ghost item, dim overlay
-                    graphics.fill(ix, iy, ix + 16, iy + 16, 0x80000000.toInt())
+                    // Ghost item, dim overlay. Red when it cannot be crafted either.
+                    graphics.fill(ix, iy, ix + 16, iy + 16, if (warned) 0x80600000.toInt() else 0x80000000.toInt())
                 }
-                if (altHeld) {
+                if (warned) {
+                    // The glyph sits in the middle of its cell, shifted so it lands on the
+                    // item's top right corner where the craft + would go.
+                    Icons.WARNING.draw(graphics, ix + 4, iy - 3)
+                } else if (altHeld) {
                     // Show + icon on craftable items (above item Z layer)
                     graphics.pose().pushMatrix()
                     graphics.pose().translate((0f).toFloat(), (0f).toFloat())
@@ -1015,6 +1020,9 @@ class InventoryTerminalScreen(
                         lines.add(Component.literal("Network: ${formatCount(entry.info.count)}").withStyle { it.withColor(0xAAAAAA) })
                         if (entry.info.isCraftable) {
                             lines.add(Component.literal("Craftable").withStyle { it.withColor(0x55FF55) })
+                            damien.nodeworks.platform.CraftWarning.message(entry.info.craftWarning)?.let { reason ->
+                                lines.add(Component.literal(reason).withStyle { it.withColor(0xFF5555) })
+                            }
                         }
                         graphics.setTooltipForNextFrame(font, lines, java.util.Optional.empty(), mouseX, mouseY)
                     }
