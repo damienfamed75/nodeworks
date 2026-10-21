@@ -149,6 +149,7 @@ class InventoryTerminalScreen(
     private var lastAttemptItemId: String? = null
     private var lastAttemptItemName: String = ""
     private var lastAttemptCount: Int = 1
+    private var lastAttemptComponentsPatch: DataComponentPatch = DataComponentPatch.EMPTY
 
     /** Absolute ms deadline after which the dialog auto-closes (treating no error
      *  arriving as success). 0 = no pending close scheduled. */
@@ -162,6 +163,7 @@ class InventoryTerminalScreen(
         if (craftDialogueItemId == null && lastAttemptItemId != null) {
             craftDialogueItemId = lastAttemptItemId
             craftDialogueItemName = lastAttemptItemName
+            craftDialogueComponentsPatch = lastAttemptComponentsPatch
             craftDialogueField?.value = lastAttemptCount.toString()
             craftDialogueField?.visible = true
         }
@@ -991,7 +993,8 @@ class InventoryTerminalScreen(
             val queueIdx = hoveredNetwork!!.index % layout.cols
             if (queueIdx < craftQueue.size) {
                 val slot = craftQueue[queueIdx]
-                val stack = getItemStack(slot.itemId)
+                // The variant being crafted, so the tooltip names the potion or tier.
+                val stack = getItemStack(slot.itemId, slot.componentsPatch)
                 if (!stack.isEmpty) {
                     val lines = getTooltipFromItem(Minecraft.getInstance(), stack).toMutableList()
                     val statusStr = if (slot.isComplete) "Complete" else "Crafting..."
@@ -1244,6 +1247,7 @@ class InventoryTerminalScreen(
                 if (count > 0) {
                     lastAttemptItemId = craftDialogueItemId
                     lastAttemptItemName = craftDialogueItemName
+                    lastAttemptComponentsPatch = craftDialogueComponentsPatch
                     lastAttemptCount = count
                     PlatformServices.clientNetworking.sendToServer(
                         damien.nodeworks.network.InvTerminalCraftPayload(menu.containerId, craftDialogueItemId!!, count, craftDialogueComponentsPatch)
@@ -1700,6 +1704,10 @@ class InventoryTerminalScreen(
             if (keyCode == InputConstants.KEY_RETURN) {
                 val count = craftDialogueField?.value?.toIntOrNull() ?: 1
                 if (count > 0) {
+                    lastAttemptItemId = craftDialogueItemId
+                    lastAttemptItemName = craftDialogueItemName
+                    lastAttemptComponentsPatch = craftDialogueComponentsPatch
+                    lastAttemptCount = count
                     PlatformServices.clientNetworking.sendToServer(
                         damien.nodeworks.network.InvTerminalCraftPayload(menu.containerId, craftDialogueItemId!!, count, craftDialogueComponentsPatch)
                     )
