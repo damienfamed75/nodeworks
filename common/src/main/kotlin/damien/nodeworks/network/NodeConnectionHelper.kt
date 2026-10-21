@@ -401,12 +401,18 @@ object NodeConnectionHelper {
         val queue = ArrayDeque<Pair<BlockPos, Direction?>>()
         visited[startPos] = mutableSetOf(null)
         queue.add(startPos to null)
+        // True once the walk had to stop at an unloaded chunk, a laser into one or a
+        // block beside one. The rest of the network, its controller included, may sit there.
+        var touchedUnloaded = false
 
         while (queue.isNotEmpty()) {
             val (pos, entryFace) = queue.removeFirst()
             val entity = getConnectable(level, pos) ?: continue
             for (conn in entity.connectionsFromFace(entryFace)) {
-                if (!level.isLoaded(conn)) continue
+                if (!level.isLoaded(conn)) {
+                    touchedUnloaded = true
+                    continue
+                }
                 if (!checkLineOfSightCached(level, pos, conn)) continue
                 val face = faceFromTo(conn, pos)
                 if (registerVisit(level, conn, face, visited)) queue.add(conn to face)
@@ -414,6 +420,15 @@ object NodeConnectionHelper {
             for (adjacentPos in adjacentConnectableNeighbors(level, pos, entity, entryFace)) {
                 val face = faceFromTo(adjacentPos, pos)
                 if (registerVisit(level, adjacentPos, face, visited)) queue.add(adjacentPos to face)
+            }
+            // Only a block on a chunk edge can have an unloaded neighbour, and only across
+            // that edge, so this costs a hundred thousand blocks a handful of chunk lookups.
+            if (!touchedUnloaded && entity.usesAdjacency()) {
+                val bx = pos.x and 15
+                val bz = pos.z and 15
+                if ((bx == 0 && !level.isLoaded(pos.west())) || (bx == 15 && !level.isLoaded(pos.east())) ||
+                    (bz == 0 && !level.isLoaded(pos.north())) || (bz == 15 && !level.isLoaded(pos.south()))
+                ) touchedUnloaded = true
             }
         }
 
@@ -437,8 +452,15 @@ object NodeConnectionHelper {
         var microAnchor: Connectable? = null
         var fallbackAnchor: Connectable? = null
         var boundaryDoubleVisited = false
+        // The one id the walked blocks carry, gathered in this same pass. Blocks without an
+        // id, like one just placed, do not count against it, two different ids do.
+        var carriedId: java.util.UUID? = null
+        var carriedMixed = false
         for ((pos, faces) in visited) {
             val entity = getConnectable(level, pos) ?: continue
+            entity.networkId?.let { id ->
+                if (carriedId == null) carriedId = id else if (carriedId != id) carriedMixed = true
+            }
             if (entity is damien.nodeworks.block.entity.NetworkControllerBlockEntity) {
                 controllerCount++
                 if (controllerCount == 1) foundId = entity.permanentId
@@ -467,12 +489,17 @@ object NodeConnectionHelper {
             foundId = null
         } else if (controllerCount == 0 && microAnchor != null) {
             foundId = microAnchor.microNetworkPermanentId
-        } else if (controllerCount == 0 && fallbackAnchor != null) {
-            // The id the subgraph already carries stays while its anchor Node is among
-            // the walked, so placing or loading a lower Node does not re-id a whole
-            // network. A merge, two ids, or an anchor out of reach falls back to the
-            // lowest Node.
-            foundId = carriedAnchorId(level, visited) ?: fallbackAnchor.fallbackAnchorId
+        } else if (controllerCount == 0) {
+            // A controller or micro anchor id every walked block carries stays when the walk
+            // stopped at unloaded chunks, its anchor may be there, so a network whose
+            // controller's chunk is out does not degrade to a Node id and back on every
+            // edit or load. Then the Node anchor id the subgraph carries stays while its
+            // anchor Node is among the walked, so placing or loading a lower Node does not
+            // re-id a whole network. A merge, two ids, or an anchor out of reach falls back
+            // to the lowest Node.
+            val carried = if (carriedMixed) null else carriedId
+            foundId = carriedBeyondUnloaded(carried, touchedUnloaded)
+                ?: fallbackAnchor?.let { carriedAnchorId(level, carried, visited, touchedUnloaded) ?: it.fallbackAnchorId }
         }
 
         // Apply the new id. For PHandler, the destination field depends on which
@@ -558,19 +585,28 @@ object NodeConnectionHelper {
         }
     }
 
-    /** The one Node anchor id every walked Connectable with an id agrees on, when that
-     *  anchor Node was itself walked and still lends that id. Null when the ids differ,
-     *  nothing carries one, or the anchor is out of reach. */
-    private fun carriedAnchorId(level: ServerLevel, visited: Map<BlockPos, *>): java.util.UUID? {
-        var carried: java.util.UUID? = null
-        for (pos in visited.keys) {
-            val id = getConnectable(level, pos)?.networkId ?: continue
-            if (!NetworkIds.isNodeAnchor(id)) continue
-            if (carried == null) carried = id else if (carried != id) return null
-        }
+    /** The one controller or micro anchor id every walked Connectable with an id agrees
+     *  on, when the walk was cut short by unloaded chunks and that anchor may be beyond
+     *  them. Blocks without an id, like one just placed, do not count against it. Null
+     *  when the subgraph was fully loaded, the ids differ, the id is a Node anchor's, or
+     *  the controller is known to have been broken. */
+    private fun carriedBeyondUnloaded(carried: java.util.UUID?, touchedUnloaded: Boolean): java.util.UUID? {
+        if (!touchedUnloaded || carried == null) return null
+        if (NetworkIds.isNodeAnchor(carried)) return null
+        return if (NetworkIds.isRetiredController(carried)) null else carried
+    }
+
+    /** The Node anchor id the walked blocks agree on, when that anchor Node was walked and
+     *  still lends it, or sits in an unloaded chunk the walk stopped at. Null when the ids
+     *  differ, nothing carries one, or the anchor is loaded but out of reach, which means
+     *  it was cut off or broken. */
+    private fun carriedAnchorId(level: ServerLevel, carried: java.util.UUID?, visited: Map<BlockPos, *>, touchedUnloaded: Boolean): java.util.UUID? {
         val id = carried ?: return null
+        if (!NetworkIds.isNodeAnchor(id)) return null
         val anchorPos = BlockPos.of(id.mostSignificantBits)
-        if (!visited.containsKey(anchorPos)) return null
+        if (!visited.containsKey(anchorPos)) {
+            return if (touchedUnloaded && !level.isLoaded(anchorPos)) id else null
+        }
         val anchor = getConnectable(level, anchorPos) ?: return null
         return if (anchor.isFallbackAnchor() && anchor.fallbackAnchorId == id) id else null
     }

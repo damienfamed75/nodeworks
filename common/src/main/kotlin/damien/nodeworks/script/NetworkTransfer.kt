@@ -120,6 +120,14 @@ object NetworkTransfer {
         exclude: Set<BlockPos> = emptySet(),
         spill: (ItemStack) -> Unit,
         sink: (ItemStack) -> Int,
+        /** The scan cursor for the inventory a card faces, so a run cut short by the move
+         *  deadline carries on where it stopped next time rather than rescanning. */
+        cursorFor: ((BlockPos) -> damien.nodeworks.platform.ScanCursor?)? = null,
+        /** Where in the card list a run starts. Normally the top, so pulls follow card
+         *  priority. A run the deadline stops partway leaves it at the card it did not
+         *  reach, so over a few runs every card gets a turn, and a run that covers all the
+         *  cards puts it back at the top. */
+        rotation: RoundRobinCursor? = null,
     ): Long {
         // A blank rule is one still being typed. It must not read as "everything".
         val active = rules.filter { it.isNotBlank() }
@@ -128,10 +136,21 @@ object NetworkTransfer {
         val matches: (ItemStack) -> Boolean = { stack -> active.any { CardHandle.matchesFilter(stack, it, registries) } }
         var remaining = maxItems
         var total = 0L
-        for (card in destinationCards(snapshot, channel, exclude)) {
+        val cards = destinationCards(snapshot, channel, exclude)
+        if (cards.isEmpty()) return 0L
+        val start = rotation?.index?.takeIf { it in cards.indices } ?: 0
+        var covered = 0
+        while (covered < cards.size) {
             if (remaining <= 0L) break
+            // Between cards only, so a card that was started is finished or left to its cursor.
+            if (covered > 0 && damien.nodeworks.platform.MoveDeadline.expired()) break
+            val card = cards[(start + covered) % cards.size]
+            covered++
             val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
-            val extracted = PlatformServices.storage.extractStacksByPredicate(storage, matches, remaining)
+            val cap = card.capability as? StorageSideCapability
+            val extracted = PlatformServices.storage.extractStacksByPredicate(
+                storage, matches, remaining, cap?.let { cursorFor?.invoke(it.adjacentPos) },
+            )
             for (stack in extracted) {
                 if (stack.isEmpty) continue
                 val itemId = BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
@@ -149,6 +168,8 @@ object NetworkTransfer {
                 if (placed > 0) {
                     remaining -= placed
                     total += placed
+                    // The sink is not network storage, so it tells the deadline itself.
+                    damien.nodeworks.platform.MoveDeadline.progressed()
                 }
                 if (placed < stack.count) {
                     // The sink filled mid-stack. Back into the card it came from first,
@@ -168,6 +189,7 @@ object NetworkTransfer {
                 }
             }
         }
+        if (rotation != null) rotation.index = if (covered >= cards.size || remaining <= 0L) 0 else (start + covered) % cards.size
         return total
     }
 }

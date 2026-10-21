@@ -101,7 +101,7 @@ object CraftTreeBuilder {
          *  disambiguated. */
         componentsPatch: net.minecraft.core.component.DataComponentPatch = net.minecraft.core.component.DataComponentPatch.EMPTY,
     ): CraftTreeNode {
-        val node = buildInternal(itemId, count, level, snapshot, depth, visited, reserved, componentsPatch)
+        val node = buildInternal(itemId, count, level, snapshot, depth, visited, reserved, StockView(level, snapshot), componentsPatch)
         if (depth == 0) assignNodeIds(node)
         return node
     }
@@ -114,6 +114,7 @@ object CraftTreeBuilder {
         depth: Int,
         visited: MutableSet<damien.nodeworks.script.BufferKey.Key>,
         reserved: MutableMap<String, Int>,
+        stock: StockView,
         componentsPatch: net.minecraft.core.component.DataComponentPatch = net.minecraft.core.component.DataComponentPatch.EMPTY,
     ): CraftTreeNode {
         if (depth > 20) {
@@ -125,8 +126,7 @@ object CraftTreeBuilder {
         // key [resolveIngredient] uses, so other variants in storage never stand in for it.
         val requestHash = damien.nodeworks.script.BufferKey.componentsHash(componentsPatch)
         val reservedKey = if (requestHash.isEmpty()) itemId else "$itemId#$requestHash"
-        val inStorageTotal = if (requestHash.isEmpty()) NetworkStorageHelper.countItemsInt(level, snapshot, itemId)
-            else NetworkStorageHelper.countVariantAcrossNetworkInt(level, snapshot, itemId, componentsPatch)
+        val inStorageTotal = if (requestHash.isEmpty()) stock.plain(itemId) else stock.variant(itemId, componentsPatch)
         val reservedAmount = reserved[reservedKey] ?: 0
         val availableFromStorage = maxOf(0, inStorageTotal - reservedAmount)
 
@@ -148,7 +148,8 @@ object CraftTreeBuilder {
             val info = instructionMatch.instructionSet
             // The grid as stacks, so a slot that only matches with its components plans
             // and crafts that variant. A card without kept stacks reads as plain items.
-            val originalStacks = info.ingredients.takeIf { it.size == 9 }
+            // Copies, the card info is shared across walks and a recipe may touch its input.
+            val originalStacks = info.ingredients.takeIf { it.size == 9 }?.map { it.copy() }
                 ?: info.recipe.map { damien.nodeworks.card.InstructionSet.plainStack(it) }
             val alias = info.alias ?: info.outputItemId.substringAfter(':')
 
@@ -163,7 +164,7 @@ object CraftTreeBuilder {
             // Swap exemplar ingredients for in-stock alternatives when the
             // pattern allows substitutions. No-op when substitutions are off.
             val (concreteStacks, swapped) = resolveSubstitutedRecipe(
-                originalStacks, info.allowSubstitutions, level, snapshot, batches, reserved, visited,
+                originalStacks, info.allowSubstitutions, level, snapshot, batches, reserved, visited, stock,
             )
 
             // Demand per variant, so two slots wanting different variants of one item
@@ -184,7 +185,7 @@ object CraftTreeBuilder {
             val children = ingredientCounts.entries.flatMap { (key, entry) ->
                 val (patch, ingCount) = entry
                 resolveIngredient(
-                    key.itemId, ingCount * batches, level, snapshot, depth, visited, reserved,
+                    key.itemId, ingCount * batches, level, snapshot, depth, visited, reserved, stock,
                     ingredientPatch = patch,
                     exactVariant = patch.size() > 0,
                 )
@@ -251,7 +252,7 @@ object CraftTreeBuilder {
             // craft uses: a stocked or craftable tag member, or the stocked component
             // variant. Everything downstream, pulls included, then works on those items.
             val resolvedInputs = if (api.fuzzy) {
-                resolveProcessingInputs(api.inputs, level, snapshot, batches, reserved, visited)
+                resolveProcessingInputs(api.inputs, level, snapshot, batches, reserved, visited, stock)
             } else null
             val children = (resolvedInputs ?: api.inputs).flatMap { ingr ->
                 // Pass through each ingredient's componentsPatch so the
@@ -260,7 +261,7 @@ object CraftTreeBuilder {
                 // recipe taking 1 Swiftness + 1 Fire Resistance would aggregate
                 // both as "2 minecraft:potion" and pull two random potions.
                 resolveIngredient(
-                    ingr.itemId, ingr.count * batches, level, snapshot, depth, visited, reserved,
+                    ingr.itemId, ingr.count * batches, level, snapshot, depth, visited, reserved, stock,
                     ingredientPatch = ingr.stack.componentsPatch,
                     exactVariant = true,
                 )
@@ -313,6 +314,7 @@ object CraftTreeBuilder {
         depth: Int,
         visited: MutableSet<damien.nodeworks.script.BufferKey.Key>,
         reserved: MutableMap<String, Int>,
+        stock: StockView,
         /** Component patch the ingredient declares. Empty = match any variant
          *  by itemId only (the plain-recipe path).
          *  When non-empty, the storage count and the reservation tracker key
@@ -331,11 +333,8 @@ object CraftTreeBuilder {
         // (empty hash) keep the old `itemId` key so existing reservation
         // counts roll forward without migration.
         val reservedKey = if (componentsHash.isEmpty()) ingId else "$ingId#$componentsHash"
-        val ingInStorage = if (componentsHash.isEmpty() && !exactVariant) {
-            NetworkStorageHelper.countItemsInt(level, snapshot, ingId)
-        } else {
-            NetworkStorageHelper.countVariantAcrossNetworkInt(level, snapshot, ingId, ingredientPatch)
-        }
+        val ingInStorage = if (componentsHash.isEmpty() && !exactVariant) stock.plain(ingId)
+            else stock.variant(ingId, ingredientPatch)
         val ingReserved = reserved[reservedKey] ?: 0
         val ingAvailable = maxOf(0, ingInStorage - ingReserved)
 
@@ -357,12 +356,12 @@ object CraftTreeBuilder {
                 )
                 val toCraft = needed - ingAvailable
                 val crafted = buildInternal(
-                    ingId, toCraft, level, snapshot, depth + 1, visited, reserved, ingredientPatch,
+                    ingId, toCraft, level, snapshot, depth + 1, visited, reserved, stock, ingredientPatch,
                 )
                 listOf(fromStorage, crafted)
             }
             else -> listOf(buildInternal(
-                ingId, needed, level, snapshot, depth + 1, visited, reserved, ingredientPatch,
+                ingId, needed, level, snapshot, depth + 1, visited, reserved, stock, ingredientPatch,
             ))
         }
     }
@@ -474,6 +473,7 @@ object CraftTreeBuilder {
         batches: Int,
         reserved: MutableMap<String, Int>,
         visited: Set<damien.nodeworks.script.BufferKey.Key>,
+        stock: StockView,
     ): Pair<List<ItemStack>, Boolean> {
         if (!allowSubstitutions) return recipe to false
 
@@ -492,7 +492,7 @@ object CraftTreeBuilder {
         // double-claimed across slots, sibling tree nodes, or both.
         val local = HashMap<String, Int>()
         fun availableFor(id: String): Int {
-            val total = NetworkStorageHelper.countItemsInt(level, snapshot, id)
+            val total = stock.plain(id)
             return maxOf(0, total - (reserved[id] ?: 0) - (local[id] ?: 0))
         }
 
@@ -544,13 +544,14 @@ object CraftTreeBuilder {
         batches: Int,
         reserved: Map<String, Int>,
         visited: Set<damien.nodeworks.script.BufferKey.Key>,
+        stock: StockView,
     ): List<RecipeIngredient> {
         val local = HashMap<String, Int>()
         // Every variant of an item counts here, so every variant's reservation comes off.
         fun reservedAll(map: Map<String, Int>, id: String): Int =
             map.entries.sumOf { (key, n) -> if (key == id || key.startsWith("$id#")) n else 0 }
         fun availableFor(id: String): Int {
-            val total = NetworkStorageHelper.countItemsInt(level, snapshot, id)
+            val total = stock.plain(id)
             return maxOf(0, total - reservedAll(reserved, id) - reservedAll(local, id))
         }
         fun craftable(id: String): Boolean =
@@ -576,7 +577,7 @@ object CraftTreeBuilder {
             val base = if (itemId == ingr.itemId) ingr.stack.copyWithCount(1) else ItemStack(item)
             val baseHash = damien.nodeworks.script.BufferKey.componentsHash(base)
             fun reservedKey(hash: String) = if (hash.isEmpty()) itemId else "$itemId#$hash"
-            val variants = variantCounts(level, snapshot, itemId)
+            val variants = stock.variants(itemId)
             fun available(v: Pair<net.minecraft.core.component.DataComponentPatch, Long>): Int {
                 val key = reservedKey(damien.nodeworks.script.BufferKey.componentsHash(v.first))
                 val stocked = v.second.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
@@ -595,13 +596,75 @@ object CraftTreeBuilder {
         }
     }
 
+    /** Storage counts for one plan. An item id is scanned once, every variant of it in one
+     *  pass, and each later question about that id is answered from that pass, so a tree
+     *  of fifty ingredients walks the network's slots about fifty times rather than once
+     *  per count, per candidate and per slot. Reservations are layered on by the callers,
+     *  the counts here are raw. */
+    private class StockView(private val level: ServerLevel, private val snapshot: NetworkSnapshot) {
+        /** One item id in storage. The total comes from an identity scan that allocates
+         *  nothing per slot, the per-variant map only when a variant is asked for. */
+        private class Stock {
+            var total: Long = -1L
+            var byHash: Map<String, Pair<net.minecraft.core.component.DataComponentPatch, Long>>? = null
+        }
+
+        private val byItem = HashMap<String, Stock>()
+
+        private fun variantsOf(itemId: String): Map<String, Pair<net.minecraft.core.component.DataComponentPatch, Long>> {
+            val stock = byItem.getOrPut(itemId) { Stock() }
+            stock.byHash?.let { return it }
+            val byHash = variantCounts(level, snapshot, itemId)
+            stock.byHash = byHash
+            if (stock.total < 0L) {
+                var total = 0L
+                for ((_, count) in byHash.values) total += count
+                stock.total = total
+            }
+            return byHash
+        }
+
+        fun variants(itemId: String): Collection<Pair<net.minecraft.core.component.DataComponentPatch, Long>> =
+            variantsOf(itemId).values
+
+        /** Every variant of [itemId] together, saturating at Int.MAX_VALUE. */
+        fun plain(itemId: String): Int {
+            val stock = byItem.getOrPut(itemId) { Stock() }
+            if (stock.total < 0L) stock.total = countPlain(itemId)
+            return stock.total.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+        }
+
+        fun variant(itemId: String, patch: net.minecraft.core.component.DataComponentPatch): Int {
+            val count = variantsOf(itemId)[damien.nodeworks.script.BufferKey.componentsHash(patch)]?.second ?: 0L
+            return count.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+        }
+
+        /** Every variant of [itemId] across the network, by item identity so a million slots
+         *  cost a million reference compares and no id strings. Shared storage reached through
+         *  several cards counts once. */
+        private fun countPlain(itemId: String): Long {
+            val item = Identifier.tryParse(itemId)?.let { BuiltInRegistries.ITEM.getValue(it) } ?: return 0L
+            var total = 0L
+            val seen = HashSet<net.minecraft.core.BlockPos>()
+            for (card in NetworkStorageHelper.getStorageCards(snapshot)) {
+                val cap = card.capability as? damien.nodeworks.card.StorageSideCapability ?: continue
+                if (!seen.add(cap.adjacentPos)) continue
+                val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
+                total += try {
+                    PlatformServices.storage.countStacksByPredicate(storage) { it.item === item }
+                } catch (_: Exception) { 0L }
+            }
+            return total
+        }
+    }
+
     /** How many of each component variant of [itemId] network storage holds, each with a
      *  patch that identifies it. Shared storage reached through several cards counts once. */
     private fun variantCounts(
         level: ServerLevel,
         snapshot: NetworkSnapshot,
         itemId: String,
-    ): List<Pair<net.minecraft.core.component.DataComponentPatch, Long>> {
+    ): Map<String, Pair<net.minecraft.core.component.DataComponentPatch, Long>> {
         val byHash = LinkedHashMap<String, Pair<net.minecraft.core.component.DataComponentPatch, Long>>()
         val seen = HashSet<net.minecraft.core.BlockPos>()
         for (card in NetworkStorageHelper.getStorageCards(snapshot)) {
@@ -617,7 +680,7 @@ object CraftTreeBuilder {
                 byHash[hash] = (prev?.first ?: info.componentsPatch) to ((prev?.second ?: 0L) + info.count)
             }
         }
-        return byHash.values.toList()
+        return byHash
     }
 
     /** Pick a candidate item id for a slot. Prefers [preferred] when it has enough

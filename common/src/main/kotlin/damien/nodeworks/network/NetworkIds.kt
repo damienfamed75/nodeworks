@@ -27,4 +27,19 @@ object NetworkIds {
     /** True for an id lent by a Node, false for a controller's, a micro anchor's or null. */
     fun isNodeAnchor(id: UUID?): Boolean =
         id != null && (id.leastSignificantBits ushr 62) == 0L
+
+    /** Controllers a player broke this session. A walk that finds no controller keeps the
+     *  id its blocks carry when the controller may just be unloaded, these ids are known
+     *  to be gone for good, so they are never kept. */
+    private val retiredControllerIds: MutableSet<UUID> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+
+    fun retireController(id: UUID) {
+        retiredControllerIds.add(id)
+    }
+
+    fun isRetiredController(id: UUID): Boolean = id in retiredControllerIds
+
+    fun clearRetired() {
+        retiredControllerIds.clear()
+    }
 }

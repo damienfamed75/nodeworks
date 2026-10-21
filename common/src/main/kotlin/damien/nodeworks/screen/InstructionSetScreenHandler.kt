@@ -34,6 +34,11 @@ class InstructionSetScreenHandler(
 
     private val resultContainer = SimpleContainer(1)
 
+    /** The last matched recipe is tried first, so every click on a grid that still matches
+     *  it, and every normalisation trial that keeps matching, skips the full recipe scan. */
+    private val craftingCheck = net.minecraft.world.item.crafting.RecipeManager
+        .createCheck<CraftingInput, net.minecraft.world.item.crafting.CraftingRecipe>(RecipeType.CRAFTING)
+
     /** Snapshot of the recipe grid at open time, captured so [removed] can skip
      *  saving when the user closes without making any changes. Without this,
      *  opening a stack of >1 unprogrammed Instruction Sets and closing the GUI
@@ -141,10 +146,9 @@ class InstructionSetScreenHandler(
     private fun resultFor(items: List<ItemStack>): ItemStack? {
         val level = playerInventory.player.level()
         val serverLevel = level as? net.minecraft.server.level.ServerLevel ?: return null
-        val recipeManager = serverLevel.recipeAccess() ?: return null
         val input = CraftingInput.of(3, 3, items)
-        return recipeManager
-            .getRecipeFor(RecipeType.CRAFTING, input, level)
+        return craftingCheck
+            .getRecipeFor(input, serverLevel)
             .map { it.value().assemble(input) }
             .orElse(ItemStack.EMPTY)
     }

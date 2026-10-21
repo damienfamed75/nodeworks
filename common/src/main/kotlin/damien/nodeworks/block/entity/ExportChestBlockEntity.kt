@@ -60,6 +60,8 @@ class ExportChestBlockEntity(
 ) : BlockEntity(ModBlockEntities.EXPORT_CHEST, pos, state), Container, Connectable, LidBlockEntity {
 
     companion object {
+        /** Scan cursors kept per chest, see [pullCursors]. */
+        private const val MAX_PULL_CURSORS = 1024
         /** How long an edited rule list waits before the chest pulls by it. */
         private const val RULE_SETTLE_TICKS = 40L
 
@@ -108,6 +110,16 @@ class ExportChestBlockEntity(
     /** Game time from which the current rule list may pull. Not saved, a reload
      *  starts with settled rules. */
     private var rulesSettleAt: Long = 0L
+
+    /** Where each faced inventory's scan stopped last run, and which card the next run
+     *  starts at, so a pull the move deadline cuts short resumes instead of rescanning.
+     *  Least recently used cursors go once the map is full, so a chest on a network of
+     *  many thousand cards never holds a cursor for each. */
+    private val pullCursors = object : LinkedHashMap<BlockPos, damien.nodeworks.platform.ScanCursor>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<BlockPos, damien.nodeworks.platform.ScanCursor>): Boolean =
+            size > MAX_PULL_CURSORS
+    }
+    private val pullRotation = damien.nodeworks.script.NetworkTransfer.RoundRobinCursor()
 
     /** Channel scope for the network-pull side. ALL pulls from every storage
      *  card on the network, [ChannelFilter.Color] restricts to one channel. */
@@ -227,15 +239,24 @@ class ExportChestBlockEntity(
         if (totalSpace <= 0L) return
 
         val cache = damien.nodeworks.script.NetworkInventoryCache.existing(level, worldPosition)
-        val placed = damien.nodeworks.script.NetworkTransfer.pull(
-            level, snapshot, cache, filterRules, channel, totalSpace,
-            spill = { stack ->
-                net.minecraft.world.Containers.dropItemStack(
-                    level, worldPosition.x + 0.5, worldPosition.y + 0.5, worldPosition.z + 0.5, stack,
-                )
-            },
-            sink = ::placeIntoBuffer,
-        )
+        // The same per-network move time the Transfer Cards share, so a chest whose rules
+        // match nothing cannot walk a million slots every interval unchecked. A run the
+        // budget stops resumes from its cursors next interval.
+        val tick = PlatformServices.modState.tickCount
+        val budget = damien.nodeworks.script.NetworkRateLimits.forTransferCards(networkId)
+        val placed = budget.timedMove(tick, atomic = false) {
+            damien.nodeworks.script.NetworkTransfer.pull(
+                level, snapshot, cache, filterRules, channel, totalSpace,
+                spill = { stack ->
+                    net.minecraft.world.Containers.dropItemStack(
+                        level, worldPosition.x + 0.5, worldPosition.y + 0.5, worldPosition.z + 0.5, stack,
+                    )
+                },
+                sink = ::placeIntoBuffer,
+                cursorFor = { pos -> pullCursors.getOrPut(pos) { damien.nodeworks.platform.ScanCursor() } },
+                rotation = pullRotation,
+            )
+        }
         if (placed > 0L) setChanged()
     }
 
