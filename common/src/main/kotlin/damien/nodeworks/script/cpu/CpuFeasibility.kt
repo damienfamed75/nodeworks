@@ -54,8 +54,9 @@ object CpuFeasibility {
         // Missing ingredients win over every other check, no point starting a craft that
         // can't finish. Report the first few unresolvable items by name.
         if (missing.isNotEmpty()) {
-            val summary = missing.take(3).joinToString(", ") { "${it.count}× ${it.itemName}" }
-            val extra = if (missing.size > 3) " (+${missing.size - 3} more)" else ""
+            val shortfalls = shortfalls(tree)
+            val summary = shortfalls.take(MAX_LISTED).joinToString(", ") { "${it.count}× ${it.name}" }
+            val extra = if (shortfalls.size > MAX_LISTED) " (+${shortfalls.size - MAX_LISTED} more)" else ""
             return Result(
                 ok = false,
                 reason = "Missing ingredients: $summary$extra. No recipe available and not enough in storage.",
@@ -98,5 +99,49 @@ object CpuFeasibility {
         }
 
         return Result(ok = true, peakSingleTypeCount = peakSingleType, uniqueTypes = uniqueTypes.size)
+    }
+
+    private const val MAX_LISTED = 4
+
+    /** How many of one item a craft is short. */
+    data class Shortfall(val itemId: String, val name: String, val count: Long)
+
+    /**
+     * What the craft is short of, one entry per item, most short first.
+     *
+     * A missing node carries the whole amount its branch asked for, not the gap, since a
+     * branch storage cannot fully cover takes nothing from storage. So an item used in
+     * several places shows up as several missing nodes, each with its full demand, while
+     * some of its stock still sits unreserved. Per item that is the sum of its missing
+     * demand less what storage still has free once every branch is built. The free
+     * amount is the least any of the item's nodes saw: a missing node saw what was free
+     * then, a storage node leaves what was free less what it took. Storage counts are by
+     * item id, so this groups by item id too.
+     */
+    fun shortfalls(tree: CraftTreeBuilder.CraftTreeNode): List<Shortfall> {
+        val demand = LinkedHashMap<String, Long>()
+        val names = HashMap<String, String>()
+        val free = HashMap<String, Long>()
+        val stack = ArrayDeque<CraftTreeBuilder.CraftTreeNode>()
+        stack.addLast(tree)
+        while (stack.isNotEmpty()) {
+            val node = stack.removeLast()
+            val left: Long? = when {
+                node.source == "missing" -> {
+                    demand.merge(node.itemId, node.count.toLong(), Long::plus)
+                    names.putIfAbsent(node.itemId, node.itemName)
+                    node.inStorage.toLong()
+                }
+                // A circular stand-in reserves nothing, so it leaves what it saw.
+                node.source == "storage" && node.resolvedBy == "circular" -> node.inStorage.toLong()
+                node.source == "storage" -> (node.inStorage - node.count).toLong()
+                else -> null
+            }
+            if (left != null) free.merge(node.itemId, left.coerceAtLeast(0L), ::minOf)
+            for (child in node.children) stack.addLast(child)
+        }
+        return demand.map { (id, need) ->
+            Shortfall(id, names[id] ?: id, (need - (free[id] ?: 0L)).coerceAtLeast(1L))
+        }.sortedByDescending { it.count }
     }
 }
