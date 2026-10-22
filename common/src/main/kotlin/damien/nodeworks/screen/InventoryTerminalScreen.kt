@@ -2036,5 +2036,16 @@ class InventoryTerminalScreen(
          *  `activeScreen?.menu === menu` before trusting the reference. */
         var activeScreen: InventoryTerminalScreen? = null
             private set
+
+        /** The terminal screen behind the player's open terminal menu, whether it is on
+         *  top or sits under JEI's recipe view. Sync packets for the menu go here, so a
+         *  craft that finishes or a chest that changes while JEI is open still reaches
+         *  the pinned row and the grid. Null once the menu is closed. */
+        fun liveScreen(): InventoryTerminalScreen? {
+            val mc = net.minecraft.client.Minecraft.getInstance()
+            (mc.screen as? InventoryTerminalScreen)?.let { return it }
+            val behind = activeScreen ?: return null
+            return if (behind.menu === mc.player?.containerMenu) behind else null
+        }
     }
 }

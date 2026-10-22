@@ -1507,6 +1507,9 @@ class InventoryTerminalMenu(
          *  cell doesn't accidentally pull a Fire Resistance one out of the
          *  same itemId bucket. */
         componentsPatch: net.minecraft.core.component.DataComponentPatch? = null,
+        /** Settle this player's craft reservations against the new stock, see below. The
+         *  pinned-row pickup passes false, it accounts for its own take. */
+        settle: Boolean = true,
     ): List<ItemStack> {
         if (maxCount <= 0L) return emptyList()
         val wantHash = componentsPatch?.let { damien.nodeworks.script.BufferKey.componentsHash(it) }
@@ -1556,6 +1559,12 @@ class InventoryTerminalMenu(
                 }
             }
             if (!leftover.isEmpty) merged.add(leftover)
+        }
+        // The player took these through their own terminal, so a reservation the network
+        // can no longer cover is theirs to give up, now rather than after a poll cycle.
+        if (settle && out.isNotEmpty()) {
+            val cc = c ?: cache
+            if (cc != null) CraftQueueManager.settle(snap.networkId, { key -> cc.variantCount(key) }, cc.completedCycles, actor = playerInventory.player.uuid)
         }
         return merged
     }
@@ -2144,7 +2153,7 @@ class InventoryTerminalMenu(
 
         // Only the crafted variant, never another one already in storage.
         val variant = entry.componentsPatch.takeIf { it.size() > 0 }
-        val stacks = extractRealStacks(lvl, snap, cache, entry.itemId, toExtract, variant)
+        val stacks = extractRealStacks(lvl, snap, cache, entry.itemId, toExtract, variant, settle = false)
         if (stacks.isNotEmpty()) {
             val totalExtracted = stacks.sumOf { it.count }
             entry.takenCount += totalExtracted
@@ -2245,9 +2254,13 @@ class InventoryTerminalMenu(
         // Without this, opening a portable terminal on Network A would show jobs queued
         // on Network B in the pinned row and incorrectly deduct items B reserved.
         val networkId = snapshot?.networkId
+        val c = cache
+        // Reservations follow the stock. Items a finished craft set aside may already
+        // have left storage through the crafting grid or anyone else, and the pinned
+        // row must not offer them.
+        if (c != null) CraftQueueManager.settle(networkId, { key -> c.variantCount(key) }, c.completedCycles)
         val queue = CraftQueueManager.getQueueForNetwork(serverPlayer.uuid, networkId)
         val reserved = CraftQueueManager.getReservedCounts(serverPlayer.uuid, networkId)
-        val c = cache
 
         if (needsFullSync) {
             // Build all entries (items + fluids) and split into chunks. When we're
@@ -2325,7 +2338,7 @@ class InventoryTerminalMenu(
         needsImmediateSync = false
 
         // Send queue updates if any entries are dirty
-        val queueDirty = queue.any { it.dirty }
+        val queueDirty = CraftQueueManager.hasSyncPending(serverPlayer.uuid) || queue.any { it.dirty }
         if (queueDirty) {
             sendQueueSync(serverPlayer, queue)
         }
@@ -2462,6 +2475,7 @@ class InventoryTerminalMenu(
             )
         }
         for (e in queue) e.dirty = false
+        CraftQueueManager.clearSyncPending(player.uuid)
         player.connection.send(
             net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket(
                 damien.nodeworks.network.CraftQueueSyncPayload(containerId, entries)

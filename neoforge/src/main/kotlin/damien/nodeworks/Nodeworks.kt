@@ -1025,10 +1025,7 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
         }
         registrar.playToClient(InventorySyncPayload.TYPE, InventorySyncPayload.CODEC) { payload, context ->
             context.enqueueWork {
-                val screen = net.minecraft.client.Minecraft.getInstance().screen
-                if (screen is damien.nodeworks.screen.InventoryTerminalScreen) {
-                    screen.repo.handleUpdate(payload)
-                }
+                damien.nodeworks.screen.InventoryTerminalScreen.liveScreen()?.repo?.handleUpdate(payload)
             }
         }
         registrar.playToClient(BufferSyncPayload.TYPE, BufferSyncPayload.CODEC) { payload, context ->
@@ -1053,10 +1050,7 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
 
         registrar.playToClient(CraftRequestErrorPayload.TYPE, CraftRequestErrorPayload.CODEC) { payload, context ->
             context.enqueueWork {
-                val screen = net.minecraft.client.Minecraft.getInstance().screen
-                if (screen is damien.nodeworks.screen.InventoryTerminalScreen) {
-                    screen.setCraftError(payload.message)
-                }
+                damien.nodeworks.screen.InventoryTerminalScreen.liveScreen()?.setCraftError(payload.message)
             }
         }
 
@@ -1066,7 +1060,7 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                 val menu = player.containerMenu
                 if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
                     menu.networkId = runCatching { java.util.UUID.fromString(payload.networkId) }.getOrNull()
-                    (net.minecraft.client.Minecraft.getInstance().screen as? damien.nodeworks.screen.InventoryTerminalScreen)?.onNetworkSynced()
+                    damien.nodeworks.screen.InventoryTerminalScreen.liveScreen()?.onNetworkSynced()
                 }
             }
         }
@@ -1120,10 +1114,8 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
 
         registrar.playToClient(CraftQueueSyncPayload.TYPE, CraftQueueSyncPayload.CODEC) { payload, context ->
             context.enqueueWork {
-                val screen = net.minecraft.client.Minecraft.getInstance().screen
-                if (screen is damien.nodeworks.screen.InventoryTerminalScreen) {
-                    screen.handleQueueSync(payload)
-                }
+                val screen = damien.nodeworks.screen.InventoryTerminalScreen.liveScreen() ?: return@enqueueWork
+                if (screen.menu.containerId == payload.containerId) screen.handleQueueSync(payload)
             }
         }
 

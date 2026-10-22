@@ -133,6 +133,11 @@ class NetworkInventoryCache(
     var version: Long = 0L
         private set
 
+    /** Complete poll cycles finished so far. A reader that saw a count it distrusts can
+     *  wait for this to advance twice and know a whole cycle ran after its first look. */
+    var completedCycles: Long = 0L
+        private set
+
     // Change tracking for delta sync (shared serial space, items + fluids)
     private val changedSerials = mutableSetOf<Long>()
     private val removedSerials = mutableSetOf<Long>()
@@ -646,6 +651,7 @@ class NetworkInventoryCache(
             }
         }
         cycleSnapshot = null
+        completedCycles++
         val channelsChanged = swapChannelCounts()
         val changed = applyDiff()
         if (changed || channelsChanged) version++

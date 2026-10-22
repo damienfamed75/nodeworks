@@ -601,6 +601,10 @@ object NetworkStorageHelper {
         exclude: Set<BlockPos> = emptySet(),
     ): Int {
         var remaining = stack.count
+        // Every insert keeps the cache current. A caller without a cache in hand, the CPU
+        // flush at the end of a craft among them, would otherwise leave the grid and the
+        // craft queue reservations lagging behind storage until the next poll.
+        val cache = cache ?: NetworkInventoryCache.existing(snapshot.networkId)
         val itemId = damien.nodeworks.platform.ItemIdCache.get(stack.item)
         // ItemStack carries its own NBT-presence state, so the filter check
         // can use the actual `hasData` rather than guessing.

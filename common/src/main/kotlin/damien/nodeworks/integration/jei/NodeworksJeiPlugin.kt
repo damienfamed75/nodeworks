@@ -238,10 +238,17 @@ class InventoryTerminalTransferHandler :
         return if (missing.isEmpty()) null else MissingIngredientsError(missing)
     }
 
-    /** For each recipe input slot, decide whether any of its accepted items
-     *  can be sourced from the player's inventory, the crafting grid the
-     *  [+] would overwrite, or the network. Greedy first-fit with running
-     *  availability so one stack doesn't satisfy multiple slots. */
+    /**
+     * For each recipe input slot, decide whether any of its accepted items can be sourced
+     * from the player's inventory, the crafting grid the [+] would overwrite, the
+     * network, or a finished craft held in the pinned row. Greedy first-fit with running
+     * availability so one stack does not satisfy several slots.
+     *
+     * Stock is tallied per item id and component variant. A slot that shows a plain item
+     * is a plain ingredient and any variant of that item serves it, as the server fill
+     * takes plain copies first and any variant after. A slot that shows a specific
+     * variant is only served by that variant.
+     */
     private fun findMissingInputs(
         menu: damien.nodeworks.screen.InventoryTerminalMenu,
         player: Player,
@@ -249,31 +256,30 @@ class InventoryTerminalTransferHandler :
     ): List<IRecipeSlotView> {
         if (inputSlots.isEmpty()) return emptyList()
 
-        val available = HashMap<String, Long>()
-        for (i in 0 until player.inventory.containerSize) {
-            val stack = player.inventory.getItem(i)
-            if (stack.isEmpty) continue
-            val id = BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: continue
-            available.merge(id, stack.count.toLong(), Long::plus)
+        val available = HashMap<VariantKey, Long>()
+        fun add(itemId: String, patch: net.minecraft.core.component.DataComponentPatch, count: Long) {
+            if (count > 0) available.merge(VariantKey(itemId, patch), count, Long::plus)
         }
-        for (i in 0 until 9) {
-            val stack = menu.craftingContainer.getItem(i)
-            if (stack.isEmpty) continue
-            val id = BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: continue
-            available.merge(id, stack.count.toLong(), Long::plus)
+        fun add(stack: ItemStack) {
+            if (stack.isEmpty) return
+            val id = BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: return
+            add(id, stack.componentsPatch, stack.count.toLong())
         }
-        // Only query the repo for ids the recipe mentions, so a huge
-        // network doesn't pay for every stored item id every probe.
+        for (i in 0 until player.inventory.containerSize) add(player.inventory.getItem(i))
+        for (i in 0 until 9) add(menu.craftingContainer.getItem(i))
+        // Only query the repo for ids the recipe mentions, so a huge network does not pay
+        // for every stored item id every probe.
         val screen = damien.nodeworks.screen.InventoryTerminalScreen.activeScreen
         if (screen != null && screen.menu === menu) {
+            // The grid entries arrive with the craft queue's reserved counts taken out, so
+            // items a finished craft holds in the pinned row only show up here. The fill
+            // on the server takes from storage directly, so they are usable.
+            for (queued in screen.craftQueue) add(queued.itemId, queued.componentsPatch, queued.availableCount.toLong())
             val sampled = HashSet<String>()
             for (slot in inputSlots) {
                 slot.getItemStacks().forEach { stack ->
                     val id = BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: return@forEach
-                    if (sampled.add(id)) {
-                        val networkCount = screen.repo.countItem(id)
-                        if (networkCount > 0) available.merge(id, networkCount, Long::plus)
-                    }
+                    if (sampled.add(id)) screen.repo.forEachVariant(id) { patch, count -> add(id, patch, count) }
                 }
             }
         }
@@ -281,13 +287,11 @@ class InventoryTerminalTransferHandler :
         val missing = mutableListOf<IRecipeSlotView>()
         for (slot in inputSlots) {
             val candidates = slot.getItemStacks().toList()
-            if (candidates.isEmpty()) continue  // no-ingredient slot, doesn't count as missing
+            if (candidates.isEmpty()) continue  // no-ingredient slot, does not count as missing
             var satisfied = false
             for (stack in candidates) {
                 val id = BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: continue
-                val have = available[id] ?: 0L
-                if (have >= stack.count) {
-                    available[id] = have - stack.count
+                if (takeVariant(available, id, stack.componentsPatch, stack.count.toLong())) {
                     satisfied = true
                     break
                 }
@@ -295,6 +299,40 @@ class InventoryTerminalTransferHandler :
             if (!satisfied) missing.add(slot)
         }
         return missing
+    }
+
+    /** Item id plus components. [DataComponentPatch] compares structurally, so two
+     *  Strength Potions key alike and a Fire Resistance one does not. */
+    private data class VariantKey(val itemId: String, val patch: net.minecraft.core.component.DataComponentPatch)
+
+    /** Takes [need] of [itemId] from [available]: the exact variant when [patch] names
+     *  one, else the plain stock first and any variant after, drawing across variants
+     *  when no single one covers the need. */
+    private fun takeVariant(
+        available: HashMap<VariantKey, Long>,
+        itemId: String,
+        patch: net.minecraft.core.component.DataComponentPatch,
+        need: Long,
+    ): Boolean {
+        if (!patch.isEmpty) {
+            val key = VariantKey(itemId, patch)
+            val have = available[key] ?: 0L
+            if (have < need) return false
+            available[key] = have - need
+            return true
+        }
+        val keys = available.keys.filter { it.itemId == itemId && (available[it] ?: 0L) > 0L }
+            .sortedBy { if (it.patch.isEmpty) 0 else 1 }
+        if (keys.sumOf { available[it] ?: 0L } < need) return false
+        var left = need
+        for (key in keys) {
+            if (left <= 0L) break
+            val have = available[key] ?: 0L
+            val take = minOf(have, left)
+            available[key] = have - take
+            left -= take
+        }
+        return left <= 0L
     }
 }
 
