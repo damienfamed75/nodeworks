@@ -85,6 +85,8 @@ class CraftingCoreBlockEntity(
     val scheduler: CraftScheduler = CraftScheduler(threadCount = 1, executor = opExecutor)
 
     companion object {
+        /** How often an idle CPU tries to move leftover buffer contents to storage. */
+        private const val IDLE_DRAIN_TICKS = 20L
         private var pushDepth = 0
 
         /** True while a Core writes formed and overheat blockstates into its structure.
@@ -189,6 +191,33 @@ class CraftingCoreBlockEntity(
             recalculateCapacity()
         }
         scheduler.tick(level.gameTime)
+        if (level.gameTime % IDLE_DRAIN_TICKS == 0L) drainIdleBuffer(level)
+    }
+
+    /** Items in the buffer with no plan left to deliver them, a job's over-capacity holds
+     *  after its plan ended, a sweep that lost its room, go to network storage once a
+     *  second while the CPU is idle, so nothing sits in an idle buffer longer than storage
+     *  is full. A plan running or queued, a resumed one included, and a scripted craft
+     *  waiting for its callback still own their buffer and are left alone. */
+    private fun drainIdleBuffer(level: ServerLevel) {
+        if (isCrafting || !scheduler.isIdle || scheduler.queuedPlans.isNotEmpty() || drivenBy != null) return
+        if (bufferState.count <= 0L) return
+        val snap = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, worldPosition)
+        var moved = false
+        for ((key, entry) in bufferState.contents()) {
+            var left = entry.count
+            while (left > 0L) {
+                val n = minOf(left, entry.template.maxStackSize.toLong()).toInt()
+                val inserted = damien.nodeworks.script.NetworkStorageHelper.insertItemStack(level, snap, entry.template.copyWithCount(n), null)
+                if (inserted <= 0) break
+                removeFromBuffer(key, inserted.toLong())
+                left -= inserted
+                moved = true
+            }
+        }
+        if (!moved) return
+        if (bufferState.count <= 0L && lastFailureReason.startsWith("Buffer over capacity")) lastFailureReason = ""
+        setChanged()
     }
 
     /** Re-register terminal craft-queue rows for plans restored from NBT.

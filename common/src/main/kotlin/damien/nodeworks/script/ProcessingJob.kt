@@ -455,6 +455,8 @@ class ProcessingJob(
                 if (scheduler.hasActiveJobOnTargets(targets, listOf(self))) return@pollFn false
                 var foundAny = false
                 var snapshot: damien.nodeworks.network.NetworkSnapshot? = null
+                fun network(): damien.nodeworks.network.NetworkSnapshot =
+                    snapshot ?: damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, cpu.blockPos).also { snapshot = it }
                 for (state in wanted) {
                     val typeKey = state.itemId + "|" + state.componentsHash
                     val budget = SWEEP_MAX_PER_TYPE - (taken[typeKey] ?: 0L)
@@ -466,22 +468,27 @@ class ProcessingJob(
                     }
                     for (getter in getters) {
                         val storage = getter.getStorage() ?: continue
+                        // Nothing leaves the machine before storage has shown room for it. A full
+                        // network ends the sweep with the tail still in the machine, where it was
+                        // before the sweep existed, never in a buffer with no plan to drain it.
+                        val probe = try {
+                            PlatformServices.storage.peekStack(storage, filter, null)
+                        } catch (_: Exception) { null } ?: continue
+                        val room = roomInStorage(network(), probe, budget)
+                        if (room <= 0L) return@pollFn true
                         val stacks = try {
-                            PlatformServices.storage.extractStacksByPredicate(storage, filter, budget)
+                            PlatformServices.storage.extractStacksByPredicate(storage, filter, room)
                         } catch (_: Exception) { emptyList() }
                         for (stack in stacks) {
                             if (stack.isEmpty) continue
                             foundAny = true
                             taken.merge(typeKey, stack.count.toLong(), Long::plus)
-                            val network = snapshot
-                                ?: damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, cpu.blockPos)
-                                    .also { snapshot = it }
-                            val inserted = NetworkStorageHelper.insertItemStack(level, network, stack, null)
+                            val inserted = NetworkStorageHelper.insertItemStack(level, network(), stack, null)
                             val left = stack.count - inserted
                             if (left > 0) {
-                                // Storage is full. Back into the machine, and the sweep ends.
-                                // Only a machine that refuses its own output back leaves the
-                                // rest in the buffer, where the player is told about it.
+                                // The room seen a moment ago is gone. Back into the machine, and
+                                // only a machine that refuses its own output leaves the rest in the
+                                // buffer, which the idle CPU drains once storage has room again.
                                 val back = stack.copyWithCount(left)
                                 val returned = PlatformServices.storage.insertItemStack(storage, back)
                                 if (returned < left) {
@@ -501,6 +508,32 @@ class ProcessingJob(
             passive = true,
         )
         scheduler.addPendingJob(self)
+    }
+
+    /** How many of [stack]'s kind the network's Storage Cards would take right now, up to
+     *  [limit]. Asks card by card, skipping cards whose rules refuse the item as the real
+     *  insert would, and stops once [limit] is reached. Shared storage behind several
+     *  cards is asked once. */
+    private fun roomInStorage(
+        snapshot: damien.nodeworks.network.NetworkSnapshot,
+        stack: net.minecraft.world.item.ItemStack,
+        limit: Long,
+    ): Long {
+        var room = 0L
+        val registries = level.registryAccess()
+        val seen = HashSet<net.minecraft.core.BlockPos>()
+        for (card in NetworkTransfer.destinationCards(snapshot, damien.nodeworks.network.ChannelFilter.All)) {
+            if (room >= limit) break
+            val cap = card.capability as? damien.nodeworks.card.StorageSideCapability ?: continue
+            if (!seen.add(cap.adjacentPos)) continue
+            if (!cap.acceptsItem(stack, registries)) continue
+            val dest = NetworkStorageHelper.getStorage(level, card) ?: continue
+            val ask = minOf(limit - room, stack.maxStackSize.toLong()).toInt()
+            room += try {
+                PlatformServices.storage.simulateInsertStack(dest, stack.copyWithCount(ask))
+            } catch (_: Exception) { 0L }
+        }
+        return minOf(room, limit)
     }
 
     /** Two operations finishing in one tick with no bonus look like one with a bonus, so a
