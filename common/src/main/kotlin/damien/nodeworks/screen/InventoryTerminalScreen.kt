@@ -213,7 +213,11 @@ class InventoryTerminalScreen(
     private var channelBtnX = 0
     private var channelBtnY = 0
     private var cachedNetworkColor: Int? = null
-    private var itemStackCache = HashMap<String, ItemStack>()
+    /** A display stack per variant. Keyed by the patch itself, not its Java hash: two
+     *  variants that differ only in small integer values can share a hash, and a hash key
+     *  then showed one row with the other's icon and tooltip. Equality tells them apart. */
+    private data class DisplayStackKey(val itemId: String, val patch: DataComponentPatch)
+    private var itemStackCache = HashMap<DisplayStackKey, ItemStack>()
     // Reused container for JEI hoveredSlot, avoids allocating new SimpleContainer every frame
     private val hoverContainer = net.minecraft.world.SimpleContainer(1)
 
@@ -2007,7 +2011,7 @@ class InventoryTerminalScreen(
      *  in the network grid. Cache key includes the patch hash so a damaged +
      *  pristine variant of the same itemId cache distinctly. */
     private fun getItemStack(itemId: String, patch: DataComponentPatch): ItemStack {
-        val cacheKey = if (patch.isEmpty) itemId else "$itemId:${patch.hashCode()}"
+        val cacheKey = DisplayStackKey(itemId, if (patch.isEmpty) DataComponentPatch.EMPTY else patch)
         return itemStackCache.getOrPut(cacheKey) {
             val id = Identifier.tryParse(itemId) ?: return@getOrPut ItemStack.EMPTY
             val item = BuiltInRegistries.ITEM.getValue(id) ?: return@getOrPut ItemStack.EMPTY

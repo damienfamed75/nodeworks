@@ -155,6 +155,11 @@ object NeoForgeClientSetup {
     }
 
     private fun onClientSetup(event: FMLClientSetupEvent) {
+        // The variant hash encodes components through their codecs. The client has no
+        // server on a dedicated server, so it reads registries from the level it is in.
+        damien.nodeworks.script.BufferKey.clientRegistryProvider = {
+            net.minecraft.client.Minecraft.getInstance().level?.registryAccess()
+        }
         event.enqueueWork {
             // Initialize client config
             damien.nodeworks.config.ClientConfig.init(net.neoforged.fml.loading.FMLPaths.CONFIGDIR.get().toFile())

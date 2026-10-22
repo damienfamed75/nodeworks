@@ -60,6 +60,11 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
         PlatformServices.menu = NeoForgeMenuService()
         PlatformServices.storage = damien.nodeworks.platform.CompositeStorageService(NeoForgeStorageService())
         PlatformServices.modState = NeoForgeModStateService()
+        // The variant hash encodes components through their codecs, which needs the
+        // server's registries. Null before the server exists, the hash then falls back.
+        damien.nodeworks.script.BufferKey.registryProvider = {
+            net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer()?.registryAccess()
+        }
         PlatformServices.fakePlayer = damien.nodeworks.platform.NeoForgeFakePlayerService()
         PlatformServices.crafting = damien.nodeworks.platform.NeoForgeCraftingHookService()
         PlatformServices.serverNetworking = NeoForgeServerNetworkingService()
@@ -1186,6 +1191,9 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
         }
         damien.nodeworks.script.NetworkInventoryCache.evictOrphans(tickCount.toLong())
         damien.nodeworks.script.NetworkRateLimits.evictIdle(tickCount.toLong())
+        // One slice of the variant hash memo's sweep, so it progresses on a quiet network
+        // and never has to walk the whole memo in one go.
+        damien.nodeworks.script.BufferKey.sweepSlice()
         damien.nodeworks.block.entity.TransferCardTicker.tickAll(event.server.allLevels)
         for (level in event.server.allLevels) {
             damien.nodeworks.script.MonitorUpdateHelper.tick(level, tickCount)

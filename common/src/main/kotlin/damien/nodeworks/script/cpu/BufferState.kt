@@ -253,8 +253,11 @@ class BufferState {
                 val cnt = entryTag.getLong("count").orElse(0L)
                 if (cnt <= 0L) continue
                 val derived = BufferKey.of(stack)
+                // The key is this session's hash of the template, never the saved one, which
+                // an older build may have written differently. The one exception is a crafted
+                // output in its item's plain bucket, which the saved empty hash marks.
                 val hash = entryTag.getString("hash").orElse(null)
-                val key = if (hash != null) BufferKey.Key(derived.itemId, hash) else derived
+                val key = if (hash != null && hash.isEmpty()) BufferKey.Key(derived.itemId, "") else derived
                 items[key] = Entry(stack.copyWithCount(1), cnt)
             }
         } else {
