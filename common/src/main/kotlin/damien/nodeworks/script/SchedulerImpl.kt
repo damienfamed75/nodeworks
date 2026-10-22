@@ -39,7 +39,15 @@ class SchedulerImpl(
         val pollFn: () -> Boolean,
         var timeoutAt: Long = Long.MAX_VALUE,
         var onComplete: ((Boolean) -> Unit)? = null,
-        var label: String = ""
+        var label: String = "",
+        /** Machines (packed BlockPos) this job pulls from, for contention checks:
+         *  greedy behaviors (surplus vacuuming, the post-completion sweep) stand
+         *  down while another ACTIVE job shares a target, so they can never starve
+         *  a successor craft on the same machine. Empty = unknown targets, which
+         *  never counts as sole ownership. */
+        val targets: Set<Long> = emptySet(),
+        /** Passive jobs (sweeps) never count as contention themselves. */
+        val passive: Boolean = false,
     )
 
     private val tasks = mutableListOf<ScheduledTask>()
@@ -114,6 +122,18 @@ class SchedulerImpl(
 
     fun addPendingJob(job: PendingJob) {
         pendingJobs.add(job)
+    }
+
+    /** True while any ACTIVE (non-passive) pending job other than those in
+     *  [excluding] pulls from one of [targets]. The greedy paths (surplus
+     *  vacuuming, sweeps) stand down while this holds. */
+    fun hasActiveJobOnTargets(targets: Set<Long>, excluding: Collection<PendingJob> = emptyList()): Boolean {
+        if (targets.isEmpty()) return false
+        for (job in pendingJobs) {
+            if (job.passive || excluding.any { it === job }) continue
+            if (job.targets.any(targets::contains)) return true
+        }
+        return false
     }
 
     /** Remove a pending poll registered via [addPendingJob]. Returns true if it was

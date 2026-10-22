@@ -12,6 +12,21 @@ import org.luaj.vm2.lib.*
  *  machine's own pace and has no ceiling, a slow machine is never judged early. */
 private const val MIN_QUIET_TICKS = 20L
 
+/** Extra items past the declared counts one poll may vacuum from a machine the job
+ *  SOLELY owns, so bonus-multiplied outputs (a SAG mill with grinding balls) keep
+ *  the output slots clear instead of stalling the machine. A cap, not a target:
+ *  it keeps a pull aimed at an unbounded storage (an ME interface as the
+ *  "machine") from churning that storage's whole stock through the split. */
+private const val SURPLUS_HEADROOM = 64L
+
+/** The post-completion sweep's bounds: its hard lifetime, how often it polls, and
+ *  the most of each output type it may take overall, so a sweep against a
+ *  network-backed target can never drain more than the tail a machine could
+ *  plausibly still owe. */
+private const val SWEEP_MAX_TICKS = 300L
+private const val SWEEP_POLL_INTERVAL = 2L
+private const val SWEEP_MAX_PER_TYPE = 256L
+
 /**
  * Represents a processing job context passed as the first argument to handler functions.
  *
@@ -141,6 +156,12 @@ class ProcessingJob(
      *  deadlines along with [deadlineTick]. */
     private val pulls: MutableList<SchedulerImpl.PendingJob> = mutableListOf()
 
+    /** The machines this job pulls from (packed BlockPos), captured at pull time.
+     *  Drives the sole-ownership check for the greedy paths (surplus vacuuming and
+     *  the post-completion sweep). Empty on the resume path, which disables both:
+     *  exactly the pre-sweep behavior. */
+    private var activeTargets: Set<Long> = emptySet()
+
     /** Called by the CPU at the start of each handler invocation so the pull list
      *  only reflects *this* invocation's registrations (not previous attempts). */
     fun resetInvocationPulls() { invocationPulls.clear() }
@@ -194,6 +215,7 @@ class ProcessingJob(
                     }
                 }
                 if (getters.isEmpty()) throw LuaError("job:pull() requires at least one card argument")
+                activeTargets = pullTargets.map { it.first.asLong() }.toSet()
 
                 // Try immediate extraction
                 if (tryExtract(getters)) {
@@ -220,7 +242,8 @@ class ProcessingJob(
                     pollFn = { tryExtract(getters) },
                     timeoutAt = scheduler.currentTick + timeoutTicks,
                     onComplete = { success -> pendingResult.complete(success) },
-                    label = "pull:${api.name}"
+                    label = "pull:${api.name}",
+                    targets = activeTargets,
                 )
                 scheduler.addPendingJob(pending)
                 invocationPulls.add(pending)
@@ -281,6 +304,12 @@ class ProcessingJob(
         fun network(): damien.nodeworks.network.NetworkSnapshot =
             snapshot ?: damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, cpu.blockPos).also { snapshot = it }
 
+        // Sole ownership of the pulled machines (no other active pull shares one)
+        // unlocks the greedy paths: vacuuming bonus-multiplied surplus past the
+        // declared counts, and the post-completion sweep. Contended machines keep
+        // the capped behavior so concurrent pulls can never eat each other's share.
+        val soleOwner = activeTargets.isNotEmpty() && !scheduler.hasActiveJobOnTargets(activeTargets, pulls)
+
         for (group in groups) {
             val required = group.required?.takeIf { it.amount > 0L }
             val optional = if (stale) null else group.optional?.takeIf { it.amount > 0L }
@@ -297,7 +326,7 @@ class ProcessingJob(
                 sid == state.itemId &&
                     damien.nodeworks.script.BufferKey.componentsHash(stack) == state.componentsHash
             }
-            var want = reqLeft + optLeft
+            var want = reqLeft + optLeft + (if (soleOwner) SURPLUS_HEADROOM else 0L)
             val found = ArrayList<Pair<net.minecraft.world.item.ItemStack, damien.nodeworks.platform.ItemStorageHandle>>()
             for (getter in getters) {
                 if (want <= 0L) break
@@ -315,21 +344,14 @@ class ProcessingJob(
             if (k <= 0L) continue
             noteProgress()
 
-            // Split this poll's haul. Both sides present: the machine finished
-            // ceil(k / perOp) operations this tick, each of which made its guaranteed
-            // count, so that many are guaranteed and the rest are bonuses.
-            val toRequired = when {
-                required == null -> 0L
-                optional == null -> minOf(k, reqLeft)
-                else -> {
-                    val perOp = group.perOpRequired + group.perOpOptional
-                    val ops = (k + perOp - 1) / perOp
-                    minOf(k, ops * group.perOpRequired, reqLeft)
-                }
-            }
-            val toOptional = minOf(k - toRequired, optLeft)
-            // Anything past both counts stays with the craft, the buffer flush returns it.
-            var keep = k - toOptional
+            // Split this poll's haul (see [OutputSplit]): guaranteed copies stay
+            // with the craft, declared optionals AND any surplus past both counts
+            // (bonus multipliers, grinding balls) go to network storage, keeping
+            // the machine's output slots clear so it never stalls full.
+            val split = OutputSplit.compute(k, reqLeft, optLeft, group.perOpRequired, group.perOpOptional)
+            val toRequired = split.toRequired
+            val toOptional = split.toOptional
+            var keep = toRequired
             for ((stack, source) in found) {
                 val amount = stack.count.toLong()
                 val kept = minOf(amount, keep)
@@ -356,6 +378,9 @@ class ProcessingJob(
         if (remaining.isEmpty() || (!stale && borrowShortfall(::network))) {
             cpu.completePendingOp()
             cpu.clearOpResume(opId)
+            // The craft is complete THIS tick (no latency added); the sweep only
+            // collects what the machine finishes afterwards.
+            if (!stale) spawnSweeper(getters)
             return true
         }
         // Update per-op resume info so a save mid-stream resumes with the right remaining count.
@@ -385,6 +410,97 @@ class ProcessingJob(
                 CraftingCoreBlockEntity.ResumeOutput(it.template.copyWithCount(1), it.amount, perOp(it))
             },
         )
+    }
+
+    /** The opposite misfiling of [borrowShortfall]'s: a bonus-multiplied machine (a SAG
+     *  mill with grinding balls) inflates a poll's haul past the per-operation bound, so
+     *  bonus copies get filed as GUARANTEED and the job completes while the machine is
+     *  still finishing its last operations. This sweep keeps draining the declared
+     *  output types into NETWORK STORAGE until the machine has been quiet for the job's
+     *  own measured pace, so the tail never strands in the output slots.
+     *
+     *  Safety properties, in order of importance:
+     *    * PASSIVE: any active pull sharing a machine makes it stand down that poll
+     *      (the tail feeds that pull instead), so a stocker loop's immediate next
+     *      craft is never starved into its timeout.
+     *    * BOUNDED: a hard lifetime ([SWEEP_MAX_TICKS]) and a per-type take ceiling
+     *      ([SWEEP_MAX_PER_TYPE]), so a network-backed target (an ME interface) can
+     *      never be churned beyond a plausible tail.
+     *    * CONSERVING: finds go to network storage. What storage refuses goes back into
+     *      the machine it came from and the sweep ends, the machine then keeps its tail
+     *      exactly as it did before the sweep existed. The op is complete, so nothing
+     *      would ever flush an idle buffer the rest was forced into. A removed CPU
+     *      aborts before touching the machine.
+     *  Not persisted across reloads: a tail lost to one sits in the machine exactly
+     *  as it did before the sweep existed. */
+    private fun spawnSweeper(getters: List<CardHandle.StorageGetter>) {
+        if (activeTargets.isEmpty()) return
+        // Captured now, the job object may serve another invocation while the sweep runs.
+        val targets = activeTargets
+        val wanted = groups.mapNotNull { it.required ?: it.optional }
+        if (wanted.isEmpty()) return
+        val quiet = quietTicks
+        val born = scheduler.currentTick
+        var lastFind = born
+        var lastPoll = Long.MIN_VALUE
+        val taken = HashMap<String, Long>()
+        lateinit var self: SchedulerImpl.PendingJob
+        self = SchedulerImpl.PendingJob(
+            pollFn = pollFn@{
+                val now = scheduler.currentTick
+                if (cpu.isRemoved) return@pollFn true
+                if (now - lastFind >= quiet) return@pollFn true
+                if (now - lastPoll < SWEEP_POLL_INTERVAL) return@pollFn false
+                lastPoll = now
+                if (scheduler.hasActiveJobOnTargets(targets, listOf(self))) return@pollFn false
+                var foundAny = false
+                var snapshot: damien.nodeworks.network.NetworkSnapshot? = null
+                for (state in wanted) {
+                    val typeKey = state.itemId + "|" + state.componentsHash
+                    val budget = SWEEP_MAX_PER_TYPE - (taken[typeKey] ?: 0L)
+                    if (budget <= 0L) continue
+                    val filter: (net.minecraft.world.item.ItemStack) -> Boolean = { stack ->
+                        val sid = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
+                        sid == state.itemId &&
+                            damien.nodeworks.script.BufferKey.componentsHash(stack) == state.componentsHash
+                    }
+                    for (getter in getters) {
+                        val storage = getter.getStorage() ?: continue
+                        val stacks = try {
+                            PlatformServices.storage.extractStacksByPredicate(storage, filter, budget)
+                        } catch (_: Exception) { emptyList() }
+                        for (stack in stacks) {
+                            if (stack.isEmpty) continue
+                            foundAny = true
+                            taken.merge(typeKey, stack.count.toLong(), Long::plus)
+                            val network = snapshot
+                                ?: damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, cpu.blockPos)
+                                    .also { snapshot = it }
+                            val inserted = NetworkStorageHelper.insertItemStack(level, network, stack, null)
+                            val left = stack.count - inserted
+                            if (left > 0) {
+                                // Storage is full. Back into the machine, and the sweep ends.
+                                // Only a machine that refuses its own output back leaves the
+                                // rest in the buffer, where the player is told about it.
+                                val back = stack.copyWithCount(left)
+                                val returned = PlatformServices.storage.insertItemStack(storage, back)
+                                if (returned < left) {
+                                    cpu.addToBufferForced(back.copyWithCount(left - returned), (left - returned).toLong(), true)
+                                }
+                                return@pollFn true
+                            }
+                        }
+                    }
+                }
+                if (foundAny) lastFind = now
+                false
+            },
+            timeoutAt = born + SWEEP_MAX_TICKS,
+            label = "sweep:${api.name}",
+            targets = targets,
+            passive = true,
+        )
+        scheduler.addPendingJob(self)
     }
 
     /** Two operations finishing in one tick with no bonus look like one with a bonus, so a
@@ -445,6 +561,9 @@ class ProcessingJob(
         getters: List<CardHandle.StorageGetter>,
         pullTargets: List<Pair<net.minecraft.core.BlockPos, net.minecraft.core.Direction>> = emptyList(),
     ) {
+        // The resume path passes no targets, which keeps the greedy paths
+        // (surplus vacuum, sweep) off for it: the pre-sweep behavior.
+        activeTargets = pullTargets.map { it.first.asLong() }.toSet()
         if (tryExtract(getters)) {
             pendingResult.complete(true)
             return
@@ -464,7 +583,8 @@ class ProcessingJob(
             pollFn = { tryExtract(getters) },
             timeoutAt = scheduler.currentTick + timeoutTicks,
             onComplete = { success -> pendingResult.complete(success) },
-            label = "resume:${api.name}"
+            label = "resume:${api.name}",
+            targets = activeTargets,
         )
         scheduler.addPendingJob(pending)
         pulls.add(pending)
