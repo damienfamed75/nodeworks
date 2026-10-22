@@ -1394,6 +1394,8 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
 class NeoForgeModStateService : ModStateService {
     override val tickCount: Long get() = Nodeworks.tickCount
 
+    override fun isModLoaded(modId: String): Boolean = net.neoforged.fml.ModList.get().isLoaded(modId)
+
     override fun isScriptRunning(level: ServerLevel, pos: BlockPos): Boolean {
         return NeoForgeTerminalPackets.getEngine(level, pos)?.isRunning() == true
     }

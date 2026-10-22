@@ -119,6 +119,8 @@ class VirtualSlotGrid(
             val ix = slot.x + 1
             val iy = slot.y + 1
 
+            // Rarity border first, under the item, as the mod draws it for a real Slot.
+            damien.nodeworks.compat.ItemBordersCompat.renderBorder(graphics, stack, ix, iy)
             graphics.renderItem(stack, ix, iy)
 
             val customCount = formatter?.invoke(tempSlot)

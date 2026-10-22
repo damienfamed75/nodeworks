@@ -18,6 +18,11 @@ repositories {
         name = "Jared"
         url = uri("https://maven.blamejared.com/")
     }
+    maven {
+        name = "Modrinth"
+        url = uri("https://api.modrinth.com/maven")
+        content { includeGroup("maven.modrinth") }
+    }
 }
 
 dependencies {
@@ -28,6 +33,10 @@ dependencies {
 
     // JEI API (compile-only, optional integration)
     compileOnly("mezz.jei:jei-${providers.gradleProperty("minecraft_version").get()}-common-api:${providers.gradleProperty("jei_version").get()}")
+
+    // Item Borders, optional. Only its loader-neutral ItemBorders class is referenced, see
+    // damien.nodeworks.compat.ItemBordersCompat.
+    compileOnly("maven.modrinth:item-borders:${providers.gradleProperty("itemborders_version").get()}")
 
     // JUnit 5 for pure-logic unit tests. Tests that don't need a Minecraft world
     // (parsers, registries, algorithms like the polling round-robin) live in

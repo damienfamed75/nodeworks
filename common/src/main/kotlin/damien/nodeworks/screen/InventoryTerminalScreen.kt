@@ -745,6 +745,7 @@ class InventoryTerminalScreen(
             if (!stack.isEmpty) {
                 if (slot.availableCount <= 0) {
                     // Pending: gray overlay + dim item + queued count in gray (0.5x scale)
+                    damien.nodeworks.compat.ItemBordersCompat.renderBorder(graphics, stack, sx, pinnedY)
                     graphics.renderItem(stack, sx, pinnedY)
                     graphics.fill(sx, pinnedY, sx + 16, pinnedY + 16, 0x80000000.toInt())
                     graphics.pose().pushMatrix()
@@ -763,6 +764,7 @@ class InventoryTerminalScreen(
                     graphics.pose().popMatrix()
                 } else {
                     // Items available, render normally with available count (0.5x scale)
+                    damien.nodeworks.compat.ItemBordersCompat.renderBorder(graphics, stack, sx, pinnedY)
                     graphics.renderItem(stack, sx, pinnedY)
                     if (slot.availableCount > 1) {
                         val countStr = formatCount(slot.availableCount.toLong())

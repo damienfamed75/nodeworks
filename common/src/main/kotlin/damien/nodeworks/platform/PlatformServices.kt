@@ -720,6 +720,9 @@ interface ModStateService {
     /** Current server tick count. */
     val tickCount: Long
 
+    /** True when the mod with [modId] is installed, for optional integrations. */
+    fun isModLoaded(modId: String): Boolean
+
     /** Check if a script engine is running at the given terminal position. */
     fun isScriptRunning(level: ServerLevel, pos: BlockPos): Boolean
 
