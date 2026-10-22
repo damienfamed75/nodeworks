@@ -406,6 +406,8 @@ class ProcessingSetTransferHandler : IUniversalRecipeTransferHandler<ProcessingS
                 SetProcessingApiDataPayload(container.containerId, "clear", 0, 0)
             )
             container.clearAll()
+            // The recipe lands from the top row, so show the top row.
+            container.scrollRow = 0
             // Input role slots → the Processing Set's input section. We read roles via
             //  IRecipeSlotsView so this works for any recipe category (crafting / smelting
             //  / modded machine), not just CraftingRecipe.
