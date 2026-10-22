@@ -683,6 +683,7 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                             menu.markDirty()
                         }
                         "optional" -> menu.setOutputOptional(payload.slotIndex, payload.value != 0)
+                        "clear" -> menu.clearAll()
                     }
                 }
             }
@@ -932,6 +933,21 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                 val serverPlayer = player as? net.minecraft.server.level.ServerPlayer ?: return@enqueueWork
                 val packet = net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket(CraftPreviewResponsePayload(payload.containerId, tree))
                 serverPlayer.connection.send(packet)
+            }
+        }
+
+        registrar.playToServer(
+            damien.nodeworks.network.ProcessingSetGhostClickPayload.TYPE,
+            damien.nodeworks.network.ProcessingSetGhostClickPayload.CODEC,
+        ) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.ProcessingSetScreenHandler && menu.containerId == payload.containerId &&
+                    (payload.button == 0 || payload.button == 1)
+                ) {
+                    menu.applyGhostClick(payload.index, payload.isOutput, payload.button == 1)
+                }
             }
         }
 

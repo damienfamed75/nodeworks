@@ -395,14 +395,24 @@ class ProcessingSetTransferHandler : IUniversalRecipeTransferHandler<ProcessingS
         maxTransfer: Boolean,
         doTransfer: Boolean
     ): IRecipeTransferError? {
+        val inputSlots = recipeSlots.getSlotViews(RecipeIngredientRole.INPUT)
+        val outputSlots = recipeSlots.getSlotViews(RecipeIngredientRole.OUTPUT)
+        val inputOverflow = inputSlots.size - ProcessingSetScreenHandler.INPUT_SLOTS
+        val outputOverflow = outputSlots.size - ProcessingSetScreenHandler.OUTPUT_SLOTS
         if (doTransfer) {
+            // One packet empties every cell, then only the recipe's slots are written, by
+            // backing index, so the transfer never depends on where the window is scrolled.
+            PlatformServices.clientNetworking.sendToServer(
+                SetProcessingApiDataPayload(container.containerId, "clear", 0, 0)
+            )
+            container.clearAll()
             // Input role slots → the Processing Set's input section. We read roles via
             //  IRecipeSlotsView so this works for any recipe category (crafting / smelting
             //  / modded machine), not just CraftingRecipe.
-            val inputSlots = recipeSlots.getSlotViews(RecipeIngredientRole.INPUT)
-            for (index in 0 until ProcessingSetScreenHandler.INPUT_SLOTS) {
+            for (index in 0 until minOf(inputSlots.size, ProcessingSetScreenHandler.INPUT_SLOTS)) {
                 val slotView = inputSlots.getOrNull(index)
                 val (stack, count) = extractStackAndCount(slotView)
+                if (stack.isEmpty) continue
                 PlatformServices.clientNetworking.sendToServer(
                     SetProcessingApiSlotPayload(container.containerId, index, stack)
                 )
@@ -424,12 +434,13 @@ class ProcessingSetTransferHandler : IUniversalRecipeTransferHandler<ProcessingS
                 }
             }
 
-            val outputSlots = recipeSlots.getSlotViews(RecipeIngredientRole.OUTPUT)
             // The mod's recipe object says which outputs are chance-based, JEI itself doesn't.
-            val shown = (0 until ProcessingSetScreenHandler.OUTPUT_SLOTS).map { extractStackAndCount(outputSlots.getOrNull(it)).first }
+            val shownCount = minOf(outputSlots.size, ProcessingSetScreenHandler.OUTPUT_SLOTS)
+            val shown = (0 until shownCount).map { extractStackAndCount(outputSlots.getOrNull(it)).first }
             val chance = ChanceOutputs.detect(recipe, shown)
-            for (index in 0 until ProcessingSetScreenHandler.OUTPUT_SLOTS) {
+            for (index in 0 until shownCount) {
                 val (stack, count) = extractStackAndCount(outputSlots.getOrNull(index))
+                if (stack.isEmpty) continue
                 PlatformServices.clientNetworking.sendToServer(
                     SetProcessingApiSlotPayload(
                         container.containerId,
@@ -443,16 +454,30 @@ class ProcessingSetTransferHandler : IUniversalRecipeTransferHandler<ProcessingS
             }
             // Marks go after every slot payload, so the server judges them against the whole
             // grid, and never leave a set with no guaranteed output.
-            val marks = BooleanArray(ProcessingSetScreenHandler.OUTPUT_SLOTS) { chance[it] && !shown[it].isEmpty }
+            val marks = BooleanArray(shownCount) { chance.getOrElse(it) { false } && !shown[it].isEmpty }
             if (shown.indices.none { !shown[it].isEmpty && !marks[it] }) {
                 shown.indices.firstOrNull { !shown[it].isEmpty }?.let { marks[it] = false }
             }
-            for (index in 0 until ProcessingSetScreenHandler.OUTPUT_SLOTS) {
+            for (index in 0 until shownCount) {
                 container.outputOptional[index] = marks[index]
                 if (marks[index]) {
                     PlatformServices.clientNetworking.sendToServer(
                         SetProcessingApiDataPayload(container.containerId, "optional", index, 1)
                     )
+                }
+            }
+        }
+        // A recipe wider than the set still transfers what fits. The rest is named, so the
+        // player knows what the machine will also want.
+        if (inputOverflow > 0 || outputOverflow > 0) {
+            val parts = ArrayList<String>(2)
+            if (inputOverflow > 0) parts += "$inputOverflow more input" + (if (inputOverflow == 1) "" else "s")
+            if (outputOverflow > 0) parts += "$outputOverflow more output" + (if (outputOverflow == 1) "" else "s")
+            val message = Component.literal("This recipe has " + parts.joinToString(" and ") + " than a Processing Set holds. The first ones were set.")
+            return object : IRecipeTransferError {
+                override fun getType(): IRecipeTransferError.Type = IRecipeTransferError.Type.COSMETIC
+                override fun getTooltip(tooltip: mezz.jei.api.gui.builder.ITooltipBuilder) {
+                    tooltip.add(message)
                 }
             }
         }
@@ -506,20 +531,14 @@ class ProcessingSetGhostHandler : IGhostIngredientHandler<ProcessingSetScreen> {
         if (itemIngredient !is ItemStack) return targets
 
         val menu = gui.menu
-        // Input slots (0..INPUT_SLOTS-1)
-        for (i in 0 until ProcessingSetScreenHandler.INPUT_SLOTS) {
+        // The window cells. Each target remembers its window slot and maps it to the
+        // backing cell when the drop lands, so the drop goes where the player sees it
+        // whatever the grid is scrolled to.
+        for (i in 0 until ProcessingSetScreenHandler.WINDOW_SLOTS) {
             val slot = menu.slots[i]
             val screenX = gui.getLeft() + slot.x
             val screenY = gui.getTop() + slot.y
             targets.add(GhostTarget(gui, i, Rect2i(screenX, screenY, 16, 16)))
-        }
-        // Output slots (INPUT_SLOTS .. INPUT_SLOTS + OUTPUT_SLOTS - 1)
-        for (i in 0 until ProcessingSetScreenHandler.OUTPUT_SLOTS) {
-            val slotIndex = ProcessingSetScreenHandler.INPUT_SLOTS + i
-            val slot = menu.slots[slotIndex]
-            val screenX = gui.getLeft() + slot.x
-            val screenY = gui.getTop() + slot.y
-            targets.add(GhostTarget(gui, slotIndex, Rect2i(screenX, screenY, 16, 16)))
         }
         return targets
     }
@@ -528,7 +547,7 @@ class ProcessingSetGhostHandler : IGhostIngredientHandler<ProcessingSetScreen> {
 
     private class GhostTarget<I : Any>(
         private val gui: ProcessingSetScreen,
-        private val slotIndex: Int,
+        private val windowSlot: Int,
         private val area: Rect2i
     ) : IGhostIngredientHandler.Target<I> {
 
@@ -536,6 +555,7 @@ class ProcessingSetGhostHandler : IGhostIngredientHandler<ProcessingSetScreen> {
 
         override fun accept(ingredient: I) {
             if (ingredient !is ItemStack || ingredient.isEmpty) return
+            val slotIndex = gui.backingLinearIndex(windowSlot)
             // Carry the full stack (components and all) so dragging a
             // Potion of Strength from JEI lands as the actual variant, not
             // a bare uncraftable potion. The server's setSlotFromStack

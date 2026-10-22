@@ -2,8 +2,6 @@ package damien.nodeworks.screen
 
 import damien.nodeworks.card.ProcessingSet
 import damien.nodeworks.registry.ModScreenHandlers
-import net.minecraft.core.registries.BuiltInRegistries
-import net.minecraft.resources.Identifier
 import net.minecraft.world.Container
 import net.minecraft.world.InteractionHand
 import net.minecraft.world.SimpleContainer
@@ -17,12 +15,23 @@ import net.minecraft.world.item.ItemStack
 
 /**
  * Screen handler for the Processing Set editor.
- * Ghost slots: 9 inputs (3x3) + 3 outputs, with count/timeout data.
  *
- * ContainerData layout (15 slots):
- *   0-8:  input counts
- *   9-11: output counts
- *   12:   timeout
+ * The recipe lives in two backing containers, 27 inputs as a 3 wide by 9 tall grid and 9
+ * outputs as a column. The screen shows a 3x3 window of the inputs and 3 of the outputs
+ * and scrolls them on the client alone, the way the creative inventory scrolls its items:
+ *
+ *  - The window cells are vanilla slots at fixed positions over a [WindowView], which on
+ *    the client reads the backing grid at the screen's scroll offset and on the server is
+ *    always empty. The view ignores writes, so vanilla's sync of the server's empty window
+ *    cannot touch the client's backing grid.
+ *  - The backing grids are exposed through hidden slots placed off screen, so vanilla's
+ *    per-slot sync carries every cell to every viewer and two players editing one card
+ *    stay in step, each with their own window.
+ *  - A click on a window cell never reaches [clicked]. The screen maps it to a backing
+ *    index and sends it as a packet, the server applies [applyGhostClick], and the client
+ *    applies the same rule to its own copy at once.
+ *
+ * ContainerData layout: 0..26 input counts, 27..35 output counts, 36 timeout.
  */
 class ProcessingSetScreenHandler(
     syncId: Int,
@@ -42,12 +51,12 @@ class ProcessingSetScreenHandler(
     var serial: Boolean = false
     var fuzzy: Boolean = false
 
-    /** Tag each input slot accepts any member of while [fuzzy] is on, null for exact. Set
-     *  from a JEI transfer, cleared whenever the slot's item changes. */
+    /** Tag each input cell accepts any member of while [fuzzy] is on, null for exact. Set
+     *  from a JEI transfer, cleared whenever the cell's item changes. By backing index. */
     val inputTags: Array<String?> = arrayOfNulls(INPUT_SLOTS)
 
-    /** Output slots the machine only sometimes fills. Toggled by right-clicking the slot
-     *  with an empty cursor, cleared when the slot's item changes. */
+    /** Output cells the machine only sometimes fills. Toggled by right-clicking the cell
+     *  with an empty cursor, cleared when the cell's item changes. By backing index. */
     val outputOptional: BooleanArray = BooleanArray(OUTPUT_SLOTS)
 
     /** Set true the first time a user action mutates configurable state.
@@ -57,19 +66,53 @@ class ProcessingSetScreenHandler(
      *  handler to a split-off copy. */
     private var dirty: Boolean = false
 
+    /** The windows the screen shows, see [WindowView]. The screen owns the offset. */
+    val inputWindow = WindowView(inputGrid, INPUT_COLS, saveMode is SaveMode.ClientDummy)
+    val outputWindow = WindowView(outputGrid, 1, saveMode is SaveMode.ClientDummy)
+
+    /** The row both windows start at. Client only, nothing reads it on the server. */
+    var scrollRow: Int
+        get() = inputWindow.offsetRow
+        set(value) {
+            val row = value.coerceIn(0, MAX_SCROLL)
+            inputWindow.offsetRow = row
+            outputWindow.offsetRow = row
+        }
+
+    /** The backing input cell the last shift-click from the inventory filled, or -1. The
+     *  screen reads and clears it to scroll that cell into view. */
+    var lastQuickMoveTarget: Int = -1
+
     val inputCounts: IntArray get() = IntArray(INPUT_SLOTS) { data.get(it) }
     val outputCounts: IntArray get() = IntArray(OUTPUT_SLOTS) { data.get(INPUT_SLOTS + it) }
     val timeout: Int get() = data.get(DATA_TIMEOUT)
 
     companion object {
-        const val INPUT_SLOTS = 9
-        const val OUTPUT_SLOTS = 3
-        const val TOTAL_GHOST_SLOTS = INPUT_SLOTS + OUTPUT_SLOTS // 12
-        const val DATA_TIMEOUT = INPUT_SLOTS + OUTPUT_SLOTS // index 12
-        const val DATA_COUNT = DATA_TIMEOUT + 1 // 13
+        const val INPUT_COLS = 3
+        const val INPUT_ROWS = 9
+        const val OUTPUT_ROWS = 9
+        const val VISIBLE_ROWS = 3
+        /** Backing sizes. Payload indices and the tag and optional arrays use these. */
+        const val INPUT_SLOTS = INPUT_COLS * INPUT_ROWS
+        const val OUTPUT_SLOTS = OUTPUT_ROWS
+        /** Linear backing space the slot packets address: inputs then outputs. */
+        const val TOTAL_GHOST_SLOTS = INPUT_SLOTS + OUTPUT_SLOTS
+        /** Window cells, menu slot ids 0 until this: inputs first, then outputs. */
+        const val VISIBLE_INPUT_SLOTS = INPUT_COLS * VISIBLE_ROWS
+        const val VISIBLE_OUTPUT_SLOTS = VISIBLE_ROWS
+        const val WINDOW_SLOTS = VISIBLE_INPUT_SLOTS + VISIBLE_OUTPUT_SLOTS
+        /** Menu slot id of the first player inventory slot. Hidden backing slots sit between. */
+        const val PLAYER_SLOT_START = WINDOW_SLOTS + TOTAL_GHOST_SLOTS
+        /** The grid and the column are the same height and scroll together under one bar. */
+        const val MAX_SCROLL = INPUT_ROWS - VISIBLE_ROWS
+        const val DATA_TIMEOUT = TOTAL_GHOST_SLOTS
+        const val DATA_COUNT = DATA_TIMEOUT + 1
         /** Server-side cap on per-set tick timeout. Mirrors [ProcessingSetScreen.TIMEOUT_MAX]
          *  so a tampered client packet can't push the value past the design ceiling. */
         const val TIMEOUT_MAX = 999
+        /** Per-cell count ceiling. ContainerData travels as shorts, so anything above this
+         *  would wrap on the wire, and the click path already stops here. */
+        const val MAX_COUNT = Short.MAX_VALUE.toInt()
 
         fun createHandheld(syncId: Int, playerInventory: Inventory, hand: InteractionHand, stack: ItemStack): ProcessingSetScreenHandler {
             val registries = playerInventory.player.level().registryAccess()
@@ -83,7 +126,7 @@ class ProcessingSetScreenHandler(
             for ((i, ingr) in inputs.withIndex()) {
                 val slot = inputSlots.getOrElse(i) { i }
                 if (slot !in 0 until INPUT_SLOTS) continue
-                // Stash the full component-bearing stack with count=1 (ghost slot
+                // Stash the full component-bearing stack with count=1 (ghost cell
                 // capacity). The recipe's authoritative count rides in [data].
                 inputGrid.setItem(slot, ingr.stack.copyWithCount(1))
             }
@@ -98,17 +141,17 @@ class ProcessingSetScreenHandler(
             val data = object : ContainerData {
                 private val values = IntArray(DATA_COUNT)
                 init {
-                    // Default all slot counts to 1, empty slots also get 1 so edits
+                    // Default all cell counts to 1, empty cells also get 1 so edits
                     // don't start from 0 and force the user to re-enter everything.
                     for (i in 0 until INPUT_SLOTS) values[i] = 1
                     for (i in 0 until OUTPUT_SLOTS) values[INPUT_SLOTS + i] = 1
                     for ((i, ingr) in inputs.withIndex()) {
                         val slot = inputSlots.getOrElse(i) { i }
-                        if (slot in 0 until INPUT_SLOTS) values[slot] = ingr.count
+                        if (slot in 0 until INPUT_SLOTS) values[slot] = ingr.count.coerceIn(1, MAX_COUNT)
                     }
                     for ((i, ingr) in outputs.withIndex()) {
                         val slot = outputSlots.getOrElse(i) { i }
-                        if (slot in 0 until OUTPUT_SLOTS) values[INPUT_SLOTS + slot] = ingr.count
+                        if (slot in 0 until OUTPUT_SLOTS) values[INPUT_SLOTS + slot] = ingr.count.coerceIn(1, MAX_COUNT)
                     }
                     values[DATA_TIMEOUT] = timeout
                 }
@@ -152,11 +195,11 @@ class ProcessingSetScreenHandler(
             for (i in 0 until OUTPUT_SLOTS) data.set(INPUT_SLOTS + i, 1)
             for ((i, ingr) in openData.inputs.withIndex()) {
                 val slot = openData.inputSlots.getOrElse(i) { i }
-                if (slot in 0 until INPUT_SLOTS) data.set(slot, ingr.count)
+                if (slot in 0 until INPUT_SLOTS) data.set(slot, ingr.count.coerceIn(1, MAX_COUNT))
             }
             for ((i, ingr) in openData.outputs.withIndex()) {
                 val slot = openData.outputSlots.getOrElse(i) { i }
-                if (slot in 0 until OUTPUT_SLOTS) data.set(INPUT_SLOTS + slot, ingr.count)
+                if (slot in 0 until OUTPUT_SLOTS) data.set(INPUT_SLOTS + slot, ingr.count.coerceIn(1, MAX_COUNT))
             }
             data.set(DATA_TIMEOUT, openData.timeout)
 
@@ -176,18 +219,47 @@ class ProcessingSetScreenHandler(
         }
     }
 
+    /**
+     * The cells on screen: [VISIBLE_ROWS] rows of [cols] over [backing], read at
+     * [offsetRow]. Only a live view, the client's, reads anything, the server's is always
+     * empty since the server never needs the window. Writes are ignored: vanilla syncs the
+     * server's empty window into the client's view on open, and that must not reach the
+     * backing grid, which the hidden slots keep in step on their own.
+     */
+    class WindowView(private val backing: Container, private val cols: Int, private val live: Boolean) : Container {
+        var offsetRow: Int = 0
+        private val size = cols * VISIBLE_ROWS
+
+        fun backingIndex(visible: Int): Int = offsetRow * cols + visible
+
+        override fun getContainerSize(): Int = size
+        override fun isEmpty(): Boolean = !live || (0 until size).all { getItem(it).isEmpty }
+        override fun getItem(slot: Int): ItemStack =
+            if (!live || slot !in 0 until size) ItemStack.EMPTY else backing.getItem(backingIndex(slot))
+        override fun removeItem(slot: Int, amount: Int): ItemStack = ItemStack.EMPTY
+        override fun removeItemNoUpdate(slot: Int): ItemStack = ItemStack.EMPTY
+        override fun setItem(slot: Int, stack: ItemStack) {}
+        override fun setChanged() {}
+        override fun stillValid(player: Player): Boolean = true
+        override fun clearContent() {}
+    }
+
     init {
-        // 9 input ghost slots, 3×3 grid, horizontally centered under the 180-wide frame
+        // The window: 9 input cells, 3x3, horizontally centered under the 180-wide frame
         // (input block spans x=36..90, output column at x=128, gap 90..128 hosts the arrow).
-        for (row in 0..2) {
-            for (col in 0..2) {
-                addSlot(GhostSlot(inputGrid, row * 3 + col, 36 + col * 18, 13 + row * 18))
+        for (row in 0 until VISIBLE_ROWS) {
+            for (col in 0 until INPUT_COLS) {
+                addSlot(GhostSlot(inputWindow, row * INPUT_COLS + col, 36 + col * 18, 13 + row * 18))
             }
         }
-
-        for (i in 0 until OUTPUT_SLOTS) {
-            addSlot(GhostSlot(outputGrid, i, 128, 13 + i * 18))
+        for (i in 0 until VISIBLE_OUTPUT_SLOTS) {
+            addSlot(GhostSlot(outputWindow, i, 128, 13 + i * 18))
         }
+
+        // The backing grids, carried to every viewer by vanilla's slot sync. Off screen,
+        // inactive, never drawn, never clickable.
+        for (i in 0 until INPUT_SLOTS) addSlot(HiddenSlot(inputGrid, i))
+        for (i in 0 until OUTPUT_SLOTS) addSlot(HiddenSlot(outputGrid, i))
 
         // Player inventory (3 rows), starts at x=10 so the 9-slot block (width 160)
         // is centered in the 180-wide frame (10 px padding on each side). y starts
@@ -204,95 +276,82 @@ class ProcessingSetScreenHandler(
         addDataSlots(data)
     }
 
+    /** A window cell. Vanilla draws and highlights it, the screen handles every click. */
     private class GhostSlot(container: Container, index: Int, x: Int, y: Int) : Slot(container, index, x, y) {
-        override fun mayPlace(stack: ItemStack): Boolean = true
+        override fun mayPlace(stack: ItemStack): Boolean = false
+        override fun mayPickup(player: Player): Boolean = false
         override fun getMaxStackSize(): Int = 1
     }
 
+    /** A backing cell on the wire only. */
+    private class HiddenSlot(container: Container, index: Int) : Slot(container, index, -999, -999) {
+        override fun isActive(): Boolean = false
+        override fun mayPlace(stack: ItemStack): Boolean = false
+        override fun mayPickup(player: Player): Boolean = false
+    }
+
+    /** Window and hidden slots never take a vanilla click, a modified client included. The
+     *  screen sends a click packet for a window cell instead, see [applyGhostClick]. */
     override fun clicked(slotId: Int, button: Int, clickType: net.minecraft.world.inventory.ContainerInput, player: Player) {
-        if (slotId in 0 until TOTAL_GHOST_SLOTS) {
-            val carried = carried
-            if (carried.isEmpty) {
-                // Empty-handed click clears the ghost slot and resets its count to 1.
-                when {
-                    slotId < INPUT_SLOTS -> {
-                        inputGrid.setItem(slotId, ItemStack.EMPTY)
-                        inputTags[slotId] = null
-                        data.set(slotId, 1)
-                    }
-                    else -> {
-                        val outIdx = slotId - INPUT_SLOTS
-                        // Right-click marks a filled output optional, left-click clears it.
-                        if (button == 1 && !outputGrid.getItem(outIdx).isEmpty) {
-                            if (outputOptional[outIdx] || hasOtherGuaranteed(outIdx)) outputOptional[outIdx] = !outputOptional[outIdx]
-                        } else {
-                            outputGrid.setItem(outIdx, ItemStack.EMPTY)
-                            outputOptional[outIdx] = false
-                            data.set(INPUT_SLOTS + outIdx, 1)
-                        }
-                    }
-                }
-            } else {
-                // Left-click: inherit the carried stack's count so the recipe
-                // picks up "4 ingots" when the player clicked with a stack of
-                // 4. Right-click: always start at 1 and increment by 1 on each
-                // subsequent right-click with the same item, so the player can
-                // dial in a precise quantity from a full stack.
-                //
-                // Branch on (clickType, button): vanilla `mouseClicked` starts
-                // a QUICK_CRAFT drag whenever the cursor is non-empty (even
-                // for a stationary click that releases without a drag). The
-                // QUICK_CRAFT(add) phase fires with [button] = mask(stage=1,
-                // type), so left-drag-add carries button=1, right-drag-add
-                // carries button=5. The PICKUP path only fires for the
-                // zero-slot-drag fallback. Decoding the button properly here
-                // is necessary or left-drag-add gets misread as a right click
-                // and the count drops to 1 on the first click.
-                //
-                // Components (potion contents, custom name, enchantments) are
-                // preserved so component-aware recipes work end-to-end.
-                val isRightClick = when (clickType) {
-                    net.minecraft.world.inventory.ContainerInput.PICKUP -> button == 1
-                    net.minecraft.world.inventory.ContainerInput.QUICK_CRAFT -> ((button shr 2) and 3) == 1
-                    else -> false
-                }
-                val isInput = slotId < INPUT_SLOTS
-                val outIdx = if (isInput) -1 else slotId - INPUT_SLOTS
-                val dataIdx = if (isInput) slotId else INPUT_SLOTS + outIdx
-                val existing = if (isInput) inputGrid.getItem(slotId) else outputGrid.getItem(outIdx)
-                val sameItem = !existing.isEmpty &&
-                    ItemStack.isSameItemSameComponents(existing, carried)
-                val newCount = if (isRightClick) {
-                    if (sameItem) (data.get(dataIdx) + 1).coerceAtMost(Short.MAX_VALUE.toInt()) else 1
-                } else {
-                    carried.count.coerceAtLeast(1)
-                }
-                if (isInput) {
-                    inputGrid.setItem(slotId, carried.copyWithCount(1))
-                    inputTags[slotId] = null
-                } else {
-                    outputGrid.setItem(outIdx, carried.copyWithCount(1))
-                    if (!sameItem) outputOptional[outIdx] = false
-                }
-                data.set(dataIdx, newCount)
-            }
-            dirty = true
-            return
-        }
+        if (slotId in 0 until PLAYER_SLOT_START) return
         super.clicked(slotId, button, clickType, player)
     }
 
+    /**
+     * The editor's one placement rule, run on the server for a click packet and on the
+     * client before sending it so the cell changes under the cursor. [index] is a backing
+     * index on its side. An empty hand clears the cell and resets its count. With the
+     * cursor full, a left click places the carried stack with its count so "4 ingots"
+     * comes from clicking with a stack of 4, a right click places one or adds one to the
+     * same item so a precise count can be dialled in. A right click on a filled output
+     * with an empty hand toggles optional while another guaranteed output remains.
+     * Components are kept so component-aware recipes work end to end.
+     */
+    fun applyGhostClick(index: Int, isOutput: Boolean, rightClick: Boolean) {
+        val grid = if (isOutput) outputGrid else inputGrid
+        val size = if (isOutput) OUTPUT_SLOTS else INPUT_SLOTS
+        if (index !in 0 until size) return
+        val dataIdx = if (isOutput) INPUT_SLOTS + index else index
+        val carried = carried
+        if (carried.isEmpty) {
+            if (isOutput && rightClick && !grid.getItem(index).isEmpty) {
+                if (outputOptional[index] || hasOtherGuaranteed(index)) outputOptional[index] = !outputOptional[index]
+            } else {
+                grid.setItem(index, ItemStack.EMPTY)
+                if (isOutput) outputOptional[index] = false else inputTags[index] = null
+                data.set(dataIdx, 1)
+            }
+        } else {
+            val existing = grid.getItem(index)
+            val sameItem = !existing.isEmpty && ItemStack.isSameItemSameComponents(existing, carried)
+            val newCount = if (rightClick) {
+                if (sameItem) (data.get(dataIdx) + 1).coerceAtMost(MAX_COUNT) else 1
+            } else {
+                carried.count.coerceAtLeast(1)
+            }
+            grid.setItem(index, carried.copyWithCount(1))
+            if (isOutput) {
+                if (!sameItem) outputOptional[index] = false
+            } else {
+                inputTags[index] = null
+            }
+            data.set(dataIdx, newCount)
+        }
+        dirty = true
+    }
+
     override fun quickMoveStack(player: Player, slotIndex: Int): ItemStack {
-        if (slotIndex >= TOTAL_GHOST_SLOTS) {
+        if (slotIndex >= PLAYER_SLOT_START) {
             val slot = slots.getOrNull(slotIndex) ?: return ItemStack.EMPTY
             if (!slot.hasItem()) return ItemStack.EMPTY
             val stack = slot.item
             for (i in 0 until INPUT_SLOTS) {
                 if (inputGrid.getItem(i).isEmpty) {
-                    // Carry the full stack (with components) into the ghost slot,
+                    // Carry the full stack (with components) into the ghost cell,
                     // not just the item id, so shift-clicked potions and dyed
                     // armor land as their specific variant.
                     inputGrid.setItem(i, stack.copyWithCount(1))
+                    lastQuickMoveTarget = i
                     dirty = true
                     break
                 }
@@ -303,14 +362,14 @@ class ProcessingSetScreenHandler(
 
     fun setInputCount(slotIndex: Int, count: Int) {
         if (slotIndex in 0 until INPUT_SLOTS) {
-            data.set(slotIndex, maxOf(1, count))
+            data.set(slotIndex, count.coerceIn(1, MAX_COUNT))
             dirty = true
         }
     }
 
     fun setOutputCount(slotIndex: Int, count: Int) {
         if (slotIndex in 0 until OUTPUT_SLOTS) {
-            data.set(INPUT_SLOTS + slotIndex, maxOf(1, count))
+            data.set(INPUT_SLOTS + slotIndex, count.coerceIn(1, MAX_COUNT))
             dirty = true
         }
     }
@@ -320,13 +379,15 @@ class ProcessingSetScreenHandler(
         dirty = true
     }
 
-    /** Set a ghost slot to [stack] (or clear it if empty). Used by the JEI
-     *  ghost-ingredient drag and the recipe-transfer button. Preserves the
-     *  stack's components so dragging "Potion of Strength" into a ghost slot
-     *  lands the actual strength variant, not a bare uncraftable potion. */
+    /** Set a backing cell to [stack] (or clear it if empty), [slotIndex] in the linear
+     *  space of inputs then outputs. Used by the JEI ghost-ingredient drag and the
+     *  recipe-transfer button. Preserves the stack's components so dragging "Potion of
+     *  Strength" into a cell lands the actual strength variant, not a bare uncraftable
+     *  potion. */
     fun setSlotFromStack(slotIndex: Int, stack: ItemStack) {
         val placed = if (stack.isEmpty) ItemStack.EMPTY else stack.copyWithCount(1)
         when {
+            slotIndex < 0 -> return
             slotIndex < INPUT_SLOTS -> {
                 inputGrid.setItem(slotIndex, placed)
                 inputTags[slotIndex] = null
@@ -335,12 +396,29 @@ class ProcessingSetScreenHandler(
                 outputGrid.setItem(slotIndex - INPUT_SLOTS, placed)
                 outputOptional[slotIndex - INPUT_SLOTS] = false
             }
+            else -> return
         }
         dirty = true
     }
 
+    /** Empties every cell and resets every count, one packet from the clear button rather
+     *  than one per cell. */
+    fun clearAll() {
+        for (i in 0 until INPUT_SLOTS) {
+            inputGrid.setItem(i, ItemStack.EMPTY)
+            data.set(i, 1)
+        }
+        for (i in 0 until OUTPUT_SLOTS) {
+            outputGrid.setItem(i, ItemStack.EMPTY)
+            data.set(INPUT_SLOTS + i, 1)
+        }
+        inputTags.fill(null)
+        outputOptional.fill(false)
+        dirty = true
+    }
+
     /** Set the tag input [slotIndex] accepts, or clear it with null. Only kept when the
-     *  slot's item is a member, so a stale or forged tag can never widen a recipe. */
+     *  cell's item is a member, so a stale or forged tag can never widen a recipe. */
     fun setInputTag(slotIndex: Int, tagId: String?) {
         if (slotIndex !in 0 until INPUT_SLOTS) return
         val item = inputGrid.getItem(slotIndex)
@@ -349,7 +427,7 @@ class ProcessingSetScreenHandler(
         dirty = true
     }
 
-    /** Mark output [slotIndex] optional or not. Only a filled slot can be optional. */
+    /** Mark output [slotIndex] optional or not. Only a filled cell can be optional. */
     fun setOutputOptional(slotIndex: Int, optional: Boolean) {
         if (slotIndex !in 0 until OUTPUT_SLOTS) return
         outputOptional[slotIndex] = optional && !outputGrid.getItem(slotIndex).isEmpty && hasOtherGuaranteed(slotIndex)
@@ -359,6 +437,16 @@ class ProcessingSetScreenHandler(
     /** A set must keep one guaranteed output, or nothing could ever count on it. */
     private fun hasOtherGuaranteed(except: Int): Boolean =
         (0 until OUTPUT_SLOTS).any { it != except && !outputGrid.getItem(it).isEmpty && !outputOptional[it] }
+
+    /** True when an input or output cell at or past [fromRow] holds an item. */
+    fun hasContentAtOrBelow(fromRow: Int): Boolean =
+        ((fromRow * INPUT_COLS).coerceAtLeast(0) until INPUT_SLOTS).any { !inputGrid.getItem(it).isEmpty } ||
+            (fromRow.coerceAtLeast(0) until OUTPUT_SLOTS).any { !outputGrid.getItem(it).isEmpty }
+
+    /** True when an input or output cell before [row] holds an item. */
+    fun hasContentAbove(row: Int): Boolean =
+        (0 until (row * INPUT_COLS).coerceIn(0, INPUT_SLOTS)).any { !inputGrid.getItem(it).isEmpty } ||
+            (0 until row.coerceIn(0, OUTPUT_SLOTS)).any { !outputGrid.getItem(it).isEmpty }
 
     /** Mark the recipe as edited from outside the slot/click path (e.g. UI controls
      *  that toggle `serial` or `cardName`). Without this, toggling serial mode and
@@ -382,7 +470,7 @@ class ProcessingSetScreenHandler(
             if (stack.isEmpty) continue
             val count = data.get(i).coerceAtLeast(1)
             // copyWithCount(1) snapshots item + components without leaking the
-            // ghost slot's runtime count into the recipe definition.
+            // ghost cell's runtime count into the recipe definition.
             inputs.add(damien.nodeworks.script.RecipeIngredient(stack.copyWithCount(1), count, inputTags[i]))
             inputSlots.add(i)
         }

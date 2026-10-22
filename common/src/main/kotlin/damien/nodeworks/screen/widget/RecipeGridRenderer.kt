@@ -86,6 +86,8 @@ object RecipeGridRenderer {
             if (idx >= 3) break
             drawEntry(graphics, font, ingr, outputX, gridY + idx * SLOT_SIZE)
         }
+        drawOverflow(graphics, font, recipe.inputs.size - 9, gridX + 2 * SLOT_SIZE, gridY + 2 * SLOT_SIZE)
+        drawOverflow(graphics, font, recipe.outputs.size - 3, outputX, gridY + 2 * SLOT_SIZE)
     }
 
     /** Centred inside the given bounds, inputs above the outputs. */
@@ -133,6 +135,22 @@ object RecipeGridRenderer {
             if (idx >= 3) break
             drawEntry(graphics, font, ingr, gridX + idx * SLOT_SIZE, outputY)
         }
+        drawOverflow(graphics, font, recipe.inputs.size - 9, gridX + 2 * SLOT_SIZE, gridY + 2 * SLOT_SIZE)
+        drawOverflow(graphics, font, recipe.outputs.size - 3, gridX + 2 * SLOT_SIZE, outputY)
+    }
+
+    /** A small "+N" in the corner of the last cell when a set has more inputs or outputs
+     *  than the thumbnail shows. The rows around these thumbnails have one height, so the
+     *  picture stays 3x3 and 1x3 and says what it leaves out. */
+    private fun drawOverflow(graphics: GuiGraphicsExtractor, font: Font, more: Int, cellX: Int, cellY: Int) {
+        if (more <= 0) return
+        val text = "+$more"
+        val pose = graphics.pose()
+        pose.pushMatrix()
+        pose.translate((cellX + SLOT_SIZE - 1).toFloat(), (cellY + SLOT_SIZE - 1).toFloat())
+        pose.scale(0.5f, 0.5f)
+        graphics.text(font, text, -font.width(text), -font.lineHeight, 0xFFFFFF55.toInt(), true)
+        pose.popMatrix()
     }
 
     /** [str] cut with a trailing "..." so it fits in [maxWidth] pixels. */

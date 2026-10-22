@@ -115,7 +115,7 @@ class ProcessingSet(properties: Properties) : Item(properties) {
         // mirrors what the player set up in the GUI; sparse layouts
         // (a single ingredient in slot 4) read positionally instead of
         // bunching at the top-left.
-        val inputs = MutableList(damien.nodeworks.screen.tooltip.RecipeIconTooltip.INPUT_SLOTS) { ItemStack.EMPTY }
+        val inputs = MutableList(INPUT_GRID_SIZE) { ItemStack.EMPTY }
         for ((i, ingr) in rawInputs.withIndex()) {
             val slotIdx = inputSlots.getOrNull(i) ?: i
             if (slotIdx in inputs.indices) {
@@ -154,8 +154,11 @@ class ProcessingSet(properties: Properties) : Item(properties) {
         private const val TIMEOUT_KEY = "timeout"
         private const val SERIAL_KEY = "serial"
         private const val FUZZY_KEY = "fuzzy"
-        const val MAX_OUTPUTS = 3
-        const val INPUT_GRID_SIZE = 9
+        /** A set holds up to 27 inputs on a 3 wide by 9 tall grid and up to 9 outputs. Cards
+         *  saved before the grid grew use positions 0 to 8 and 0 to 2 and load unchanged. */
+        const val INPUT_COLS = 3
+        const val MAX_OUTPUTS = 9
+        const val INPUT_GRID_SIZE = 27
 
         /** The card's display name. Cosmetic only after the canonical-id retire,
          *  recipe identity is the hash, not the name. */

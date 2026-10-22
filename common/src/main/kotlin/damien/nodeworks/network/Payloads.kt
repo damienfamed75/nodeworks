@@ -498,9 +498,24 @@ data class SetProcessingApiSlotTagPayload(val containerId: Int, val slotIndex: I
     override fun type() = TYPE
 }
 
+/** C2S: a click on a Processing Set editor cell. [index] is a backing index on the input
+ *  or output grid, mapped through the client's scroll window, so the server never needs
+ *  the window. [button] is 0 or 1. The server applies the editor's one placement rule
+ *  against its own carried stack. */
+data class ProcessingSetGhostClickPayload(val containerId: Int, val index: Int, val isOutput: Boolean, val button: Int) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<ProcessingSetGhostClickPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "processing_set_ghost_click"))
+        val CODEC: StreamCodec<FriendlyByteBuf, ProcessingSetGhostClickPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeVarInt(p.containerId); buf.writeVarInt(p.index); buf.writeBoolean(p.isOutput); buf.writeVarInt(p.button) },
+            { buf -> ProcessingSetGhostClickPayload(buf.readVarInt(), buf.readVarInt(), buf.readBoolean(), buf.readVarInt()) }
+        )
+    }
+    override fun type() = TYPE
+}
+
 /**
  * C2S: Set a single ghost slot on the Processing Set by item ID.
- * slotIndex 0-8 = input, 9-11 = output. Empty string = clear slot.
+ * slotIndex 0 to 26 = input, 27 to 35 = output, backing indices. Empty string = clear slot.
  */
 /**
  * C2S: Set a Processing Set editor ghost slot to [stack].
@@ -1369,16 +1384,16 @@ data class DiagnosticProcessingApisChunkPayload(
             },
             { buf ->
                 val isLast = buf.readBoolean()
-                val count = buf.readVarInt()
+                val count = buf.readVarInt().coerceIn(0, 256)
                 val apis = (0 until count).map {
                     val name = buf.readUtf(64)
-                    val inCount = buf.readVarInt()
+                    val inCount = buf.readVarInt().coerceIn(0, 64)
                     val inputs = (0 until inCount).map {
                         val stack = net.minecraft.world.item.ItemStack.OPTIONAL_STREAM_CODEC.decode(buf)
                         val cnt = buf.readVarInt()
                         damien.nodeworks.script.RecipeIngredient(stack, cnt)
                     }
-                    val outCount = buf.readVarInt()
+                    val outCount = buf.readVarInt().coerceIn(0, 64)
                     val outputs = (0 until outCount).map {
                         val stack = net.minecraft.world.item.ItemStack.OPTIONAL_STREAM_CODEC.decode(buf)
                         val cnt = buf.readVarInt()
