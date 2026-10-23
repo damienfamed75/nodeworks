@@ -31,10 +31,33 @@ object CraftQueueManager {
         @Volatile var completedOps: Int = 0,
         var takenCount: Int = 0,
         var seenComplete: Boolean = false,
-        var dirty: Boolean = true
+        var dirty: Boolean = true,
+        /** Root items the CPU has already moved to storage while the plan still runs.
+         *  They are the player's to pick up before the craft is done. */
+        var deliveredCount: Int = 0,
     ) {
         val isComplete: Boolean get() = completedOps > 0
-        val availableCount: Int get() = if (isComplete) maxOf(0, totalRequested - takenCount) else 0
+        /** Items in storage with the player's name on them: the whole request once
+         *  complete, what trickled in before that. */
+        val readyCount: Int get() = if (isComplete) totalRequested else deliveredCount.coerceIn(0, totalRequested)
+        val availableCount: Int get() = maxOf(0, readyCount - takenCount)
+    }
+
+    /**
+     * Settle an entry when its plan ends. Success completes it. Failure or cancel removes
+     * it, unless items already trickled into storage and were not all picked up: those
+     * stay the player's, so the entry becomes a complete one sized to what was made.
+     */
+    fun finishEntry(playerUUID: UUID, entry: CraftQueueEntry, success: Boolean) {
+        if (success) {
+            entry.completedOps = 1
+        } else if (entry.deliveredCount > entry.takenCount) {
+            entry.totalRequested = entry.deliveredCount
+            entry.completedOps = 1
+        } else {
+            getQueue(playerUUID).remove(entry)
+        }
+        entry.dirty = true
     }
 
     private val queues = HashMap<UUID, MutableList<CraftQueueEntry>>()
@@ -100,6 +123,13 @@ object CraftQueueManager {
     private val syncPending = HashSet<UUID>()
 
     fun hasSyncPending(playerUUID: UUID): Boolean = playerUUID in syncPending
+
+    /** Ask for the player's pinned row to be resent on their terminal's next tick. A
+     *  pickup marks this first, so a request the server refuses still answers the
+     *  client's predicted count with the truth. */
+    fun markSyncPending(playerUUID: UUID) {
+        syncPending.add(playerUUID)
+    }
 
     fun clearSyncPending(playerUUID: UUID) {
         syncPending.remove(playerUUID)

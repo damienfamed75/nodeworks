@@ -10,6 +10,7 @@ import damien.nodeworks.script.ItemsHandle
 import damien.nodeworks.script.NetworkStorageHelper
 import damien.nodeworks.script.ProcessingJob
 import damien.nodeworks.script.ScriptEngine
+import net.minecraft.core.BlockPos
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.resources.Identifier
 import net.minecraft.server.level.ServerLevel
@@ -103,6 +104,272 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         completionListeners[plan] = onComplete
     }
 
+    /** Told the running total of root items moved to storage ahead of the plan's end,
+     *  after each trickle. Removed with the completion listener on either exit. */
+    private val progressListeners = mutableMapOf<CraftPlan, (Long) -> Unit>()
+
+    fun registerProgressListener(plan: CraftPlan, onProgress: (Long) -> Unit) {
+        progressListeners[plan] = onProgress
+    }
+
+    /**
+     * Finished root items leave the buffer for storage while the plan still runs, so a
+     * long processing craft hands items over one by one instead of all at the end. Only
+     * the root item is moved, only up to what the trailing Deliver would move, and only
+     * for a plan in which no other op consumes the root item, since those ops need the
+     * buffer to hold it. The Deliver then moves whatever is left.
+     *
+     * A move runs when a full stack waits, or when [TRICKLE_INTERVAL] ticks passed and
+     * anything waits. It inserts into the card that took the last move first and walks
+     * the network only on a miss, so the cost does not grow with the network. When even
+     * the walk places nothing storage is full for this item, and the next attempt waits
+     * twice as long, up to [TRICKLE_MAX_BACKOFF], so a full network is not rescanned every
+     * second. Items storage refuses stay in the buffer.
+     */
+    private class TrickleState(val plan: CraftPlan, val deliver: Operation.Deliver, val maxStack: Int) {
+        var nextDueTick = 0L
+        var backoff = TRICKLE_INTERVAL
+        var home: damien.nodeworks.network.CardSnapshot? = null
+        /** Where [home] is mounted, read from the snapshot when it is chosen. A card's
+         *  face can be overridden by the player, so the Node is not derived from it. */
+        var homeNodePos: BlockPos? = null
+        var homeSide: net.minecraft.core.Direction? = null
+        var lastMoveTick = Long.MIN_VALUE / 2
+        /** Last tick a move went through the priority walk, see [resolveHome]. */
+        var lastWalkTick = Long.MIN_VALUE / 2
+        /** Highest priority among cards that take the root item, see [resolveHome]. */
+        var topPriority = Int.MIN_VALUE
+        var topPriorityTick = Long.MIN_VALUE / 2
+    }
+
+    /** Remembers [card] as the home with the Node and side it sits on, or forgets the
+     *  home when the snapshot does not list it. */
+    private fun setHome(state: TrickleState, card: damien.nodeworks.network.CardSnapshot, snapshot: damien.nodeworks.network.NetworkSnapshot) {
+        for (node in snapshot.nodes) {
+            for ((side, cards) in node.sides) {
+                if (cards.any { it === card }) {
+                    state.home = card
+                    state.homeNodePos = node.pos
+                    state.homeSide = side
+                    return
+                }
+            }
+        }
+        state.home = null
+    }
+
+    /** The card a move tries before the walk, with its storage resolved once. [usable]
+     *  drops to false when it refuses, so the rest of the move does not retry it. */
+    private class HomeTarget(val card: damien.nodeworks.network.CardSnapshot, val storage: damien.nodeworks.platform.ItemStorageHandle) {
+        var usable = true
+    }
+
+    /** One move's shared target, replaced when the walk finds a new card. */
+    private class MoveContext(val now: Long, var home: HomeTarget?)
+
+    private fun clearHome(state: TrickleState) {
+        state.home = null
+        state.homeNodePos = null
+        state.homeSide = null
+    }
+
+    /** The network's inventory cache for the running plan, resolved once per plan with the
+     *  one discovery walk the Deliver already paid, so pulls and trickles can report their
+     *  moves without a walk each. */
+    private var planCache: damien.nodeworks.script.NetworkInventoryCache? = null
+    private var planCacheFor: CraftPlan? = null
+
+    private fun cacheForPlan(lvl: ServerLevel, plan: CraftPlan): damien.nodeworks.script.NetworkInventoryCache {
+        if (planCacheFor === plan) planCache?.let { return it }
+        val c = damien.nodeworks.script.NetworkInventoryCache.getOrCreate(lvl, cpu.blockPos)
+        planCache = c
+        planCacheFor = plan
+        return c
+    }
+
+    /**
+     * The remembered card, when it is still worth trying first. Its settings are read
+     * live from its Node each move, so a priority or filter the player changed since the
+     * card was chosen applies to the next move, and a card that is gone is forgotten.
+     * Only a card that still takes [stack] is used. A card below the highest priority
+     * that takes the item is still used, since the walk that chose it found every card
+     * above it full, but once per [TRICKLE_PRIORITY_RECHECK] a move goes through the walk
+     * again so a higher card that has freed up takes over. Null sends the move through
+     * the walk.
+     */
+    private fun resolveHome(
+        state: TrickleState,
+        lvl: ServerLevel,
+        snapshot: damien.nodeworks.network.NetworkSnapshot,
+        channel: damien.nodeworks.network.ChannelFilter,
+        stack: ItemStack,
+        now: Long,
+    ): HomeTarget? {
+        val home = state.home ?: return null
+        val nodePos = state.homeNodePos
+        val side = state.homeSide
+        val remembered = home.capability as? damien.nodeworks.card.StorageSideCapability
+        if (nodePos == null || side == null || remembered == null || !lvl.isLoaded(nodePos)) {
+            clearHome(state)
+            return null
+        }
+        val node = lvl.getBlockEntity(nodePos) as? damien.nodeworks.block.entity.NodeBlockEntity
+        if (node == null || node.networkId != snapshot.networkId) {
+            clearHome(state)
+            return null
+        }
+        val info = node.getSideCapabilities(side).firstOrNull { it.slotIndex == home.slotIndex }
+        val cap = info?.capability as? damien.nodeworks.card.StorageSideCapability
+        if (cap == null || cap.adjacentPos != remembered.adjacentPos) {
+            clearHome(state)
+            return null
+        }
+        val live = damien.nodeworks.network.CardSnapshot(cap, info.alias, info.slotIndex, info.channel)
+        state.home = live
+        val registries = lvl.registryAccess()
+        if (!channel.matches(live.channel) || !cap.acceptsItem(stack, registries)) {
+            clearHome(state)
+            return null
+        }
+        // Priorities change rarely, by a player clicking a card, so the top is re-read
+        // once an interval. Cards come sorted by priority, so the first taker is the top.
+        if (now - state.topPriorityTick >= TRICKLE_INTERVAL) {
+            state.topPriorityTick = now
+            state.topPriority = snapshot.storageCards.firstOrNull { card ->
+                val c = card.capability as? damien.nodeworks.card.StorageSideCapability
+                c != null && channel.matches(card.channel) && c.acceptsItem(stack, registries)
+            }?.let { (it.capability as damien.nodeworks.card.StorageSideCapability).priority } ?: Int.MIN_VALUE
+        }
+        if (cap.priority < state.topPriority && now - state.lastWalkTick >= TRICKLE_PRIORITY_RECHECK) return null
+        val storage = NetworkStorageHelper.getStorage(lvl, live) ?: run {
+            clearHome(state)
+            return null
+        }
+        return HomeTarget(live, storage)
+    }
+
+    /** State for the running plan, or null when it does not trickle. Rebuilt when the
+     *  running plan changes, which also covers a plan resumed from NBT. */
+    private var trickle: TrickleState? = null
+    private var trickleResolvedFor: CraftPlan? = null
+
+    private fun trickleStateFor(plan: CraftPlan): TrickleState? {
+        if (trickleResolvedFor === plan) return trickle
+        trickleResolvedFor = plan
+        trickle = buildTrickleState(plan)
+        return trickle
+    }
+
+    private fun buildTrickleState(plan: CraftPlan): TrickleState? {
+        if (plan.omitDeliver) return null
+        val root = plan.rootItemId
+        val deliver = plan.ops.firstOrNull { it is Operation.Deliver && it.id in plan.terminalOpIds && it.itemId == root }
+            as? Operation.Deliver ?: return null
+        val rootConsumed = plan.ops.any { op ->
+            when (op) {
+                is Operation.Execute -> op.recipe.any { it == root }
+                is Operation.Process -> op.inputs.any { it.first == root }
+                else -> false
+            }
+        }
+        if (rootConsumed) return null
+        val item = Identifier.tryParse(root)?.let { BuiltInRegistries.ITEM.getValue(it) } ?: return null
+        return TrickleState(plan, deliver, item.getDefaultMaxStackSize())
+    }
+
+    private fun runTrickle() {
+        val plan = cpu.scheduler.currentPlan
+        if (plan == null) {
+            trickle = null
+            trickleResolvedFor = null
+            return
+        }
+        val state = trickleStateFor(plan) ?: return
+        val deliver = state.deliver
+        val remaining = deliver.amount - deliver.delivered
+        if (remaining <= 0L) return
+        // Only the plain bucket moves early, read and removed by its own key, so a
+        // variant of the root item waiting in the buffer is never swapped for a plain
+        // copy. The Deliver treats a variant-only buffer the way it always has.
+        val plainKey = damien.nodeworks.script.BufferKey.Key(deliver.itemId, "")
+        val inBuffer = cpu.getBufferCount(plainKey)
+        if (inBuffer <= 0L) return
+        val lvl = cpu.level as? ServerLevel ?: return
+        val now = lvl.gameTime
+        val fullStackWaiting = inBuffer >= state.maxStack && state.backoff == TRICKLE_INTERVAL &&
+            now - state.lastMoveTick >= TRICKLE_MIN_GAP
+        if (now < state.nextDueTick && !fullStackWaiting) return
+        val template = cpu.getBufferTemplate(plainKey)?.takeIf { !it.isEmpty } ?: return
+        val snapshot = snapshotForTick(lvl)
+        val cache = cacheForPlan(lvl, plan)
+        val ctx = MoveContext(now, resolveHome(state, lvl, snapshot, deliver.outputChannel, template, now))
+        var moved = 0L
+        var want = minOf(inBuffer, remaining)
+        damien.nodeworks.platform.MoveDeadline.within(TRICKLE_BUDGET_NANOS) {
+            var stacks = 0
+            while (want > 0L && stacks < TRICKLE_MAX_STACKS) {
+                val batch = minOf(want, state.maxStack.toLong()).toInt()
+                // Insert first, then take what landed out of the buffer, so storage
+                // refusing costs nothing and drops nothing.
+                val inserted = insertToStorage(template.copyWithCount(batch), lvl, snapshot, deliver.outputChannel, state, cache, ctx)
+                if (inserted <= 0) break
+                val taken = cpu.removeFromBuffer(plainKey, inserted.toLong())
+                moved += taken
+                want -= taken
+                stacks++
+                if (taken < inserted) break
+                if (damien.nodeworks.platform.MoveDeadline.expired()) break
+            }
+        }
+        if (moved > 0L) {
+            deliver.delivered += moved
+            cpu.setChanged()
+            state.backoff = TRICKLE_INTERVAL
+            state.lastMoveTick = now
+            progressListeners[plan]?.invoke(deliver.delivered)
+        } else {
+            state.backoff = minOf(state.backoff * 2, TRICKLE_MAX_BACKOFF)
+        }
+        state.nextDueTick = now + state.backoff
+    }
+
+    /** Inserts [stack] into network storage on [channel]. The move's home card is tried
+     *  first while it keeps taking, the walk runs on a miss and the card it lands on
+     *  becomes the home for the rest of this move and the next. Returns what landed. */
+    private fun insertToStorage(
+        stack: ItemStack,
+        lvl: ServerLevel,
+        snapshot: damien.nodeworks.network.NetworkSnapshot,
+        channel: damien.nodeworks.network.ChannelFilter,
+        state: TrickleState?,
+        cache: damien.nodeworks.script.NetworkInventoryCache?,
+        ctx: MoveContext,
+    ): Int {
+        val home = ctx.home?.takeIf { it.usable }
+        var landed = 0
+        if (home != null) {
+            val inserted = PlatformServices.storage.insertItemStack(home.storage, stack.copy())
+            if (inserted > 0) {
+                val itemId = BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
+                if (itemId != null && cache != null) {
+                    cache.onInserted(itemId, !stack.componentsPatch.isEmpty, inserted.toLong(), stack.componentsPatch)
+                    cache.onChannelDelta(home.card.channel, itemId, stack.componentsPatch, inserted.toLong())
+                }
+                if (inserted >= stack.count) return inserted
+                landed = inserted
+            }
+            home.usable = false
+        }
+        val rest = stack.copyWithCount(stack.count - landed)
+        state?.lastWalkTick = ctx.now
+        val walked = NetworkStorageHelper.insertItemStack(lvl, snapshot, rest, cache, channel, onPlaced = { card ->
+            if (state != null) setHome(state, card, snapshot)
+            val storage = NetworkStorageHelper.getStorage(lvl, card)
+            ctx.home = if (storage != null) HomeTarget(card, storage) else null
+        })
+        return landed + walked
+    }
+
     /** Read live from the CPU so heat/cooling changes (placing/breaking Stabilizers) take
      *  effect immediately. Falls back to [DEFAULT_THROTTLE] when the CPU isn't formed. */
     override val currentThrottle: Float
@@ -124,6 +391,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
     }
 
     override fun onTickEnd() {
+        runTrickle()
         cachedSnapshot = null
         insideTick = false
     }
@@ -194,6 +462,9 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             for (stack in extractedStacks) {
                 if (stack.isEmpty) continue
                 val amount = stack.count.toLong()
+                // Read before the buffer takes the stack, an emptied stack reports nothing.
+                val pulledId = BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
+                val pulledPatch = stack.componentsPatch
                 if (!cpu.addToBuffer(stack, amount)) {
                     // Buffer refused, this shouldn't happen if feasibility passed,
                     // but if it does, put the extracted back and fail cleanly.
@@ -201,6 +472,12 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
                     return CraftScheduler.OpResult.Failed(
                         "Buffer refused $amount ${op.itemId} (full)"
                     )
+                }
+                // The grid shows the pull at once instead of after the next poll.
+                if (pulledId != null) {
+                    val cache = cpu.scheduler.currentPlan?.let { cacheForPlan(lvl, it) }
+                    cache?.onExtracted(pulledId, !pulledPatch.isEmpty, amount, pulledPatch)
+                    cache?.onChannelDelta(card.channel, pulledId, pulledPatch, -amount)
                 }
                 remaining -= amount
             }
@@ -455,15 +732,18 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         lvl: ServerLevel,
         snapshot: damien.nodeworks.network.NetworkSnapshot
     ): CraftScheduler.OpResult {
+        // Whatever the trickle already moved is not owed again.
+        val owed = (op.amount - op.delivered).coerceAtLeast(0L)
+        if (owed == 0L) return CraftScheduler.OpResult.Completed
         // Read before removing, the bucket goes away once drained.
         val template = cpu.getBufferTemplate(damien.nodeworks.script.BufferKey.Key(op.itemId, ""))
         val inBuffer = cpu.getBufferCount(op.itemId)
-        if (inBuffer < op.amount) {
+        if (inBuffer < owed) {
             return CraftScheduler.OpResult.Failed(
-                "Deliver wanted ${op.amount} of ${op.itemId} but buffer has $inBuffer"
+                "Deliver wanted $owed of ${op.itemId} but buffer has $inBuffer"
             )
         }
-        val removed = cpu.removeFromBuffer(op.itemId, op.amount)
+        val removed = cpu.removeFromBuffer(op.itemId, owed)
         val id = Identifier.tryParse(op.itemId)
             ?: return CraftScheduler.OpResult.Failed("Bad item id: ${op.itemId}")
         val item = BuiltInRegistries.ITEM.getValue(id)
@@ -475,13 +755,18 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         // queued craft's reserved-row claim subtracted reservations from a
         // stale cache count - displaying 0 stock during the gap until the
         // poll caught up.
+        // Update the network's inventory cache as items land so the Inventory
+        // Terminal's grid count reflects the post-Deliver storage immediately.
         val deliverCache = damien.nodeworks.script.NetworkInventoryCache.getOrCreate(lvl, cpu.blockPos)
+        val state = trickle?.takeIf { it.deliver === op }
+        val sample = template?.takeIf { it.item == item }?.copyWithCount(1) ?: ItemStack(item)
+        val ctx = MoveContext(lvl.gameTime, state?.let { resolveHome(it, lvl, snapshot, op.outputChannel, sample, lvl.gameTime) })
         var remaining = removed
         var droppedCount = 0L
         while (remaining > 0L) {
             val batch = minOf(remaining, item.getDefaultMaxStackSize().toLong()).toInt()
             val stack = template?.takeIf { it.item == item }?.copyWithCount(batch) ?: ItemStack(item, batch)
-            val inserted = NetworkStorageHelper.insertItemStack(lvl, snapshot, stack, deliverCache, op.outputChannel)
+            val inserted = insertToStorage(stack, lvl, snapshot, op.outputChannel, state, deliverCache, ctx)
             if (inserted == 0) {
                 // Network storage refused, drop the batch on the ground so the finished
                 // items aren't destroyed, and track how many we had to drop. We still fail
@@ -1356,6 +1641,15 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         // the plan resumed from NBT and nobody will ever claim it, so flush and
         // release like a normal plan instead of stranding items and the CPU.
         val listener = completionListeners.remove(plan)
+        progressListeners.remove(plan)
+        if (trickleResolvedFor === plan) {
+            trickle = null
+            trickleResolvedFor = null
+        }
+        if (planCacheFor === plan) {
+            planCache = null
+            planCacheFor = null
+        }
         if (!plan.omitDeliver || listener == null) {
             flushBufferToStorage()
         }
@@ -1402,6 +1696,15 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         }
         cpu.clearAllCraftState()
         cpu.setCrafting(false)
+        progressListeners.remove(plan)
+        if (trickleResolvedFor === plan) {
+            trickle = null
+            trickleResolvedFor = null
+        }
+        if (planCacheFor === plan) {
+            planCache = null
+            planCacheFor = null
+        }
         completionListeners.remove(plan)?.invoke(false)
     }
 
@@ -1509,6 +1812,20 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
     }
 
     companion object {
+        /** Ticks between trickle moves when nothing forces one sooner. */
+        const val TRICKLE_INTERVAL = 20L
+        /** Fewest ticks between moves when full stacks keep arriving, so a fast bank of
+         *  machines is served in batches rather than every tick. */
+        const val TRICKLE_MIN_GAP = 4L
+        /** Ticks between walks forced past a home that sits below the top priority, so a
+         *  higher card that has freed up takes over within this long. */
+        const val TRICKLE_PRIORITY_RECHECK = 100L
+        /** Longest wait between attempts while storage keeps refusing the root item. */
+        const val TRICKLE_MAX_BACKOFF = 200L
+        /** Stacks one trickle move may insert before yielding to the next interval. */
+        const val TRICKLE_MAX_STACKS = 64
+        /** Wall-clock budget for one trickle move once something has landed. */
+        const val TRICKLE_BUDGET_NANOS = 250_000L
         /** Fallback throttle when the CPU isn't formed (no buffer). High enough that
          *  [CpuRules.opCost] rounds to 0, crafts chain instantly through the scheduler. */
         const val DEFAULT_THROTTLE: Float = 10.0f

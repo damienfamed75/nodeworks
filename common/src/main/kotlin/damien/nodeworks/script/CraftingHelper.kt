@@ -131,6 +131,10 @@ object CraftingHelper {
     /** Set when [craft] submits an async craft to the scheduler. Callers await its completion. */
     var currentPendingJob: PendingHandlerJob? = null
 
+    /** The plan [craft] last submitted, the instance the CPU runs, so a caller can register
+     *  listeners on it. Cleared with [currentPendingJob]. */
+    var currentPlan: damien.nodeworks.script.cpu.CraftPlan? = null
+
     /** Source description for the last resolved processing handler. Retained for trace-log compat. */
     var lastHandlerSource: String? = null
 
@@ -190,6 +194,7 @@ object CraftingHelper {
     ): CraftResult? {
         lastFailReason = null
         currentPendingJob = null
+        currentPlan = null
 
         if (count <= 0) {
             lastFailReason = "Craft count must be positive"
@@ -249,6 +254,7 @@ object CraftingHelper {
             pending.complete(success)
         }
         currentPendingJob = pending
+        currentPlan = planWithSubmitter
 
         val outputName = resolveItemName(identifier)
         return CraftResult(

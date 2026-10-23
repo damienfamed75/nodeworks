@@ -164,6 +164,11 @@ class CraftingCoreBlockEntity(
      * is idle, otherwise queues. [onComplete] fires exactly once when the plan
      * reaches DONE (true) or FAILED (false). Safe to call from any server-side context.
      */
+    /** Told the running total of root items delivered ahead of the plan's end. */
+    fun registerProgressListener(plan: CraftPlan, onProgress: (Long) -> Unit) {
+        opExecutor.registerProgressListener(plan, onProgress)
+    }
+
     fun submitCraft(plan: CraftPlan, currentTick: Long, onComplete: ((Boolean) -> Unit)? = null) {
         // Stale per-op state is wiped by [clearOpState] when the plan actually starts, so a
         // plan queued behind a running one never touches the running plan's state.
@@ -241,13 +246,19 @@ class CraftingCoreBlockEntity(
                     ?: plan.rootItemId,
                 plan.rootCount.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt(),
             )
-            opExecutor.registerCompletionListener(plan) { success ->
-                if (success) {
-                    entry.completedOps = 1
-                } else {
-                    damien.nodeworks.screen.CraftQueueManager.getQueue(submitter).remove(entry)
-                }
+            // What trickled out before the reload is still the player's.
+            val delivered = plan.ops.firstOrNull { it is damien.nodeworks.script.cpu.Operation.Deliver && it.id in plan.terminalOpIds }
+                ?.let { (it as damien.nodeworks.script.cpu.Operation.Deliver).delivered } ?: 0L
+            if (delivered > 0L) {
+                entry.deliveredCount = delivered.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
                 entry.dirty = true
+            }
+            opExecutor.registerProgressListener(plan) { total ->
+                entry.deliveredCount = total.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+                entry.dirty = true
+            }
+            opExecutor.registerCompletionListener(plan) { success ->
+                damien.nodeworks.screen.CraftQueueManager.finishEntry(submitter, entry, success)
             }
         }
     }

@@ -599,6 +599,9 @@ object NetworkStorageHelper {
          *  the network from an inventory never puts items back into it, or into another
          *  inventory the caller has reasons to keep out of the move. */
         exclude: Set<BlockPos> = emptySet(),
+        /** Told each card that took part of the stack, so a caller that inserts often can
+         *  come back to the same card without the walk. */
+        onPlaced: ((CardSnapshot) -> Unit)? = null,
     ): Int {
         var remaining = stack.count
         // Every insert keeps the cache current. A caller without a cache in hand, the CPU
@@ -619,6 +622,7 @@ object NetworkStorageHelper {
             val storage = getStorage(level, card) ?: continue
             val inserted = PlatformServices.storage.insertItemStack(storage, stack.copyWithCount(remaining))
             if (inserted > 0 && itemId != null) cache?.onChannelDelta(card.channel, itemId, stack.componentsPatch, inserted.toLong())
+            if (inserted > 0) onPlaced?.invoke(card)
             remaining -= inserted
         }
         val totalInserted = stack.count - remaining

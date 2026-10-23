@@ -1377,6 +1377,7 @@ class InventoryTerminalScreen(
                     slotDragShift = true
                     slotDragVisited.clear()
                     slotDragVisited.add(DragSlotRef(0, slotIdx))
+                    slotDragLastHovered = DragSlotRef(0, slotIdx)
                 } else if (!menu.carried.isEmpty && button == 1) {
                     // Right-click: place one item, start right-drag
                     slotClicked(menu.slots[slotIdx], slotIdx, 1, net.minecraft.world.inventory.ContainerInput.PICKUP)
@@ -1435,6 +1436,15 @@ class InventoryTerminalScreen(
                         PlatformServices.clientNetworking.sendToServer(
                             damien.nodeworks.network.CraftQueueExtractPayload(menu.containerId, slot.id, action)
                         )
+                        // Show the take at once, the next queue sync replaces the guess. The
+                        // carried stack is left to vanilla, a wrong guess there costs more
+                        // than the wait.
+                        val maxStack = getItemStack(slot.itemId, slot.componentsPatch).let { if (it.isEmpty) 64 else it.maxStackSize }
+                        val take = when (action) {
+                            2 -> maxOf(1, minOf(slot.availableCount, maxStack) / 2)
+                            else -> minOf(slot.availableCount, maxStack)
+                        }
+                        craftQueue = craftQueue.toMutableList().also { it[queueIdx] = slot.copy(availableCount = slot.availableCount - take) }
                         unfocusSearchBox()
                     }
                 }
@@ -1526,11 +1536,14 @@ class InventoryTerminalScreen(
                 PlatformServices.clientNetworking.sendToServer(
                     InvTerminalSlotClickPayload(menu.containerId, virtualIndex, 2)
                 )
-                // Start shift-drag
+                // Start shift-drag. The pressed slot is the last hovered one too, otherwise
+                // a jitter during the press re-sends a shift-click for it while the client
+                // still shows it full, and the server's sweep loses its template.
                 slotDragButton = button
                 slotDragShift = true
                 slotDragVisited.clear()
                 slotDragVisited.add(DragSlotRef(1, virtualIndex))
+                slotDragLastHovered = DragSlotRef(1, virtualIndex)
             } else if (!menu.carried.isEmpty && button == 0) {
                 // Left-click with items: start left-drag
                 slotDragButton = 0

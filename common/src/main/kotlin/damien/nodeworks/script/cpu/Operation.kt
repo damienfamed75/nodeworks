@@ -128,6 +128,11 @@ sealed class Operation {
         val outputChannel: damien.nodeworks.network.ChannelFilter = damien.nodeworks.network.ChannelFilter.All,
     ) : Operation() {
         override val baseCost: Int get() = CpuRules.DELIVER_BASE_COST
+
+        /** Root items already moved to storage ahead of this op, see the executor's
+         *  trickle. The op itself moves only `amount - delivered`. Saved with the op so a
+         *  reload neither re-delivers nor loses the count, plans saved before read zero. */
+        var delivered: Long = 0L
     }
 
     // =====================================================================
@@ -206,6 +211,7 @@ sealed class Operation {
                 tag.putString("itemId", itemId)
                 tag.putLong("amount", amount)
                 tag.putBoolean("reserved", toReservedSlot)
+                if (delivered > 0L) tag.putLong("delivered", delivered)
                 // Default All → -1, omit the key for older-save compatibility.
                 if (outputChannel !is damien.nodeworks.network.ChannelFilter.All) {
                     tag.putInt("channel", outputChannel.toNbtInt())
@@ -269,7 +275,7 @@ sealed class Operation {
                     tag.getLongOr("amount", 0L),
                     tag.getBooleanOr("reserved", false),
                     damien.nodeworks.network.ChannelFilter.fromNbtInt(tag.getIntOr("channel", -1)),
-                )
+                ).also { it.delivered = tag.getLongOr("delivered", 0L).coerceAtLeast(0L) }
                 else -> return null
             }
             op.readyAt = readyAt
