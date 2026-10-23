@@ -29,6 +29,8 @@ class CardSettingsMenu(
     playerInventory: Inventory,
     private val hand: InteractionHand?,
     val initialName: String = "",
+    val initialTags: List<String> = emptyList(),
+    val knownTags: List<String> = emptyList(),
 ) : AbstractContainerMenu(ModScreenHandlers.CARD_SETTINGS, syncId) {
 
     /** Slot 0: the dye color ordinal (0..15). Defaults to white when no card is held. */
@@ -50,6 +52,15 @@ class CardSettingsMenu(
         val stack = player.getItemInHand(hand)
         if (stack.item !is NodeCard) return
         applyCardName(stack, name)
+    }
+
+    /** Tags are written as they change, so the chip the player sees is already saved. */
+    fun setCardTags(player: Player, tags: List<String>) {
+        if (hand == null) return
+        val stack = player.getItemInHand(hand)
+        if (stack.item !is NodeCard) return
+        damien.nodeworks.card.CardTags.set(stack, tags)
+        damien.nodeworks.card.KnownCardTags.record(damien.nodeworks.card.CardTags.get(stack), player.level().gameTime)
     }
 
     fun getChannel(): DyeColor =
@@ -87,7 +98,7 @@ class CardSettingsMenu(
         fun clientFactory(syncId: Int, playerInventory: Inventory, data: CardSettingsOpenData): CardSettingsMenu {
             val hand = if (data.handOrdinal < InteractionHand.entries.size)
                 InteractionHand.entries[data.handOrdinal] else null
-            return CardSettingsMenu(syncId, playerInventory, hand, data.cardName)
+            return CardSettingsMenu(syncId, playerInventory, hand, data.cardName, data.tags, data.knownTags)
         }
     }
 }

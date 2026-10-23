@@ -4,7 +4,6 @@ import damien.nodeworks.compat.drawString
 import damien.nodeworks.compat.mouseX
 import damien.nodeworks.compat.mouseY
 import damien.nodeworks.platform.PlatformServices
-import damien.nodeworks.screen.widget.CardRenameRow
 import damien.nodeworks.screen.widget.ChannelPickerWidget
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
@@ -50,7 +49,7 @@ class CardSettingsScreen(
      *  client) can flow into the widget without clobbering an in-progress click. */
     private var lastSyncedChannel: Int = -1
 
-    private lateinit var renameRow: CardRenameRow
+    private lateinit var tagRow: damien.nodeworks.screen.widget.CardTagRow
 
     init {
         inventoryLabelY = -9999
@@ -80,22 +79,22 @@ class CardSettingsScreen(
         }
         addRenderableWidget(picker!!)
 
-        renameRow = CardRenameRow(
-            font, leftPos, topPos, imageWidth, menu.initialName,
-            sendRename = { name ->
+        tagRow = damien.nodeworks.screen.widget.CardTagRow(
+            font, leftPos, topPos, imageWidth, menu.initialTags, menu.knownTags,
+            sendTags = { tags ->
                 PlatformServices.clientNetworking.sendToServer(
-                    damien.nodeworks.network.SetCardNamePayload(menu.containerId, name)
+                    damien.nodeworks.network.SetCardTagsPayload(menu.containerId, tags)
                 )
             },
             requestDefocus = { setFocused(null) },
         )
-        renameRow.addToScreen { addRenderableWidget(it) }
+        tagRow.addToScreen { addRenderableWidget(it) }
     }
 
     override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
         super.extractBackground(graphics, mouseX, mouseY, partialTick)
         NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos, imageWidth, imageHeight)
-        renameRow.render(graphics, mouseX, mouseY)
+        tagRow.render(graphics, mouseX, mouseY)
         NineSlice.WINDOW_RECESSED.draw(graphics, leftPos + INSET_X, topPos + INSET_Y, INSET_W, INSET_H)
         graphics.drawString(
             font, LABEL_TEXT,
@@ -118,6 +117,7 @@ class CardSettingsScreen(
 
         // Render the popup overlay AFTER all other widgets so it layers on top.
         picker?.renderOverlay(graphics, mouseX, mouseY)
+        tagRow.renderOverlay(graphics, mouseX, mouseY)
     }
 
     override fun mouseClicked(event: MouseButtonEvent, doubleClick: Boolean): Boolean {
@@ -126,12 +126,12 @@ class CardSettingsScreen(
         if (picker?.expanded == true) {
             if (picker!!.handleOverlayClick(event.mouseX, event.mouseY)) return true
         }
-        if (renameRow.mouseClicked(event)) return true
+        if (tagRow.mouseClicked(event)) return true
         return super.mouseClicked(event, doubleClick)
     }
 
     override fun keyPressed(event: KeyEvent): Boolean {
-        if (renameRow.keyPressed(event)) return true
+        if (tagRow.keyPressed(event)) return true
         return super.keyPressed(event)
     }
 }

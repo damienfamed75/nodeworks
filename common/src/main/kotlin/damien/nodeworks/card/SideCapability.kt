@@ -137,17 +137,20 @@ data class StorageSideCapability(
 }
 
 /**
- * Transfer Card capability. [face] is the face of the target block the card reads
- * and writes through. The Node runs the move itself, this is what discovery and the
- * Diagnostic Tool see.
+ * A Storage Card in Export or Import mode. [face] is the face of the target block the
+ * card reads and writes through. The Node runs the move itself, this is what discovery
+ * and the Diagnostic Tool see. The inventory is not storage, so it is never listed
+ * among the storage cards.
  */
 data class TransferSideCapability(
     override val adjacentPos: BlockPos,
     val face: Direction,
-    val mode: damien.nodeworks.card.TransferCard.Companion.Mode,
+    val mode: StorageCard.Companion.Mode,
     val filterRules: List<String>,
     val roundRobin: Boolean,
     val tickInterval: Int,
+    val batch: Int = 0,
+    val keep: Int = 0,
 ) : SideCapability {
     override val type: String = "transfer"
 }

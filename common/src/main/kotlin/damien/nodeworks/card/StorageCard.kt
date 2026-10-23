@@ -21,11 +21,15 @@ import net.minecraft.world.level.Level
 import java.util.function.Consumer
 
 /**
- * Storage Card, registers an adjacent container as passive network storage.
- * Items in storage-card inventories are discoverable by the entire network
- * and available for crafting via Recipe Cards.
+ * Storage Card, declares what the inventory a Node faces is to the network.
  *
- * Right-click in air to set priority (0-99).
+ * In Storage mode the inventory is network storage: counted, shown in terminals,
+ * planned over, filled by priority. In Export mode the network fills the inventory with
+ * rule-matched items from its storage. In Import mode the network drains the inventory
+ * into its storage. Export and Import inventories are never storage themselves. The
+ * card only declares the move, the network runs it on the card's interval.
+ *
+ * Right-click in air to configure.
  */
 class StorageCard(properties: Properties) : NodeCard(properties) {
     override val cardType: String = "storage"
@@ -45,21 +49,48 @@ class StorageCard(properties: Properties) : NodeCard(properties) {
             filterRules = getFilterRules(stack),
             cardName = cardName,
             customSideOrdinal = getCustomSide(stack)?.ordinal ?: -1,
+            mode = getMode(stack).ordinal,
+            tickInterval = getTickInterval(stack),
+            roundRobin = getRoundRobin(stack),
+            batch = getBatch(stack),
+            keep = getKeep(stack),
+            tags = CardTags.get(stack),
+            knownTags = KnownCardTags.all(),
         )
         PlatformServices.menu.openExtendedMenu(
             serverPlayer,
             Component.translatable("container.nodeworks.storage_card"),
             openData,
             StorageCardOpenData.STREAM_CODEC,
-            { syncId, inv, _ -> StorageCardMenu(syncId, inv, hand, initialName = cardName) }
+            { syncId, inv, _ -> StorageCardMenu(syncId, inv, hand, initialName = cardName, initialTags = CardTags.get(stack)) }
         )
         return InteractionResult.CONSUME
     }
 
     override fun appendHoverText(stack: ItemStack, context: TooltipContext, display: TooltipDisplay, tooltip: Consumer<Component>, flag: TooltipFlag) {
         super.appendHoverText(stack, context, display, tooltip, flag)
-        val priority = getPriority(stack)
-        tooltip.accept(Component.literal("Priority: $priority").withStyle(ChatFormatting.GRAY))
+        val mode = getMode(stack)
+        when (mode) {
+            Mode.STORAGE -> {
+                tooltip.accept(Component.literal("Priority: ${getPriority(stack)}").withStyle(ChatFormatting.GRAY))
+            }
+            Mode.EXPORT, Mode.IMPORT -> {
+                val interval = getTickInterval(stack)
+                val every = if (interval == 1) "every tick" else "every $interval ticks"
+                tooltip.accept(Component.literal("Mode: ${modeName(mode)}, $every").withStyle(ChatFormatting.GRAY))
+                if (mode == Mode.EXPORT && getBatch(stack) > 0) {
+                    tooltip.accept(Component.literal("Batch: ${getBatch(stack)}").withStyle(ChatFormatting.GRAY))
+                }
+                if (mode == Mode.IMPORT) {
+                    if (getKeep(stack) > 0) tooltip.accept(Component.literal("Keep: ${getKeep(stack)}").withStyle(ChatFormatting.GRAY))
+                    if (getRoundRobin(stack)) tooltip.accept(Component.literal("Round robin").withStyle(ChatFormatting.GRAY))
+                }
+                val channel = getChannelFilter(stack)
+                if (channel is damien.nodeworks.network.ChannelFilter.Color) {
+                    tooltip.accept(Component.literal("Channel: ${channel.color.getName().replace('_', ' ')}").withStyle(ChatFormatting.GRAY))
+                }
+            }
+        }
 
         // Face override is opt-in, omit the line entirely when the player
         // hasn't picked one (so the default-touching-face card stays clean).
@@ -74,11 +105,11 @@ class StorageCard(properties: Properties) : NodeCard(properties) {
         // Single-line summary of the three filter dimensions so a quick hover
         // reads at a glance whether the card is configured. All three default
         // to "Any" / "Allow", so an unconfigured card reads cleanly too.
-        val mode = formatEnum(getFilterMode(stack).name)
+        val filterMode = formatEnum(getFilterMode(stack).name)
         val nbt = formatEnum(getNbtFilter(stack).name)
         val stacking = formatEnum(getStackabilityFilter(stack).name)
         tooltip.accept(
-            Component.literal("Mode=$mode  NBT=$nbt  Stacking=$stacking")
+            Component.literal("Mode=$filterMode  NBT=$nbt  Stacking=$stacking")
                 .withStyle(ChatFormatting.GRAY),
         )
 
@@ -125,6 +156,53 @@ class StorageCard(properties: Properties) : NodeCard(properties) {
          *  ([NodeBlockEntity.getSideCapabilities] resolves to the node-side's
          *  opposite, the face touching the node). */
         private const val CUSTOM_SIDE_KEY = "customSide"
+        private const val MODE_KEY = "cardMode"
+        private const val ROUND_ROBIN_KEY = "roundRobin"
+        private const val TICK_INTERVAL_KEY = "tickInterval"
+        private const val BATCH_KEY = "batch"
+        private const val KEEP_KEY = "keep"
+
+        const val DEFAULT_TICK_INTERVAL = 20
+        const val MIN_TICK_INTERVAL = 1
+        const val MAX_TICK_INTERVAL = 600
+
+        /** One run moves at most nine full stacks' worth of items, a chest buffer's worth,
+         *  however the source is laid out. The scan behind it is not capped: it walks as
+         *  many slots as the network's move-time budget allows and resumes from where it
+         *  stopped next run, so a large store is covered over several runs. */
+        const val MAX_ITEMS_PER_RUN = 9L * 64L
+
+        /** An Export batch can be at most one run's worth, since a run is what carries it. */
+        const val MAX_BATCH = MAX_ITEMS_PER_RUN.toInt()
+
+        /** Items an Import leaves behind per item type, at most. */
+        const val MAX_KEEP = 999
+
+        const val BUCKET_MB = 1000L
+
+        /** Fluids move alongside items when the faced block has a tank: nine buckets per
+         *  run, the fluid counterpart of nine stacks. */
+        const val MAX_FLUID_PER_RUN = 9L * BUCKET_MB
+
+        /** A card reuses the network walk for up to a second. Items it moves do not change
+         *  the network, and anything that does drops the cached walk at once, so an
+         *  interval of one tick costs one walk a second, not one a tick. */
+        const val SNAPSHOT_MAX_AGE_TICKS = 20L
+
+        /** Round robin spreads each stack over at most this many Storage Cards per run,
+         *  starting at the rotation index, and the window moves on next run. Small setups
+         *  fit inside it, large ones are covered a window at a time, and a run never
+         *  touches more cards than this however many the network has. */
+        const val ROUND_ROBIN_WINDOW = 16
+
+        /** What the faced inventory is to the network. See the class comment. */
+        enum class Mode { STORAGE, EXPORT, IMPORT }
+
+        fun modeName(mode: Mode): String = when (mode) {
+            Mode.STORAGE -> "Storage"
+            Mode.EXPORT -> "Export"
+            Mode.IMPORT -> "Import"
+        }
 
         /** Filter mode controls whether the rule list whitelists or blacklists items.
          *  An empty rule list means "accept everything" regardless of mode, so the
@@ -144,10 +222,26 @@ class StorageCard(properties: Properties) : NodeCard(properties) {
          *  what `network:route`'s Lua predicate is for. */
         enum class NbtFilter { ANY, HAS_DATA, NO_DATA }
 
-        fun getPriority(stack: ItemStack): Int {
-            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return 0
-            return customData.copyTag().getIntOr("priority", 0)
+        private fun tagOf(stack: ItemStack): CompoundTag? = stack.get(DataComponents.CUSTOM_DATA)?.copyTag()
+
+        private fun write(stack: ItemStack, edit: (CompoundTag) -> Unit) {
+            val tag = tagOf(stack) ?: CompoundTag()
+            edit(tag)
+            stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag))
         }
+
+        fun getMode(stack: ItemStack): Mode {
+            val raw = tagOf(stack)?.getStringOr(MODE_KEY, Mode.STORAGE.name) ?: return Mode.STORAGE
+            return runCatching { Mode.valueOf(raw) }.getOrDefault(Mode.STORAGE)
+        }
+
+        /** Storage is the default and leaves no key, so a card never touched stays clean. */
+        fun setMode(stack: ItemStack, mode: Mode) {
+            if (getMode(stack) == mode) return
+            write(stack) { if (mode == Mode.STORAGE) it.remove(MODE_KEY) else it.putString(MODE_KEY, mode.name) }
+        }
+
+        fun getPriority(stack: ItemStack): Int = tagOf(stack)?.getIntOr("priority", 0) ?: 0
 
         fun setPriority(stack: ItemStack, priority: Int) {
             val clamped = priority.coerceIn(0, 999)
@@ -155,26 +249,67 @@ class StorageCard(properties: Properties) : NodeCard(properties) {
             // doesn't dirty CUSTOM_DATA on a previously-pristine stack and drop
             // the mod-name tooltip line.
             if (getPriority(stack) == clamped) return
-            // Read-modify-write so we don't clobber sibling keys like the channel
-            // color set via [CardChannel.set]. Pre-channel this method always wrote
-            // a fresh single-key tag, which is fine when nothing else lives in
-            // CUSTOM_DATA, now we merge.
-            val tag = stack.get(DataComponents.CUSTOM_DATA)?.copyTag() ?: CompoundTag()
-            tag.putInt("priority", clamped)
-            stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag))
+            write(stack) { it.putInt("priority", clamped) }
+        }
+
+        fun getTickInterval(stack: ItemStack): Int =
+            (tagOf(stack)?.getIntOr(TICK_INTERVAL_KEY, DEFAULT_TICK_INTERVAL) ?: DEFAULT_TICK_INTERVAL)
+                .coerceIn(MIN_TICK_INTERVAL, MAX_TICK_INTERVAL)
+
+        fun setTickInterval(stack: ItemStack, interval: Int) {
+            val clamped = interval.coerceIn(MIN_TICK_INTERVAL, MAX_TICK_INTERVAL)
+            if (getTickInterval(stack) == clamped) return
+            write(stack) { if (clamped == DEFAULT_TICK_INTERVAL) it.remove(TICK_INTERVAL_KEY) else it.putInt(TICK_INTERVAL_KEY, clamped) }
+        }
+
+        fun getRoundRobin(stack: ItemStack): Boolean = tagOf(stack)?.getBooleanOr(ROUND_ROBIN_KEY, false) ?: false
+
+        /** Kept whatever the mode, so switching modes loses nothing. */
+        fun setRoundRobin(stack: ItemStack, on: Boolean) {
+            if (getRoundRobin(stack) == on) return
+            write(stack) { if (on) it.putBoolean(ROUND_ROBIN_KEY, true) else it.remove(ROUND_ROBIN_KEY) }
+        }
+
+        /** Export only: move when at least this many matching items are in storage, and at
+         *  most this many per run. Zero moves whatever exists. */
+        fun getBatch(stack: ItemStack): Int = (tagOf(stack)?.getIntOr(BATCH_KEY, 0) ?: 0).coerceIn(0, MAX_BATCH)
+
+        fun setBatch(stack: ItemStack, batch: Int) {
+            val clamped = batch.coerceIn(0, MAX_BATCH)
+            if (getBatch(stack) == clamped) return
+            write(stack) { if (clamped == 0) it.remove(BATCH_KEY) else it.putInt(BATCH_KEY, clamped) }
+        }
+
+        /** Import only: items of each type left in the faced inventory. */
+        fun getKeep(stack: ItemStack): Int = (tagOf(stack)?.getIntOr(KEEP_KEY, 0) ?: 0).coerceIn(0, MAX_KEEP)
+
+        fun setKeep(stack: ItemStack, keep: Int) {
+            val clamped = keep.coerceIn(0, MAX_KEEP)
+            if (getKeep(stack) == clamped) return
+            write(stack) { if (clamped == 0) it.remove(KEEP_KEY) else it.putInt(KEEP_KEY, clamped) }
+        }
+
+        /** Which Storage Cards an Export draws from or an Import lands on. No channel set
+         *  means every card. In Storage mode the same key is the card's own colour. */
+        fun getChannelFilter(stack: ItemStack): damien.nodeworks.network.ChannelFilter =
+            if (CardChannel.isSet(stack)) damien.nodeworks.network.ChannelFilter.Color(CardChannel.get(stack))
+            else damien.nodeworks.network.ChannelFilter.All
+
+        fun setChannelFilter(stack: ItemStack, filter: damien.nodeworks.network.ChannelFilter) {
+            when (filter) {
+                damien.nodeworks.network.ChannelFilter.All -> CardChannel.clear(stack)
+                is damien.nodeworks.network.ChannelFilter.Color -> CardChannel.set(stack, filter.color)
+            }
         }
 
         fun getFilterMode(stack: ItemStack): FilterMode {
-            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return FilterMode.ALLOW
-            val raw = customData.copyTag().getStringOr(FILTER_MODE_KEY, FilterMode.ALLOW.name)
+            val raw = tagOf(stack)?.getStringOr(FILTER_MODE_KEY, FilterMode.ALLOW.name) ?: return FilterMode.ALLOW
             return runCatching { FilterMode.valueOf(raw) }.getOrDefault(FilterMode.ALLOW)
         }
 
         fun setFilterMode(stack: ItemStack, mode: FilterMode) {
             if (getFilterMode(stack) == mode) return
-            val tag = stack.get(DataComponents.CUSTOM_DATA)?.copyTag() ?: CompoundTag()
-            tag.putString(FILTER_MODE_KEY, mode.name)
-            stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag))
+            write(stack) { it.putString(FILTER_MODE_KEY, mode.name) }
         }
 
         /** Rule list is each row's filter expression, using the same syntax
@@ -182,60 +317,45 @@ class StorageCard(properties: Properties) : NodeCard(properties) {
          *  Empty rules are stripped on save so a half-edited row doesn't
          *  silently accept everything. */
         fun getFilterRules(stack: ItemStack): List<String> {
-            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return emptyList()
-            val list = customData.copyTag().getList(FILTER_RULES_KEY).orElse(null) ?: return emptyList()
+            val list = tagOf(stack)?.getList(FILTER_RULES_KEY)?.orElse(null) ?: return emptyList()
             return (0 until list.size).map { list.getStringOr(it, "") }.filter { it.isNotEmpty() }
         }
 
         fun setFilterRules(stack: ItemStack, rules: List<String>) {
             val cleaned = rules.map { it.trim() }.filter { it.isNotEmpty() }
             if (getFilterRules(stack) == cleaned) return
-            val tag = stack.get(DataComponents.CUSTOM_DATA)?.copyTag() ?: CompoundTag()
-            if (cleaned.isEmpty()) {
-                tag.remove(FILTER_RULES_KEY)
-            } else {
-                val list = ListTag()
-                for (rule in cleaned) list.add(StringTag.valueOf(rule))
-                tag.put(FILTER_RULES_KEY, list)
+            write(stack) { tag ->
+                if (cleaned.isEmpty()) {
+                    tag.remove(FILTER_RULES_KEY)
+                } else {
+                    val list = ListTag()
+                    for (rule in cleaned) list.add(StringTag.valueOf(rule))
+                    tag.put(FILTER_RULES_KEY, list)
+                }
             }
-            stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag))
         }
 
         fun getStackabilityFilter(stack: ItemStack): StackabilityFilter {
-            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return StackabilityFilter.ANY
-            val raw = customData.copyTag().getStringOr(FILTER_STACK_KEY, StackabilityFilter.ANY.name)
+            val raw = tagOf(stack)?.getStringOr(FILTER_STACK_KEY, StackabilityFilter.ANY.name) ?: return StackabilityFilter.ANY
             return runCatching { StackabilityFilter.valueOf(raw) }.getOrDefault(StackabilityFilter.ANY)
         }
 
         fun setStackabilityFilter(stack: ItemStack, mode: StackabilityFilter) {
             if (getStackabilityFilter(stack) == mode) return
-            val tag = stack.get(DataComponents.CUSTOM_DATA)?.copyTag() ?: CompoundTag()
             // ANY is the default, drop the key so a clean card stays clean and
             // the mod-name tooltip line keeps working on otherwise-pristine
             // stacks. Mirrors the priority writer's "skip if equal" pattern.
-            if (mode == StackabilityFilter.ANY) {
-                tag.remove(FILTER_STACK_KEY)
-            } else {
-                tag.putString(FILTER_STACK_KEY, mode.name)
-            }
-            stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag))
+            write(stack) { if (mode == StackabilityFilter.ANY) it.remove(FILTER_STACK_KEY) else it.putString(FILTER_STACK_KEY, mode.name) }
         }
 
         fun getNbtFilter(stack: ItemStack): NbtFilter {
-            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return NbtFilter.ANY
-            val raw = customData.copyTag().getStringOr(FILTER_NBT_KEY, NbtFilter.ANY.name)
+            val raw = tagOf(stack)?.getStringOr(FILTER_NBT_KEY, NbtFilter.ANY.name) ?: return NbtFilter.ANY
             return runCatching { NbtFilter.valueOf(raw) }.getOrDefault(NbtFilter.ANY)
         }
 
         fun setNbtFilter(stack: ItemStack, mode: NbtFilter) {
             if (getNbtFilter(stack) == mode) return
-            val tag = stack.get(DataComponents.CUSTOM_DATA)?.copyTag() ?: CompoundTag()
-            if (mode == NbtFilter.ANY) {
-                tag.remove(FILTER_NBT_KEY)
-            } else {
-                tag.putString(FILTER_NBT_KEY, mode.name)
-            }
-            stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag))
+            write(stack) { if (mode == NbtFilter.ANY) it.remove(FILTER_NBT_KEY) else it.putString(FILTER_NBT_KEY, mode.name) }
         }
 
         /** Player-chosen face override. Null = use the default (face touching
@@ -244,18 +364,14 @@ class StorageCard(properties: Properties) : NodeCard(properties) {
          *  resolved at capability build-time using the node side the card is
          *  mounted on. */
         fun getCustomSide(stack: ItemStack): damien.nodeworks.screen.widget.RelDir? {
-            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return null
-            val raw = customData.copyTag().getStringOr(CUSTOM_SIDE_KEY, "")
+            val raw = tagOf(stack)?.getStringOr(CUSTOM_SIDE_KEY, "") ?: return null
             if (raw.isEmpty()) return null
             return runCatching { damien.nodeworks.screen.widget.RelDir.valueOf(raw) }.getOrNull()
         }
 
         fun setCustomSide(stack: ItemStack, side: damien.nodeworks.screen.widget.RelDir?) {
             if (getCustomSide(stack) == side) return
-            val tag = stack.get(DataComponents.CUSTOM_DATA)?.copyTag() ?: CompoundTag()
-            if (side == null) tag.remove(CUSTOM_SIDE_KEY)
-            else tag.putString(CUSTOM_SIDE_KEY, side.name)
-            stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag))
+            write(stack) { if (side == null) it.remove(CUSTOM_SIDE_KEY) else it.putString(CUSTOM_SIDE_KEY, side.name) }
         }
     }
 }

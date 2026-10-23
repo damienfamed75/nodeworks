@@ -32,11 +32,18 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
     private fun ae2(h: FluidStorageHandle): Ae2FluidStorageHandle? =
         if (Ae2Compat.isLoaded) h as? Ae2FluidStorageHandle else null
 
+    /** An Interface of another network, read and written through its own network. */
+    private fun iface(h: ItemStorageHandle): damien.nodeworks.script.InterfaceItemStorageHandle? =
+        h as? damien.nodeworks.script.InterfaceItemStorageHandle
+
     private fun idOf(stack: ItemStack): String = BuiltInRegistries.ITEM.getKey(stack.item).toString()
 
     // ---- lookup ----
 
     override fun getItemStorage(level: ServerLevel, pos: BlockPos, face: Direction): ItemStorageHandle? {
+        // A card facing an Interface gets the network behind it, not the buffer that
+        // hoppers see through the block capability.
+        (level.getBlockEntity(pos) as? damien.nodeworks.block.entity.InterfaceBlockEntity)?.let { return it.storageHandle() }
         if (Ae2Compat.isLoaded) Ae2Storage.getItemStorage(level, pos, face)?.let { return it }
         return base.getItemStorage(level, pos, face)
     }
@@ -55,28 +62,32 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
     // ---- items, single handle ----
 
     override fun countItems(storage: ItemStorageHandle, filter: (String) -> Boolean): Long {
+        iface(storage)?.let { return damien.nodeworks.script.InterfaceStorage.countItems(it, filter) }
         val a = ae2(storage)
         return if (a != null) Ae2Storage.countItems(a, filter) else base.countItems(storage, filter)
     }
 
     override fun findFirstItem(storage: ItemStorageHandle, filter: (String) -> Boolean): String? {
+        iface(storage)?.let { return damien.nodeworks.script.InterfaceStorage.findFirstItem(it, filter) }
         val a = ae2(storage)
         return if (a != null) Ae2Storage.findFirstItem(a, filter) else base.findFirstItem(storage, filter)
     }
 
     override fun findFirstItemInfo(storage: ItemStorageHandle, filter: (String) -> Boolean): ItemInfo? {
+        iface(storage)?.let { return damien.nodeworks.script.InterfaceStorage.findFirstItemInfo(it, filter) }
         val a = ae2(storage)
         return if (a != null) Ae2Storage.findFirstItemInfo(a, filter) else base.findFirstItemInfo(storage, filter)
     }
 
     override fun findAllItemInfo(storage: ItemStorageHandle, filter: (String) -> Boolean): List<ItemInfo> {
+        iface(storage)?.let { return damien.nodeworks.script.InterfaceStorage.findAllItemInfo(it, filter) }
         val a = ae2(storage)
         return if (a != null) Ae2Storage.findAllItemInfo(a, filter) else base.findAllItemInfo(storage, filter)
     }
 
     // An ME network has no slots, so it reports -1 and is always scanned whole.
     override fun slotCount(storage: ItemStorageHandle): Int =
-        if (ae2(storage) != null) -1 else base.slotCount(storage)
+        if (ae2(storage) != null || iface(storage) != null) -1 else base.slotCount(storage)
 
     override fun findAllItemInfoInRange(
         storage: ItemStorageHandle,
@@ -84,6 +95,7 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
         until: Int,
         filter: (String) -> Boolean,
     ): List<ItemInfo> {
+        iface(storage)?.let { return if (from == 0) damien.nodeworks.script.InterfaceStorage.findAllItemInfo(it, filter) else emptyList() }
         val a = ae2(storage)
         return if (a != null) { if (from == 0) Ae2Storage.findAllItemInfo(a, filter) else emptyList() }
         else base.findAllItemInfoInRange(storage, from, until, filter)
@@ -105,48 +117,57 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
     }
 
     override fun extractItems(storage: ItemStorageHandle, filter: (String) -> Boolean, maxCount: Long): Long {
+        iface(storage)?.let { return damien.nodeworks.script.InterfaceStorage.extractItems(it, filter, maxCount) }
         val a = ae2(storage)
         return if (a != null) Ae2Storage.extractItems(a, filter, maxCount) else base.extractItems(storage, filter, maxCount)
     }
 
     override fun extractItemStacksMatching(storage: ItemStorageHandle, filter: (String) -> Boolean, maxCount: Long): List<ItemStack> {
+        iface(storage)?.let { return damien.nodeworks.script.InterfaceStorage.extractItemStacksMatching(it, filter, maxCount) }
         val a = ae2(storage)
         return if (a != null) Ae2Storage.extractItemStacksMatching(a, filter, maxCount)
         else base.extractItemStacksMatching(storage, filter, maxCount)
     }
 
     override fun extractStacksByPredicate(storage: ItemStorageHandle, filter: (ItemStack) -> Boolean, maxCount: Long, cursor: ScanCursor?): List<ItemStack> {
+        iface(storage)?.let { return damien.nodeworks.script.InterfaceStorage.extractStacksByPredicate(it, filter, maxCount) }
         val a = ae2(storage)
         return if (a != null) Ae2Storage.extractStacksByPredicate(a, filter, maxCount, cursor)
         else base.extractStacksByPredicate(storage, filter, maxCount, cursor)
     }
 
     override fun peekStack(storage: ItemStorageHandle, filter: (ItemStack) -> Boolean, cursor: ScanCursor?): ItemStack? {
+        iface(storage)?.let { return damien.nodeworks.script.InterfaceStorage.peekStack(it, filter) }
         val a = ae2(storage)
         return if (a != null) Ae2Storage.peekStack(a, filter, cursor) else base.peekStack(storage, filter, cursor)
     }
 
     override fun simulateInsertStack(dest: ItemStorageHandle, stack: ItemStack): Long {
+        iface(dest)?.let { return damien.nodeworks.script.InterfaceStorage.simulateInsertStack(it, stack) }
         val a = ae2(dest)
         return if (a != null) Ae2Storage.simulateInsertStacks(a, listOf(stack)) else base.simulateInsertStack(dest, stack)
     }
 
     override fun countStacksByPredicate(storage: ItemStorageHandle, filter: (ItemStack) -> Boolean): Long {
+        iface(storage)?.let { return damien.nodeworks.script.InterfaceStorage.countStacksByPredicate(it, filter) }
         val a = ae2(storage)
         return if (a != null) Ae2Storage.countStacksByPredicate(a, filter) else base.countStacksByPredicate(storage, filter)
     }
 
     override fun insertItemStack(storage: ItemStorageHandle, stack: ItemStack): Int {
+        iface(storage)?.let { return damien.nodeworks.script.InterfaceStorage.insertItemStack(it, stack) }
         val a = ae2(storage)
         return if (a != null) Ae2Storage.insertItemStack(a, stack) else base.insertItemStack(storage, stack)
     }
 
     override fun simulateInsertItem(dest: ItemStorageHandle, item: Item, maxCount: Long): Long {
+        iface(dest)?.let { return damien.nodeworks.script.InterfaceStorage.simulateInsertItem(it, item, maxCount) }
         val a = ae2(dest)
         return if (a != null) Ae2Storage.simulateInsertItem(a, item, maxCount) else base.simulateInsertItem(dest, item, maxCount)
     }
 
     override fun tryInsertAll(dest: ItemStorageHandle, item: Item, count: Long): Boolean {
+        iface(dest)?.let { return damien.nodeworks.script.InterfaceStorage.tryInsertAll(it, item, count) }
         val a = ae2(dest)
         return if (a != null) Ae2Storage.tryInsertAll(a, item, count) else base.tryInsertAll(dest, item, count)
     }
@@ -154,7 +175,7 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
     // ---- items, two handles ----
 
     private fun crossesBackend(source: ItemStorageHandle, dest: ItemStorageHandle): Boolean =
-        ae2(source) != null || ae2(dest) != null
+        ae2(source) != null || ae2(dest) != null || iface(source) != null || iface(dest) != null
 
     /** Loss-free move on the routed primitives: whatever dest rejects goes back to source. */
     private fun moveStacks(
@@ -272,6 +293,7 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
         if (!crossesBackend(source, dest)) return base.moveItems(source, dest, filter, maxCount, cursor, accept, onMoved)
         if (maxCount <= 0L) return 0L
         val pred: (ItemStack) -> Boolean = { filter(idOf(it)) && (accept == null || accept(it)) }
+        if (iface(source) != null || iface(dest) != null) return moveInRounds(source, dest, maxCount, onMoved) { extractStacksByPredicate(source, pred, it) }
         val s = ae2(source)
         val d = ae2(dest)
         if (s != null && d != null) return Ae2Storage.moveKeys(s, d, pred, maxCount, onMoved)
@@ -334,6 +356,7 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
         if (!crossesBackend(source, dest)) return base.moveItemsVariant(source, dest, filter, maxCount)
         if (maxCount <= 0L) return 0L
         val pred: (ItemStack) -> Boolean = { filter(idOf(it), it.componentsPatch.size() > 0) }
+        if (iface(source) != null || iface(dest) != null) return moveInRounds(source, dest, maxCount) { extractStacksByPredicate(source, pred, it) }
         val s = ae2(source)
         val d = ae2(dest)
         if (s != null && d != null) return Ae2Storage.moveKeys(s, d, pred, maxCount)
@@ -344,6 +367,7 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
     override fun moveItemsByStackPredicate(source: ItemStorageHandle, dest: ItemStorageHandle, filter: (ItemStack) -> Boolean, maxCount: Long): Long {
         if (!crossesBackend(source, dest)) return base.moveItemsByStackPredicate(source, dest, filter, maxCount)
         if (maxCount <= 0L) return 0L
+        if (iface(source) != null || iface(dest) != null) return moveInRounds(source, dest, maxCount) { extractStacksByPredicate(source, filter, it) }
         val s = ae2(source)
         val d = ae2(dest)
         if (s != null && d != null) return Ae2Storage.moveKeys(s, d, filter, maxCount)
@@ -355,13 +379,24 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
      *  one simulated insert per distinct item, with nothing extracted. */
     override fun previewMove(source: ItemStorageHandle, dest: ItemStorageHandle, filter: (ItemStack) -> Boolean, maxCount: Long, maxStacks: Int): MovePreview {
         val s = ae2(source)
-        val (stacks, sawAll) = if (s != null) Ae2Storage.previewStacks(s, filter, maxCount, maxStacks)
-            else base.previewStacks(source, filter, maxCount, maxStacks)
+        val si = iface(source)
+        val (stacks, sawAll) = when {
+            si != null -> damien.nodeworks.script.InterfaceStorage.findAllItemInfo(si) { true }
+                .mapNotNull { info -> si.entity.representative(info)?.also { st -> st.count = minOf(info.count, Int.MAX_VALUE.toLong()).toInt() } }
+                .filter(filter).let { list -> list to true }
+            s != null -> Ae2Storage.previewStacks(s, filter, maxCount, maxStacks)
+            else -> base.previewStacks(source, filter, maxCount, maxStacks)
+        }
         val available = stacks.sumOf { it.count.toLong() }
         // A capped run that stopped early can't rule the move out, so don't pay for asking dest.
         if (maxStacks != Int.MAX_VALUE && !sawAll) return MovePreview(available, null, false)
         val d = ae2(dest)
-        val fits = if (d != null) Ae2Storage.simulateInsertStacks(d, stacks) else base.simulateInsertStacks(dest, stacks)
+        val di = iface(dest)
+        val fits = when {
+            di != null -> stacks.sumOf { damien.nodeworks.script.InterfaceStorage.simulateInsertStack(di, it) }
+            d != null -> Ae2Storage.simulateInsertStacks(d, stacks)
+            else -> base.simulateInsertStacks(dest, stacks)
+        }
         return MovePreview(available, fits, sawAll)
     }
 

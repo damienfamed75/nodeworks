@@ -169,13 +169,17 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
                     details.add("Fancy Lasers: ${if (fancyLasers) "on" else "off"}")
                 }
                 is damien.nodeworks.block.entity.TerminalBlockEntity -> {
-                    val scriptCount = entity.scripts.size
-                    details.add("Scripts: $scriptCount")
-                    for (name in entity.scripts.keys) {
-                        val len = entity.scripts[name]?.length ?: 0
-                        details.add("  $name (${len} chars)")
+                    val slots = (0 until damien.nodeworks.block.entity.TerminalBlockEntity.SLOT_COUNT)
+                        .mapNotNull { s -> entity.programAt(s)?.let { s to it } }
+                    details.add("Scripts: ${slots.size}")
+                    for ((s, program) in slots) {
+                        val state = when {
+                            entity.lastError(s) != null -> "fault"
+                            entity.isEnabled(s) -> "enabled"
+                            else -> "off"
+                        }
+                        details.add("  ${s + 1}. ${program.name} (${program.tabs.size} tabs, $state)")
                     }
-                    if (entity.autoRun) details.add("Auto-run: enabled")
                 }
                 is damien.nodeworks.block.entity.CraftingCoreBlockEntity -> {
                     details.add("Buffer: ${entity.bufferUsed} / ${entity.bufferCapacity}")
@@ -357,20 +361,20 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
             )
         }
 
-        // Collect terminal info
+        // Collect Runner info
         val terminalInfos = snapshot.terminalPositions.mapNotNull { tPos ->
-            val terminal = level.getBlockEntity(tPos) as? damien.nodeworks.block.entity.TerminalBlockEntity ?: return@mapNotNull null
-            val isRunning = PlatformServices.modState.isScriptRunning(serverLevel, tPos)
-            val handlers = if (isRunning) {
-                val engine = PlatformServices.modState.getScriptEngine(serverLevel, tPos) as? damien.nodeworks.script.ScriptEngine
-                if (engine == null) emptyList()
-                // The open packet carries each name in at most 64 chars, a long rule is cut.
-                else engine.processingHandlers.keys.toList() +
+            val runner = level.getBlockEntity(tPos) as? damien.nodeworks.block.entity.TerminalBlockEntity ?: return@mapNotNull null
+            val engines = PlatformServices.modState.getScriptEngines(serverLevel, tPos)
+                .filterIsInstance<damien.nodeworks.script.ScriptEngine>()
+                .filter { it.isRunning() }
+            // The open packet carries each name in at most 64 chars, a long rule is cut.
+            val handlers = engines.flatMap { engine ->
+                engine.processingHandlers.keys.toList() +
                     engine.recipeRules.filter { it.active }.map { if (it.label.length > 64) it.label.take(61) + "..." else it.label }
-            } else emptyList()
-            DiagnosticOpenData.TerminalInfo(
-                tPos, isRunning, terminal.scripts.keys.toList(), handlers, terminal.autoRun
-            )
+            }
+            val names = (0 until damien.nodeworks.block.entity.TerminalBlockEntity.SLOT_COUNT).mapNotNull { runner.programAt(it)?.name }
+            val anyEnabled = (0 until damien.nodeworks.block.entity.TerminalBlockEntity.SLOT_COUNT).any { runner.isEnabled(it) }
+            DiagnosticOpenData.TerminalInfo(tPos, engines.isNotEmpty(), names, handlers, anyEnabled)
         }
 
         // Collect recent errors from the server-side buffer

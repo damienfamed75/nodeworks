@@ -50,6 +50,7 @@ object LuaDiagnostics {
         "nullable-misuse" to Severity.WARNING,
         "nullable-arg" to Severity.WARNING,
         "ambiguous-card-name" to Severity.HINT,
+        "unknown-card-tag" to Severity.HINT,
         "handler-no-pull" to Severity.HINT,
         "handler-unused-input" to Severity.HINT,
     )
@@ -62,6 +63,7 @@ object LuaDiagnostics {
     // module export prefix) stay inline since there isn't a stable cache key.
     // -----------------------------------------------------------------------
     private val GET_CALL: Regex = Regex(""":get\s*\(\s*(['"])([^'"]+)\1""")
+    private val TAGGED_CALL: Regex = Regex(""":tagged\s*\(\s*(['"])([^'"]+)\1""")
     private val ROUTE_FROM_TO_CALL: Regex =
         Regex(""":(route|from|to)\s*\(\s*(['"])([^'"]+)\2""")
     private val FUNCTION_DEF: Regex =
@@ -146,6 +148,8 @@ object LuaDiagnostics {
         otherScripts: Map<String, String> = emptyMap(),
         ambiguousNetworkNames: Set<String> = emptySet(),
         processingApis: List<damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo> = emptyList(),
+        /** Tags the server has seen on cards. Empty means unknown, and nothing is flagged. */
+        knownCardTags: Set<String> = emptySet(),
     ): List<Diagnostic> {
         if (text.isBlank()) return emptyList()
 
@@ -180,6 +184,9 @@ object LuaDiagnostics {
         if (ambiguousNetworkNames.isNotEmpty()) {
             out += checkAmbiguousNetworkGet(text, ambiguousNetworkNames)
         }
+        if (knownCardTags.isNotEmpty() && text.contains(":tagged")) {
+            out += checkUnknownCardTags(text, knownCardTags)
+        }
 
         // Handler-shape hints. Both rules share the same handler-span scan, so
         // build it once. Skip the work entirely when the script has no
@@ -195,6 +202,33 @@ object LuaDiagnostics {
             }
         }
         return out
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Rule: unknown-card-tag
+    // ──────────────────────────────────────────────────────────────────────
+
+    /** `network:tagged("x")` where no card the server knows of carries `x`. The player
+     *  may be writing ahead of the build, so this is a hint. The known set is what the
+     *  server has seen on any card, not just this network, since a script runs anywhere. */
+    private fun checkUnknownCardTags(text: String, known: Set<String>): List<Diagnostic> {
+        val diagnostics = mutableListOf<Diagnostic>()
+        val stripped = stripComments(text)
+        for (m in TAGGED_CALL.findAll(stripped)) {
+            val raw = m.groupValues[2]
+            val tag = damien.nodeworks.card.CardTags.normalize(raw) ?: continue
+            if (tag in known) continue
+            val range = m.groups[2]!!.range
+            diagnostics.add(
+                Diagnostic(
+                    severity = severityFor("unknown-card-tag"),
+                    range = TextRange(range.first, range.last + 1),
+                    code = "unknown-card-tag",
+                    message = "No card has been tagged '$tag' yet. Tag a card in its settings, or check the spelling.",
+                ),
+            )
+        }
+        return diagnostics
     }
 
     // ──────────────────────────────────────────────────────────────────────

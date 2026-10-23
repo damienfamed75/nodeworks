@@ -211,6 +211,8 @@ open class NodeBlock(properties: Properties) : BaseEntityBlock(properties), Simp
                 }
             }
             if (emptySlot == -1) return InteractionResult.TRY_WITH_EMPTY_HAND
+            // A face holds one role of Storage Card. Fall through to the GUI, which says why.
+            if (!be.acceptsCard(target.side, stack)) return InteractionResult.TRY_WITH_EMPTY_HAND
             if (level.isClientSide) return InteractionResult.SUCCESS
             // Read before shrinking, the last card in hand leaves an empty stack whose item is AIR.
             val card = stack.item as damien.nodeworks.card.NodeCard

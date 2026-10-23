@@ -1,6 +1,7 @@
 package damien.nodeworks.registry
 
 import damien.nodeworks.block.InstructionStorageBlock
+import damien.nodeworks.block.InterfaceBlock
 import damien.nodeworks.block.InventoryTerminalBlock
 import damien.nodeworks.block.NetworkControllerBlock
 import damien.nodeworks.block.FocusNodeBlock
@@ -338,6 +339,16 @@ object ModBlocks {
             .requiresCorrectToolForDrops()
             .noOcclusion(),
         itemFactory = { block, props -> damien.nodeworks.item.ChestBlockItem(block, props, damien.nodeworks.item.ChestBlockItem::describeImport) },
+    )
+
+    /** Interface. Presents its network's storage to whatever faces it. */
+    val INTERFACE: Block = register(
+        "interface",
+        ::InterfaceBlock,
+        BlockBehaviour.Properties.of()
+            .strength(3.0f, 6.0f)
+            .sound(net.minecraft.world.level.block.SoundType.COPPER)
+            .requiresCorrectToolForDrops(),
     )
 
     /** Export Chest. Buffer + network output device. Mirror of [IMPORT_CHEST]. */

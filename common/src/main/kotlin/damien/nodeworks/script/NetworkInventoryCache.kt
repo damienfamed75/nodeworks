@@ -24,8 +24,20 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class NetworkInventoryCache(
     private val level: ServerLevel,
-    private var networkEntryNode: BlockPos
+    private var networkEntryNode: BlockPos,
+    /** Index only storage the network owns directly, leaving out Storage Cards that face
+     *  another network's Interface. The view an Interface presents outward, so chains of
+     *  Interfaces read one level deep and never loop. */
+    val nativeOnly: Boolean = false,
 ) {
+    /** Game time something last read this index. Native indexes nobody reads are dropped. */
+    var lastReadTick: Long = level.gameTime
+        private set
+
+    fun markRead() {
+        lastReadTick = level.gameTime
+    }
+
     /** Reseat the BFS entry point and re-poll synchronously. Used when a UI consumer
      *  opens against a cache built earlier by a now-destroyed consumer, the stale entry
      *  point resolves to a missing BE so the natural cycle would empty [entries].
@@ -222,7 +234,7 @@ class NetworkInventoryCache(
         deadEntryChecks = 0
         val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, networkEntryNode)
         val current = snapshot.networkId?.toString() ?: "${level.dimension().toString()}:${networkEntryNode.asLong()}"
-        return current != key
+        return current != key.removeSuffix(NATIVE_SUFFIX)
     }
 
     companion object {
@@ -240,8 +252,35 @@ class NetworkInventoryCache(
         private const val MAX_SLOTS_PER_HANDLER = 1 shl 20
         private val logger = org.slf4j.LoggerFactory.getLogger("nodeworks-inventory-cache")
 
-        /** Global registry of caches. Keyed by UUID string when controller exists, or dim:pos as fallback. */
+        /** Global registry of caches. Keyed by UUID string when controller exists, or dim:pos as fallback.
+         *  A network's native-only index sits under the same key with [NATIVE_SUFFIX]. */
         private val caches = ConcurrentHashMap<String, NetworkInventoryCache>()
+
+        private const val NATIVE_SUFFIX = "#native"
+
+        /** Ticks a native index may go unread before it is dropped, ten minutes. */
+        private const val NATIVE_IDLE_TICKS = 12_000L
+
+        private fun keyFor(level: ServerLevel, networkEntryNode: BlockPos): String {
+            val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, networkEntryNode)
+            return snapshot.networkId?.toString() ?: "${level.dimension().toString()}:${networkEntryNode.asLong()}"
+        }
+
+        /** The native-only index of the network at [networkEntryNode], made on first use. */
+        fun getOrCreateNative(level: ServerLevel, networkEntryNode: BlockPos): NetworkInventoryCache {
+            val key = keyFor(level, networkEntryNode) + NATIVE_SUFFIX
+            caches[key]?.let {
+                it.rebindEntryPoint(networkEntryNode)
+                return it
+            }
+            val fresh = NetworkInventoryCache(level, networkEntryNode, nativeOnly = true)
+            caches[key] = fresh
+            return fresh
+        }
+
+        /** The native-only index if one exists, never creating one. */
+        fun existingNative(level: ServerLevel, networkEntryNode: BlockPos): NetworkInventoryCache? =
+            caches[keyFor(level, networkEntryNode) + NATIVE_SUFFIX]
 
         fun getOrCreate(level: ServerLevel, networkEntryNode: BlockPos): NetworkInventoryCache {
             // Key on controller permanentId so all consumers of one network share a cache.
@@ -277,6 +316,7 @@ class NetworkInventoryCache(
 
         fun removeByUUID(uuid: java.util.UUID) {
             caches.remove(uuid.toString())
+            caches.remove(uuid.toString() + NATIVE_SUFFIX)
         }
 
         /** Carries a network's cache over to its new id. When both ids already have one,
@@ -284,6 +324,7 @@ class NetworkInventoryCache(
          *  terminals rebind to the survivor on their next check. */
         fun renameKey(previous: java.util.UUID, next: java.util.UUID) {
             if (previous == next) return
+            caches.remove(previous.toString() + NATIVE_SUFFIX)?.let { caches.putIfAbsent(next.toString() + NATIVE_SUFFIX, it) }
             val moved = caches.remove(previous.toString()) ?: return
             caches.putIfAbsent(next.toString(), moved)
         }
@@ -313,7 +354,12 @@ class NetworkInventoryCache(
             while (it.hasNext()) {
                 val entry = it.next()
                 if ((entry.key.hashCode().toLong() and 0x7FFFFFFFL) % ORPHAN_CHECK_TICKS != phase) continue
-                if (entry.value.isOrphan(entry.key)) it.remove()
+                val cache = entry.value
+                if (cache.nativeOnly && gameTime - cache.lastReadTick > NATIVE_IDLE_TICKS) {
+                    it.remove()
+                    continue
+                }
+                if (cache.isOrphan(entry.key)) it.remove()
             }
         }
 
@@ -404,7 +450,12 @@ class NetworkInventoryCache(
         entryPasses.clear()
         val snapshot = NetworkDiscovery.discoverNetwork(level, networkEntryNode)
         cycleSnapshot = snapshot
-        val cards = NetworkStorageHelper.getDedupedStorageCards(snapshot)
+        val cards = NetworkStorageHelper.getDedupedStorageCards(snapshot).let { all ->
+            if (!nativeOnly) all else all.filter { card ->
+                val pos = (card.capability as? damien.nodeworks.card.StorageSideCapability)?.adjacentPos
+                pos != null && level.getBlockEntity(pos) !is damien.nodeworks.block.entity.InterfaceBlockEntity
+            }
+        }
         // Which node and side each card is mounted on. Same instances the
         // storage card list is built from, so identity lookup is exact.
         val mounts = java.util.IdentityHashMap<CardSnapshot, Pair<BlockPos, net.minecraft.core.Direction>>()

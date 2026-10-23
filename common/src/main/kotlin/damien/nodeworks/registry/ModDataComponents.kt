@@ -73,6 +73,14 @@ object ModDataComponents {
     lateinit var INSTRUCTION_SET_INGREDIENTS: DataComponentType<InstructionSetIngredients>
         private set
 
+    /** The program on a Script item. Absent means a Blank Script. */
+    lateinit var SCRIPT_PROGRAM: DataComponentType<damien.nodeworks.item.ScriptProgram>
+        private set
+
+    /** What a Portable Scripting Terminal is editing. */
+    lateinit var SCRIPT_DRAFT: DataComponentType<damien.nodeworks.item.ScriptDraft>
+        private set
+
     /**
      * Register all component types. Call from the block-registry RegisterEvent after
      * blocks are registered and before items, so any item that wants a component as a
@@ -113,6 +121,22 @@ object ModDataComponents {
             DataComponentType.builder<InstructionSetIngredients>()
                 .persistent(InstructionSetIngredients.CODEC)
                 .networkSynchronized(InstructionSetIngredients.STREAM_CODEC)
+                .build(),
+        )
+
+        SCRIPT_PROGRAM = register(
+            "script_program",
+            DataComponentType.builder<damien.nodeworks.item.ScriptProgram>()
+                .persistent(damien.nodeworks.item.ScriptProgram.CODEC)
+                .networkSynchronized(damien.nodeworks.item.ScriptProgram.STREAM_CODEC)
+                .build(),
+        )
+
+        SCRIPT_DRAFT = register(
+            "script_draft",
+            DataComponentType.builder<damien.nodeworks.item.ScriptDraft>()
+                .persistent(damien.nodeworks.item.ScriptDraft.CODEC)
+                .networkSynchronized(damien.nodeworks.item.ScriptDraft.STREAM_CODEC)
                 .build(),
         )
     }

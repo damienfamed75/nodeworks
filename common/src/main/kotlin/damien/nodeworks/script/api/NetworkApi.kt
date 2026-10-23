@@ -25,8 +25,14 @@ val Network: LuaType.Named = LuaTypes.module(
 
 val Channel: LuaType.Named = LuaTypes.type(
     name = "Channel",
-    description = "A dye-color-scoped view of the network's cards and devices.",
+    description = "A scoped view of the network's cards and devices: one dye colour, or one tag.",
     guidebookRef = "nodeworks:lua-api/channel.md",
+)
+
+val TagScope: LuaType.Named = LuaTypes.type(
+    name = "TagScope",
+    description = "The cards carrying a tag, with every Channel method. `:side` narrows to the cards touching one side of their block.",
+    guidebookRef = "nodeworks:lua-api/network.md#tagged",
 )
 
 val HandleList: LuaType.Named = LuaTypes.type(
@@ -107,6 +113,20 @@ val NetworkApi: ApiSurface = api(Network) {
         returns(DyeColor.list())
         description = "Color names of every channel currently in use on the network."
         guidebookRef = "nodeworks:lua-api/network.md#channels"
+    }
+
+    method("tagged") {
+        param("tag", CardTag, description = "Tag the cards carry.")
+        param("moreTags", CardTag.optional(), description = "Further tags every card must also carry.")
+        returns(TagScope)
+        description = "Scopes lookups to the cards carrying every given tag. The same methods as a channel, plus `:side`. Tags travel with the layout, so this is how a script runs on any network."
+        guidebookRef = "nodeworks:lua-api/network.md#tagged"
+    }
+
+    method("tags") {
+        returns(CardTag.list())
+        description = "Every tag on a card of this network, sorted."
+        guidebookRef = "nodeworks:lua-api/network.md#tags"
     }
 
     method("find") {
@@ -214,6 +234,15 @@ val NetworkApi: ApiSurface = api(Network) {
         returns(Void)
         description = "Prints a summary of the network to the terminal log."
         guidebookRef = "nodeworks:lua-api/network.md#debug"
+    }
+}
+
+val TagScopeApi: ApiSurface = api(TagScope, parent = Channel) {
+    method("side") {
+        param("side", FaceName, description = "Side of the block the cards touch: top, bottom, north, south, east or west.")
+        returns(TagScope)
+        description = "Only the tagged cards touching this side of their block. A furnace fed from above and emptied from below: `network:tagged(\"furnace\"):side(\"top\")` and `:side(\"bottom\")`."
+        guidebookRef = "nodeworks:lua-api/network.md#tagged"
     }
 }
 

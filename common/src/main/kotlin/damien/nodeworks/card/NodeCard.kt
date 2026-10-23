@@ -25,6 +25,13 @@ abstract class NodeCard(properties: Properties) : Item(properties) {
      */
     abstract val cardType: String
 
+    /** Tags ride in the tooltip as chips. */
+    override fun getTooltipImage(stack: net.minecraft.world.item.ItemStack): java.util.Optional<net.minecraft.world.inventory.tooltip.TooltipComponent> {
+        val tags = CardTags.get(stack)
+        if (tags.isEmpty()) return java.util.Optional.empty()
+        return java.util.Optional.of(damien.nodeworks.screen.tooltip.CardTagsTooltip(tags))
+    }
+
     /** Quick-place into a Node's empty slot when the card is right-clicked on
      *  one, or shift+right-clicked on a block adjacent to one. Vanilla
      *  bypasses [NodeBlock.useItemOn] when the player crouches with an item in

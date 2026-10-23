@@ -3,8 +3,8 @@ package damien.nodeworks.block
 import com.mojang.serialization.MapCodec
 import damien.nodeworks.block.entity.TerminalBlockEntity
 import damien.nodeworks.platform.PlatformServices
-import damien.nodeworks.screen.TerminalOpenData
-import damien.nodeworks.screen.TerminalScreenHandler
+import damien.nodeworks.screen.ScriptRunnerMenu
+import damien.nodeworks.screen.ScriptRunnerOpenData
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.network.chat.Component
@@ -77,82 +77,23 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties), Wrenc
         if (player.mainHandItem.item is damien.nodeworks.item.NetworkWrenchItem || player.mainHandItem.item is damien.nodeworks.item.DiagnosticToolItem) return InteractionResult.PASS
         if (level.isClientSide) return InteractionResult.SUCCESS
 
-        val terminal = level.getBlockEntity(pos) as? TerminalBlockEntity ?: return InteractionResult.PASS
-
-        val startPos = terminal.getNetworkStartPos()
-        if (startPos == null) {
-            player.sendSystemMessage(Component.translatable("message.nodeworks.terminal_no_network"))
-            return InteractionResult.SUCCESS
-        }
-
+        val runner = level.getBlockEntity(pos) as? TerminalBlockEntity ?: return InteractionResult.PASS
         val serverPlayer = player as ServerPlayer
-        val serverLevel = level as ServerLevel
-
-        // Null controller means no controller in the subgraph or a multi-controller
-        // conflict, scripts can't run and the sidebar would be empty either way.
-        val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(serverLevel, startPos)
-        if (snapshot.controller == null) {
-            player.sendSystemMessage(Component.translatable("message.nodeworks.terminal_controller_conflict"))
-            return InteractionResult.SUCCESS
-        }
-
-        // 1.0 scoping decision: only one player can edit a terminal at a time.
-        // Skips the headache of real-time collaborative editing (OT/CRDT, cursor
-        // sync, edit-conflict resolution) for the typical multi-player flow,
-        // which is "co-debug a script" rather than "two devs writing different
-        // halves at the same time." If anyone already has this terminal's
-        // [TerminalScreenHandler] open, refuse and tell the second player who's
-        // in there. The break-event listener in `Nodeworks.onBlockBreak`
-        // handles the cleanup case if the occupant logs off and gets evicted.
-        val occupant = serverLevel.players().firstOrNull { other ->
-            val menu = other.containerMenu
-            menu is damien.nodeworks.screen.TerminalScreenHandler &&
-                    menu.blockBackingPos == terminal.blockPos
-        }
-        if (occupant != null) {
-            player.sendSystemMessage(
-                Component.translatable("message.nodeworks.terminal_in_use", occupant.name.string)
-            )
-            return InteractionResult.SUCCESS
-        }
-
-        // Pull any cross-dim remote Processing APIs (reached via Receiver Antennas
-        // paired to a remote Broadcast Antenna). The client can't read these itself
-        // because the broadcast BE lives in another dimension, surface them in
-        // openData so the script editor's autocomplete can suggest remote recipe
-        // names in network:craft("..."). Local APIs are still scanned client-side
-        // in TerminalScreen, we only ship what the client genuinely can't reach.
-        val remoteApis = snapshot.processingApis
-            .filter { it.remoteDimension != null }
-            .flatMap { it.apis }
-
-        val openData = TerminalOpenData(
-            terminal.blockPos,
-            terminal.getScriptsCopy(),
-            PlatformServices.modState.isScriptRunning(serverLevel, terminal.blockPos),
-            terminal.autoRun,
-            terminal.layoutIndex,
-            remoteApis,
-            terminal.lastError,
-        )
-
+        val errors = List(TerminalBlockEntity.SLOT_COUNT) { runner.lastError(it) ?: "" }
         PlatformServices.menu.openExtendedMenu(
             serverPlayer,
             Component.translatable("block.nodeworks.terminal"),
-            openData,
-            TerminalOpenData.STREAM_CODEC,
-            { syncId, inv, p -> TerminalScreenHandler.createServer(syncId, p, terminal) }
+            ScriptRunnerOpenData(pos, errors),
+            ScriptRunnerOpenData.STREAM_CODEC,
+            { syncId, inv, _ -> ScriptRunnerMenu.createServer(syncId, inv, runner) },
         )
-
         return InteractionResult.SUCCESS
     }
 
     /**
-     * Rising-edge redstone pulse toggles the terminal's script: start it if stopped,
-     * stop it if running. Button taps / pressure plate steps / fresh torches all count
-     * as a rising edge from 0 to >0. `lastRedstoneSignal = -1` on a freshly-loaded BE
-     * means the first neighborChanged call just initializes the tracker, so a
-     * permanently-powered terminal doesn't auto-start every time the chunk reloads.
+     * A rising redstone edge toggles the Runner: stop every script if any runs, otherwise
+     * start every enabled slot. Slots with a recorded timeout stay off, so a redstone clock
+     * pointed at a misbehaving script cannot re-fire it every cycle.
      */
     override fun neighborChanged(
         state: BlockState,
@@ -172,15 +113,7 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties), Wrenc
         if (prev == 0 && signal > 0) {
             if (PlatformServices.modState.isScriptRunning(level, pos)) {
                 PlatformServices.modState.stopScript(level, pos)
-            } else if (terminal.scriptText.isNotBlank()) {
-                // Refuse to restart a script that previously hit a wall-clock
-                // soft-abort. Without this, a redstone clock pointed at a
-                // misbehaving terminal (e.g. `while true do print() end`) would
-                // re-trigger the bad script every other tick, eating the per-tick
-                // budget on each cycle. The player must edit the script which
-                // clears [TerminalBlockEntity.lastError] in [setScript] before
-                // it's eligible to run again.
-                if (terminal.lastError != null) return
+            } else if (terminal.autoStartSlots().isNotEmpty()) {
                 PlatformServices.modState.startScript(level, pos)
             }
         }

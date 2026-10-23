@@ -75,6 +75,8 @@ object ModCreativeTab {
                 output.accept(ModItems.DIAGNOSTIC_TOOL)
                 output.accept(ModItems.GRAPPLE_BEAM)
                 output.accept(ModItems.PORTABLE_INVENTORY_TERMINAL)
+                output.accept(ModItems.PORTABLE_SCRIPTING_TERMINAL)
+                output.accept(ModItems.SCRIPT)
                 output.accept(ModItems.CARD_PROGRAMMER)
                 output.accept(ModItems.BLANK_CARD)
                 output.accept(ModItems.IO_CARD)

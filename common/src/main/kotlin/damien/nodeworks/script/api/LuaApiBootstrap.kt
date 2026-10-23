@@ -65,6 +65,7 @@ object LuaApiBootstrap {
         LuaApiRegistry.register(BoolVariableHandleApi)
         LuaApiRegistry.register(NetworkApi)
         LuaApiRegistry.register(ChannelApi)
+        LuaApiRegistry.register(TagScopeApi)
         LuaApiRegistry.register(HandleListApi)
         LuaApiRegistry.register(CraftBuilderApi)
         LuaApiRegistry.register(RouteBuilderApi)

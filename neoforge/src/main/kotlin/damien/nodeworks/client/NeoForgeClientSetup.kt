@@ -581,9 +581,6 @@ object NeoForgeClientSetup {
         event.register(ModScreenHandlers.STORAGE_CARD) { menu, inventory, title ->
             damien.nodeworks.screen.StorageCardScreen(menu, inventory, title)
         }
-        event.register(ModScreenHandlers.TRANSFER_CARD) { menu, inventory, title ->
-            damien.nodeworks.screen.TransferCardScreen(menu, inventory, title)
-        }
         event.register(ModScreenHandlers.CARD_SETTINGS) { menu, inventory, title ->
             damien.nodeworks.screen.CardSettingsScreen(menu, inventory, title)
         }
@@ -595,6 +592,12 @@ object NeoForgeClientSetup {
         }
         event.register(ModScreenHandlers.IMPORT_CHEST) { menu, inventory, title ->
             damien.nodeworks.screen.ImportChestScreen(menu, inventory, title)
+        }
+        event.register(ModScreenHandlers.SCRIPT_RUNNER) { menu, inventory, title ->
+            damien.nodeworks.screen.ScriptRunnerScreen(menu, inventory, title)
+        }
+        event.register(ModScreenHandlers.INTERFACE) { menu, inventory, title ->
+            damien.nodeworks.screen.InterfaceScreen(menu, inventory, title)
         }
         event.register(ModScreenHandlers.EXPORT_CHEST) { menu, inventory, title ->
             damien.nodeworks.screen.ExportChestScreen(menu, inventory, title)
@@ -627,6 +630,9 @@ object NeoForgeClientSetup {
     ) {
         event.register(damien.nodeworks.screen.tooltip.RecipeIconTooltip::class.java) { data ->
             damien.nodeworks.screen.tooltip.RecipeIconTooltipRenderer(data)
+        }
+        event.register(damien.nodeworks.screen.tooltip.CardTagsTooltip::class.java) { data ->
+            damien.nodeworks.screen.tooltip.CardTagsTooltipRenderer(data)
         }
     }
 

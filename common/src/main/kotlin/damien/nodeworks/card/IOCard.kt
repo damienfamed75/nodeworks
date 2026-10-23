@@ -39,9 +39,9 @@ internal fun openCardSettings(level: Level, player: Player, hand: InteractionHan
     PlatformServices.menu.openExtendedMenu(
         serverPlayer,
         Component.translatable("container.nodeworks.card_settings"),
-        CardSettingsOpenData(hand.ordinal, cardName),
+        CardSettingsOpenData(hand.ordinal, cardName, CardTags.get(stack), KnownCardTags.all()),
         CardSettingsOpenData.STREAM_CODEC,
-        { syncId, inv, _ -> CardSettingsMenu(syncId, inv, hand, cardName) },
+        { syncId, inv, _ -> CardSettingsMenu(syncId, inv, hand, cardName, CardTags.get(stack)) },
     )
     return InteractionResult.CONSUME
 }

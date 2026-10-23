@@ -38,6 +38,8 @@ class AutocompletePopup(
     private val placerAliases: List<String> = emptyList(),
     /** Effective aliases of every User on the network. */
     private val userAliases: List<String> = emptyList(),
+    /** Tags the server has seen on cards, for `network:tagged("...")`. */
+    private val cardTags: List<String> = emptyList(),
     private val scripts: () -> Map<String, String> = { emptyMap() }
 ) {
     /**
@@ -2439,6 +2441,10 @@ class AutocompletePopup(
         }
 
         "card-alias-pattern" -> suggestCardAliasesWithWildcards(partial, cards)
+        "card-tag" -> FuzzyMatch.filter(
+            partial,
+            cardTags.map { suggest(it, "$it (tag)", Kind.STRING) },
+        )
         "storage-card-alias" -> suggestCardAliasesWithWildcards(
             partial,
             cards.filter { it.capability.type == "storage" }

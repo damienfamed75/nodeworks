@@ -15,7 +15,6 @@ import damien.nodeworks.compat.scan
 import damien.nodeworks.card.StorageCard
 import damien.nodeworks.network.SetStorageCardFilterRulesPayload
 import damien.nodeworks.platform.PlatformServices
-import damien.nodeworks.screen.widget.CardRenameRow
 import damien.nodeworks.screen.widget.ChannelPickerWidget
 import damien.nodeworks.screen.widget.FacePickerWidget
 import damien.nodeworks.screen.widget.FilterRuleAutocomplete
@@ -120,6 +119,13 @@ class StorageCardScreen(
         private const val LABEL_TO_BTN_GAP = 4
         private const val CHANNEL_LABEL_TO_PICKER_GAP = 4
         private const val PRIORITY_LABEL_TEXT = "Priority:"
+        private const val INTERVAL_LABEL_TEXT = "Every:"
+        private const val BATCH_LABEL_TEXT = "Batch"
+        private const val KEEP_LABEL_TEXT = "Keep"
+        private const val VALUE_FIELD_W = 26
+        private const val VALUE_LABEL_GAP = 6
+        private const val MODE_BUTTON_W = 46
+        private const val ROUND_ROBIN_ON_BG = 0xFF3F7A4A.toInt()
         private const val FILTER_LABEL_TEXT = "Filter"
         /** Right-edge inset for the channel + side swatches (matches
          *  [TOP_INSET_X]'s left padding for visual symmetry). */
@@ -179,6 +185,22 @@ class StorageCardScreen(
     private var pickerX = 0
     private var sidePickerX = 0
 
+    /** Export and Import controls. Null in Storage mode, where the priority field shows. */
+    private var intervalField: EditBox? = null
+    private var valueField: EditBox? = null
+    private var lastSyncedInterval = -1
+    private var lastSyncedValue = -1
+    private var lastSyncedMode: StorageCard.Companion.Mode? = null
+    private var intervalLabelX = 0
+    private var intervalMinusX = 0
+    private var intervalFieldX = 0
+    private var intervalPlusX = 0
+    private var valueLabelX = 0
+    private var valueFieldX = 0
+
+    /** A mode change swaps the top row's controls. Done on the tick, not mid-render. */
+    private var pendingRelayout = false
+
     /** Local mirror of the rule list. The screen mutates this and pushes the
      *  full list to the server via [SetStorageCardFilterRulesPayload]. */
     private val localRules: MutableList<String> = menu.filterRules.toMutableList()
@@ -227,73 +249,99 @@ class StorageCardScreen(
         titleLabelY = -9999
     }
 
-    private lateinit var renameRow: CardRenameRow
+    private lateinit var tagRow: damien.nodeworks.screen.widget.CardTagRow
+
+    /** The tags as last sent, so a relayout for a mode change keeps the edits. */
+    private var currentTags: List<String> = menu.initialTags
 
     override fun init() {
         super.init()
         layoutTopInset()
         rebuildRuleFields()
-        renameRow = CardRenameRow(
-            font, leftPos, topPos, imageWidth, menu.initialName,
-            sendRename = { name ->
+        tagRow = damien.nodeworks.screen.widget.CardTagRow(
+            font, leftPos, topPos, imageWidth, currentTags, menu.knownTags,
+            sendTags = { tags ->
+                currentTags = tags
                 PlatformServices.clientNetworking.sendToServer(
-                    damien.nodeworks.network.SetCardNamePayload(menu.containerId, name)
+                    damien.nodeworks.network.SetCardTagsPayload(menu.containerId, tags)
                 )
             },
             requestDefocus = { setFocused(null) },
         )
-        renameRow.addToScreen { addRenderableWidget(it) }
+        tagRow.addToScreen { addRenderableWidget(it) }
     }
 
-    /** Compute pixel-perfect positions for the priority + channel widgets so
-     *  both fit on one row, separated by enough padding to look balanced.
-     *  Priority uses its existing stepper layout (label + [-] + field + [+])
-     *  on the left half; channel uses label + swatch on the right half. */
+    /** Lays out the top row for the current mode. Storage shows the priority stepper,
+     *  Export and Import show the speed stepper and the batch or keep field. The channel
+     *  and side swatches sit against the right edge in every mode. */
     private fun layoutTopInset() {
-        val priorityLabelW = font.width(PRIORITY_LABEL_TEXT)
-        val priorityRowW = priorityLabelW + LABEL_TO_BTN_GAP +
-            STEPPER_BTN_SIZE + STEPPER_GAP +
-            PRIORITY_FIELD_W + STEPPER_GAP + STEPPER_BTN_SIZE
+        val mode = menu.getMode()
+        lastSyncedMode = mode
+        val transfer = mode != StorageCard.Companion.Mode.STORAGE
 
-        // Priority sits at its pre-side-picker position: centred with a
-        // hypothetical "Channel:" label + swatch cluster on the right, the
-        // same shape this GUI had before the side picker landed. The two
-        // swatches now flush against the inset's right edge instead of
-        // claiming a third cluster slot.
-        val legacyChannelW = font.width("Channel:") + CHANNEL_LABEL_TO_PICKER_GAP + ChannelPickerWidget.SWATCH
-        val legacyTotalW = priorityRowW + 16 + legacyChannelW
-        val priorityStartX = (W - legacyTotalW) / 2
-
-        priorityLabelX = priorityStartX
-        priorityMinusX = priorityLabelX + priorityLabelW + LABEL_TO_BTN_GAP
-        priorityFieldX = priorityMinusX + STEPPER_BTN_SIZE + STEPPER_GAP
-        priorityPlusX = priorityFieldX + PRIORITY_FIELD_W + STEPPER_GAP
-
-        // Right-justify the channel + side swatches against the inset's right
-        // edge. Side hugs the corner, channel sits one swatch + gap to its
-        // left.
         val rightEdge = TOP_INSET_X + TOP_INSET_W - SWATCHES_RIGHT_PAD
         sidePickerX = rightEdge - FacePickerWidget.SWATCH
         pickerX = sidePickerX - SWATCH_PAIR_GAP - ChannelPickerWidget.SWATCH
 
-        // 1 px nudge down on the priority/channel/side widgets so the row
-        // optically sits in the lower half of the inset (the inset frame's
-        // top bevel visually adds weight at the top, which made centred
-        // widgets read as drifting upward). The inset itself is unmoved.
+        // 1 px nudge down on the widgets so the row optically sits in the lower half
+        // of the inset, whose top bevel adds weight at the top.
         val fieldY = topPos + TOP_INSET_Y + (TOP_INSET_H - 12) / 2 + 1
-        priorityField = EditBox(font, leftPos + priorityFieldX, fieldY, PRIORITY_FIELD_W, 12, Component.literal("Priority"))
-        priorityField!!.setMaxLength(3)
-        priorityField!!.value = "${menu.getPriority()}"
-        lastSyncedPriority = menu.getPriority()
-        addRenderableWidget(priorityField!!)
+
+        priorityField = null
+        intervalField = null
+        valueField = null
+        if (!transfer) {
+            val priorityLabelW = font.width(PRIORITY_LABEL_TEXT)
+            val priorityRowW = priorityLabelW + LABEL_TO_BTN_GAP +
+                STEPPER_BTN_SIZE + STEPPER_GAP +
+                PRIORITY_FIELD_W + STEPPER_GAP + STEPPER_BTN_SIZE
+            val legacyChannelW = font.width("Channel:") + CHANNEL_LABEL_TO_PICKER_GAP + ChannelPickerWidget.SWATCH
+            val legacyTotalW = priorityRowW + 16 + legacyChannelW
+            priorityLabelX = (W - legacyTotalW) / 2
+            priorityMinusX = priorityLabelX + priorityLabelW + LABEL_TO_BTN_GAP
+            priorityFieldX = priorityMinusX + STEPPER_BTN_SIZE + STEPPER_GAP
+            priorityPlusX = priorityFieldX + PRIORITY_FIELD_W + STEPPER_GAP
+            priorityField = EditBox(font, leftPos + priorityFieldX, fieldY, PRIORITY_FIELD_W, 12, Component.literal("Priority")).also {
+                it.setMaxLength(3)
+                it.value = "${menu.getPriority()}"
+                addRenderableWidget(it)
+            }
+            lastSyncedPriority = menu.getPriority()
+        } else {
+            intervalLabelX = TOP_INSET_X + 6
+            intervalMinusX = intervalLabelX + font.width(INTERVAL_LABEL_TEXT) + LABEL_TO_BTN_GAP
+            intervalFieldX = intervalMinusX + STEPPER_BTN_SIZE + STEPPER_GAP
+            intervalPlusX = intervalFieldX + VALUE_FIELD_W + STEPPER_GAP
+            valueLabelX = intervalPlusX + STEPPER_BTN_SIZE + VALUE_LABEL_GAP
+            valueFieldX = valueLabelX + font.width(valueLabel()) + LABEL_TO_BTN_GAP
+            intervalField = EditBox(font, leftPos + intervalFieldX, fieldY, VALUE_FIELD_W, 12, Component.literal("Interval")).also {
+                it.setMaxLength(3)
+                it.value = "${menu.getTickInterval()}"
+                addRenderableWidget(it)
+            }
+            lastSyncedInterval = menu.getTickInterval()
+            valueField = EditBox(font, leftPos + valueFieldX, fieldY, VALUE_FIELD_W, 12, Component.literal(valueLabel())).also {
+                it.setMaxLength(3)
+                it.value = "${currentValue()}"
+                addRenderableWidget(it)
+            }
+            lastSyncedValue = currentValue()
+        }
 
         val pickerY = topPos + TOP_INSET_Y + (TOP_INSET_H - ChannelPickerWidget.SWATCH) / 2 + 1
-        val initialChannel = menu.getChannel()
-        lastSyncedChannel = initialChannel.id
-        picker = ChannelPickerWidget(leftPos + pickerX, pickerY, initialChannel) { color ->
-            if (color == null) return@ChannelPickerWidget
+        val filter = menu.getChannelFilter()
+        lastSyncedChannel = menu.channelData.get(0)
+        // Storage mode needs a colour, the card is a member of one channel. Export and
+        // Import may say any, meaning every Storage Card.
+        picker = ChannelPickerWidget(
+            leftPos + pickerX, pickerY,
+            (filter as? damien.nodeworks.network.ChannelFilter.Color)?.color ?: DyeColor.WHITE,
+            canBeNone = transfer,
+            initialIsNone = transfer && filter == damien.nodeworks.network.ChannelFilter.All,
+        ) { color ->
             playClickSound()
-            Minecraft.getInstance().gameMode?.handleInventoryButtonClick(menu.containerId, 2000 + color.id)
+            val buttonId = if (color == null) StorageCardMenu.BUTTON_CHANNEL_NONE else 2000 + color.id
+            Minecraft.getInstance().gameMode?.handleInventoryButtonClick(menu.containerId, buttonId)
         }
         addRenderableWidget(picker!!)
 
@@ -308,6 +356,25 @@ class StorageCardScreen(
             Minecraft.getInstance().gameMode?.handleInventoryButtonClick(menu.containerId, buttonId)
         }
         addRenderableWidget(sidePicker!!)
+    }
+
+    private fun valueLabel(): String =
+        if (menu.getMode() == StorageCard.Companion.Mode.EXPORT) BATCH_LABEL_TEXT else KEEP_LABEL_TEXT
+
+    private fun currentValue(): Int =
+        if (menu.getMode() == StorageCard.Companion.Mode.EXPORT) menu.getBatch() else menu.getKeep()
+
+    override fun containerTick() {
+        super.containerTick()
+        if (pendingRelayout) {
+            pendingRelayout = false
+            commitAllRuleFields()
+            // The rule fields are about to be replaced, the popup must not keep the old ones.
+            autocomplete.unbind()
+            autocompleteAnchorIdx = -1
+            lastAutocompletePartial = null
+            rebuildWidgets()
+        }
     }
 
     /**
@@ -449,8 +516,8 @@ class StorageCardScreen(
 
     override fun charTyped(event: CharacterEvent): Boolean {
         val ch = event.character
-        if (priorityField?.isFocused == true) {
-            if (ch.isDigit()) return priorityField?.charTyped(event) ?: false
+        focusedNumericField()?.let { field ->
+            if (ch.isDigit()) return field.charTyped(event)
             return true
         }
         for ((idx, field) in ruleFields.withIndex()) {
@@ -465,16 +532,16 @@ class StorageCardScreen(
     }
 
     override fun keyPressed(event: KeyEvent): Boolean {
-        if (renameRow.keyPressed(event)) return true
+        if (tagRow.keyPressed(event)) return true
         val keyCode = event.keyCode
-        if (priorityField?.isFocused == true) {
-            if (keyCode == 256) { priorityField!!.isFocused = false; return true }
+        focusedNumericField()?.let { field ->
+            if (keyCode == 256) { field.isFocused = false; return true }
             if (keyCode == 257 || keyCode == 335) {
-                commitPriorityField()
-                priorityField!!.isFocused = false
+                commitNumericField(field)
+                field.isFocused = false
                 return true
             }
-            return priorityField!!.keyPressed(event)
+            return field.keyPressed(event)
         }
         for ((idx, field) in ruleFields.withIndex()) {
             if (!field.isFocused) continue
@@ -524,10 +591,40 @@ class StorageCardScreen(
         return super.keyPressed(event)
     }
 
-    private fun commitPriorityField() {
-        val value = priorityField?.value?.toIntOrNull()?.coerceIn(0, 999) ?: 0
-        priorityField?.value = "$value"
-        Minecraft.getInstance().gameMode?.handleInventoryButtonClick(menu.containerId, 100 + value)
+    private fun focusedNumericField(): EditBox? =
+        listOfNotNull(priorityField, intervalField, valueField).firstOrNull { it.isFocused }
+
+    /** Sends a numeric field's value as the button id that carries it, see the menu. */
+    private fun commitNumericField(field: EditBox) {
+        val gameMode = Minecraft.getInstance().gameMode ?: return
+        when (field) {
+            priorityField -> {
+                val value = field.value.toIntOrNull()?.coerceIn(0, 999) ?: 0
+                field.value = "$value"
+                gameMode.handleInventoryButtonClick(menu.containerId, 100 + value)
+            }
+            intervalField -> {
+                val value = field.value.toIntOrNull()?.coerceIn(StorageCard.MIN_TICK_INTERVAL, StorageCard.MAX_TICK_INTERVAL)
+                    ?: StorageCard.DEFAULT_TICK_INTERVAL
+                field.value = "$value"
+                gameMode.handleInventoryButtonClick(menu.containerId, StorageCardMenu.BUTTON_INTERVAL_BASE + value)
+            }
+            valueField -> {
+                if (menu.getMode() == StorageCard.Companion.Mode.EXPORT) {
+                    val value = field.value.toIntOrNull()?.coerceIn(0, StorageCard.MAX_BATCH) ?: 0
+                    field.value = "$value"
+                    gameMode.handleInventoryButtonClick(menu.containerId, StorageCardMenu.BUTTON_BATCH_BASE + value)
+                } else {
+                    val value = field.value.toIntOrNull()?.coerceIn(0, StorageCard.MAX_KEEP) ?: 0
+                    field.value = "$value"
+                    gameMode.handleInventoryButtonClick(menu.containerId, StorageCardMenu.BUTTON_KEEP_BASE + value)
+                }
+            }
+        }
+    }
+
+    private fun commitNumericFields() {
+        listOfNotNull(priorityField, intervalField, valueField).forEach { commitNumericField(it) }
     }
 
     override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
@@ -539,7 +636,7 @@ class StorageCardScreen(
         // visible. Single static PNG since the GUI is fixed-size.
         graphics.blit(PCB_TEXTURE, leftPos - PCB_MARGIN, topPos - PCB_MARGIN, 0f, 0f, PCB_TEX_W, PCB_TEX_H, PCB_TEX_W, PCB_TEX_H)
         NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos, imageWidth, imageHeight)
-        renameRow.render(graphics, mouseX, mouseY)
+        tagRow.render(graphics, mouseX, mouseY)
 
         renderTopInset(graphics, mouseX, mouseY)
         renderFilterHeader(graphics, mouseX, mouseY)
@@ -551,20 +648,48 @@ class StorageCardScreen(
         NineSlice.WINDOW_RECESSED.draw(graphics, leftPos + TOP_INSET_X, topPos + TOP_INSET_Y, TOP_INSET_W, TOP_INSET_H)
 
         // 1 px nudge down to optically counter the inset frame's top bevel,
-        // matches the priority field + channel swatch shifted in [layoutTopInset].
+        // matches the fields and swatches shifted in [layoutTopInset].
         val labelY = topPos + TOP_INSET_Y + (TOP_INSET_H - font.lineHeight) / 2 + 2
-        graphics.drawString(font, PRIORITY_LABEL_TEXT, leftPos + priorityLabelX, labelY, 0xFFAAAAAA.toInt())
-
         val stepY = topPos + TOP_INSET_Y + (TOP_INSET_H - STEPPER_BTN_SIZE) / 2 + 1
-        val mX = leftPos + priorityMinusX
-        val pX = leftPos + priorityPlusX
         val btn = STEPPER_BTN_SIZE
+        val transfer = menu.getMode() != StorageCard.Companion.Mode.STORAGE
+        val mX = leftPos + (if (transfer) intervalMinusX else priorityMinusX)
+        val pX = leftPos + (if (transfer) intervalPlusX else priorityPlusX)
+        if (transfer) {
+            graphics.drawString(font, INTERVAL_LABEL_TEXT, leftPos + intervalLabelX, labelY, 0xFFAAAAAA.toInt())
+            graphics.drawString(font, valueLabel(), leftPos + valueLabelX, labelY, 0xFFAAAAAA.toInt())
+        } else {
+            graphics.drawString(font, PRIORITY_LABEL_TEXT, leftPos + priorityLabelX, labelY, 0xFFAAAAAA.toInt())
+        }
+
         val minusHover = mouseX in mX until mX + btn && mouseY in stepY until stepY + btn
         val plusHover = mouseX in pX until pX + btn && mouseY in stepY until stepY + btn
         (if (minusHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(graphics, mX, stepY, btn, btn)
         (if (plusHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(graphics, pX, stepY, btn, btn)
         graphics.drawString(font, "-", mX + (btn - font.width("-")) / 2, stepY + 3, 0xFFFFFFFF.toInt())
         graphics.drawString(font, "+", pX + (btn - font.width("+")) / 2, stepY + 3, 0xFFFFFFFF.toInt())
+        if (transfer && (minusHover || plusHover)) {
+            queueTooltip(mouseX, mouseY, "Ticks between runs", "Shift-click steps by 5.")
+        }
+        if (transfer) {
+            val vX = leftPos + valueFieldX
+            if (mouseX in vX until vX + VALUE_FIELD_W && mouseY in stepY until stepY + btn) {
+                if (menu.getMode() == StorageCard.Companion.Mode.EXPORT) {
+                    queueTooltip(
+                        mouseX, mouseY, "Batch size",
+                        "Move only once this many matching items",
+                        "are in storage, and at most this many per run.",
+                        "0 moves whatever there is.",
+                    )
+                } else {
+                    queueTooltip(
+                        mouseX, mouseY, "Keep",
+                        "Leave at least this many of each item",
+                        "in the inventory. 0 takes everything.",
+                    )
+                }
+            }
+        }
 
         // The two right-justified swatches (channel + side) draw themselves as
         // registered widgets, no labels. Hover tooltips disambiguate.
@@ -581,6 +706,17 @@ class StorageCardScreen(
                 queueTooltip(mouseX, mouseY, "Side: ${side.displayName}", "Click to change.")
             }
         }
+        val pickerLeft = leftPos + pickerX
+        if (transfer && mouseX in pickerLeft until pickerLeft + ChannelPickerWidget.SWATCH &&
+            mouseY in swatchY until swatchY + ChannelPickerWidget.SWATCH &&
+            picker?.expanded != true
+        ) {
+            val scope = when (val channel = menu.getChannelFilter()) {
+                damien.nodeworks.network.ChannelFilter.All -> "every Storage Card"
+                is damien.nodeworks.network.ChannelFilter.Color -> "${channel.color.getName().replace('_', ' ')} Storage Cards only"
+            }
+            queueTooltip(mouseX, mouseY, "Channel: $scope", "Click to change.")
+        }
     }
 
     private fun renderFilterHeader(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
@@ -596,10 +732,46 @@ class StorageCardScreen(
         renderModeToggle(graphics, toggleStartX, headerY, mouseX, mouseY)
         renderStackToggle(graphics, toggleStartX + (TOGGLE_SIZE + TOGGLE_GAP), headerY, mouseX, mouseY)
         renderNbtToggle(graphics, toggleStartX + (TOGGLE_SIZE + TOGGLE_GAP) * 2, headerY, mouseX, mouseY)
+        renderModeButton(graphics, modeButtonX(toggleStartX), headerY, mouseX, mouseY)
+        if (menu.getMode() == StorageCard.Companion.Mode.IMPORT) {
+            renderRoundRobinToggle(graphics, roundRobinX(toggleStartX), headerY, mouseX, mouseY)
+        }
         // [?] hugs the right edge of the GUI, mirroring the "Filter" label on
         // the left so the header reads symmetrically. Click opens the
         // Storage Card guidebook page.
         renderHelpButton(graphics, helpButtonX(), headerY, mouseX, mouseY)
+    }
+
+    private fun modeButtonX(toggleStartX: Int): Int = toggleStartX + (TOGGLE_SIZE + TOGGLE_GAP) * 3 + 4
+    private fun roundRobinX(toggleStartX: Int): Int = modeButtonX(toggleStartX) + MODE_BUTTON_W + TOGGLE_GAP
+
+    /** What the faced inventory is to the network. Click cycles Storage, Export, Import. */
+    private fun renderModeButton(graphics: GuiGraphicsExtractor, x: Int, y: Int, mouseX: Int, mouseY: Int) {
+        val mode = menu.getMode()
+        val hover = mouseX in x until x + MODE_BUTTON_W && mouseY in y until y + TOGGLE_SIZE
+        (if (hover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(graphics, x, y, MODE_BUTTON_W, TOGGLE_SIZE)
+        val label = StorageCard.modeName(mode)
+        graphics.drawString(font, label, x + (MODE_BUTTON_W - font.width(label)) / 2, y + (TOGGLE_SIZE - font.lineHeight) / 2 + 1, 0xFFFFFFFF.toInt())
+        if (hover) {
+            val line = when (mode) {
+                StorageCard.Companion.Mode.STORAGE -> "The inventory is network storage."
+                StorageCard.Companion.Mode.EXPORT -> "The network fills the inventory with matching items."
+                StorageCard.Companion.Mode.IMPORT -> "The network drains the inventory into storage."
+            }
+            queueTooltip(mouseX, mouseY, "Mode: $label", line, "Click to cycle.")
+        }
+    }
+
+    private fun renderRoundRobinToggle(graphics: GuiGraphicsExtractor, x: Int, y: Int, mouseX: Int, mouseY: Int) {
+        val on = menu.getRoundRobin()
+        drawCycleButton(graphics, x, y, if (on) ROUND_ROBIN_ON_BG else NEUTRAL_BG, glyph = "R")
+        if (mouseX in x until x + TOGGLE_SIZE && mouseY in y until y + TOGGLE_SIZE) {
+            queueTooltip(
+                mouseX, mouseY, "Round robin: ${if (on) "On" else "Off"}",
+                "Spread each stack over the Storage Cards",
+                "instead of filling by priority.",
+            )
+        }
     }
 
     /** Right-aligned x for the [?] help button: 6 px from the inset's right
@@ -927,15 +1099,32 @@ class StorageCardScreen(
     }
 
     override fun extractRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
-        // Sync server-driven values for priority/channel.
+        // Sync server-driven values. A mode change swaps the top row on the next tick.
+        val serverMode = menu.getMode()
+        if (lastSyncedMode != null && serverMode != lastSyncedMode) {
+            lastSyncedMode = serverMode
+            pendingRelayout = true
+        }
         val serverVal = menu.getPriority()
         if (serverVal != lastSyncedPriority && priorityField?.isFocused != true) {
             priorityField?.value = "$serverVal"
             lastSyncedPriority = serverVal
         }
+        val serverInterval = menu.getTickInterval()
+        if (serverInterval != lastSyncedInterval && intervalField?.isFocused != true) {
+            intervalField?.value = "$serverInterval"
+            lastSyncedInterval = serverInterval
+        }
+        val serverValue = currentValue()
+        if (serverValue != lastSyncedValue && valueField?.isFocused != true) {
+            valueField?.value = "$serverValue"
+            lastSyncedValue = serverValue
+        }
         val serverChannel = menu.channelData.get(0)
         if (serverChannel != lastSyncedChannel && picker?.expanded != true) {
-            picker?.setColor(runCatching { DyeColor.byId(serverChannel) }.getOrDefault(DyeColor.WHITE))
+            val transfer = serverMode != StorageCard.Companion.Mode.STORAGE
+            if (serverChannel < 0 && transfer) picker?.setNone()
+            else picker?.setColor(runCatching { DyeColor.byId(serverChannel) }.getOrDefault(DyeColor.WHITE))
             lastSyncedChannel = serverChannel
         }
         val serverSideOrdinal = menu.customSideData.get(0)
@@ -952,6 +1141,7 @@ class StorageCardScreen(
         picker?.renderOverlay(graphics, mouseX, mouseY)
         sidePicker?.renderOverlay(graphics, mouseX, mouseY)
         autocomplete.render(graphics, mouseX, mouseY)
+        tagRow.renderOverlay(graphics, mouseX, mouseY)
         if (pendingTooltipLines.isNotEmpty()) {
             graphics.renderComponentTooltip(font, pendingTooltipLines, pendingTooltipX, pendingTooltipY)
         }
@@ -997,7 +1187,7 @@ class StorageCardScreen(
         if (sidePicker?.expanded == true) {
             if (sidePicker!!.handleOverlayClick(event.mouseX, event.mouseY)) return true
         }
-        if (renameRow.mouseClicked(event)) return true
+        if (tagRow.mouseClicked(event)) return true
         val mx = event.mouseX.toInt()
         val my = event.mouseY.toInt()
         if (event.buttonNum == 0) {
@@ -1020,22 +1210,29 @@ class StorageCardScreen(
                 }
             }
 
-            // Priority steppers. Hit-test mirrors the +1 nudge in [renderTopInset]
-            // so click bounds line up with where the buttons actually draw.
+            // Steppers. Hit-test mirrors the +1 nudge in [renderTopInset] so click bounds
+            // line up with where the buttons actually draw. Priority in Storage mode,
+            // speed in Export and Import.
+            val transfer = menu.getMode() != StorageCard.Companion.Mode.STORAGE
             val stepY = topPos + TOP_INSET_Y + (TOP_INSET_H - STEPPER_BTN_SIZE) / 2 + 1
-            val mX = leftPos + priorityMinusX
-            val pX = leftPos + priorityPlusX
+            val mX = leftPos + (if (transfer) intervalMinusX else priorityMinusX)
+            val pX = leftPos + (if (transfer) intervalPlusX else priorityPlusX)
             val btn = STEPPER_BTN_SIZE
-            if (mx in mX until mX + btn && my in stepY until stepY + btn) {
+            val minusHit = mx in mX until mX + btn && my in stepY until stepY + btn
+            val plusHit = mx in pX until pX + btn && my in stepY until stepY + btn
+            if (minusHit || plusHit) {
                 playClickSound()
-                val step = if (hasShiftDownCompat()) 10 else 1
-                repeat(step) { Minecraft.getInstance().gameMode?.handleInventoryButtonClick(menu.containerId, 0) }
-                return true
-            }
-            if (mx in pX until pX + btn && my in stepY until stepY + btn) {
-                playClickSound()
-                val step = if (hasShiftDownCompat()) 10 else 1
-                repeat(step) { Minecraft.getInstance().gameMode?.handleInventoryButtonClick(menu.containerId, 1) }
+                if (transfer) {
+                    val step = if (hasShiftDownCompat()) 5 else 1
+                    val current = intervalField?.value?.toIntOrNull() ?: menu.getTickInterval()
+                    val next = (if (minusHit) current - step else current + step)
+                        .coerceIn(StorageCard.MIN_TICK_INTERVAL, StorageCard.MAX_TICK_INTERVAL)
+                    intervalField?.value = "$next"
+                    Minecraft.getInstance().gameMode?.handleInventoryButtonClick(menu.containerId, StorageCardMenu.BUTTON_INTERVAL_BASE + next)
+                } else {
+                    val step = if (hasShiftDownCompat()) 10 else 1
+                    repeat(step) { Minecraft.getInstance().gameMode?.handleInventoryButtonClick(menu.containerId, if (minusHit) 0 else 1) }
+                }
                 return true
             }
 
@@ -1060,6 +1257,23 @@ class StorageCardScreen(
                 playClickSound()
                 Minecraft.getInstance().gameMode?.handleInventoryButtonClick(menu.containerId, 3002)
                 return true
+            }
+            val modeRectBtn = Rect(modeButtonX(toggleStartX), headerY, MODE_BUTTON_W, TOGGLE_SIZE)
+            if (modeRectBtn.contains(mx, my)) {
+                playClickSound()
+                commitNumericFields()
+                val next = (menu.getMode().ordinal + 1) % StorageCard.Companion.Mode.entries.size
+                Minecraft.getInstance().gameMode?.handleInventoryButtonClick(menu.containerId, StorageCardMenu.BUTTON_SET_MODE_BASE + next)
+                return true
+            }
+            if (menu.getMode() == StorageCard.Companion.Mode.IMPORT) {
+                val rrRect = Rect(roundRobinX(toggleStartX), headerY, TOGGLE_SIZE, TOGGLE_SIZE)
+                if (rrRect.contains(mx, my)) {
+                    playClickSound()
+                    val target = if (menu.getRoundRobin()) 0 else 1
+                    Minecraft.getInstance().gameMode?.handleInventoryButtonClick(menu.containerId, StorageCardMenu.BUTTON_SET_ROUND_ROBIN_BASE + target)
+                    return true
+                }
             }
 
             // [?] help button: opens the Storage Card guidebook page so
@@ -1166,11 +1380,10 @@ class StorageCardScreen(
                 return true
             }
 
-            // Click outside priority field commits it.
-            if (priorityField?.isFocused == true) {
-                val pf = priorityField!!
+            // Click outside a focused numeric field commits it.
+            focusedNumericField()?.let { pf ->
                 if (mx !in pf.x until pf.x + pf.width || my !in pf.y until pf.y + pf.height) {
-                    commitPriorityField()
+                    commitNumericField(pf)
                     pf.isFocused = false
                 }
             }
@@ -1256,14 +1469,14 @@ class StorageCardScreen(
      *  arrived at a closed container and was discarded. A deny card then had no rules,
      *  which accepts everything. */
     override fun onClose() {
-        commitPriorityField()
+        commitNumericFields()
         commitAllRuleFields()
         super.onClose()
     }
 
     /** Still needed for screen swaps (guidebook, JEI) where the menu stays open. */
     override fun removed() {
-        commitPriorityField()
+        commitNumericFields()
         commitAllRuleFields()
         super.removed()
     }

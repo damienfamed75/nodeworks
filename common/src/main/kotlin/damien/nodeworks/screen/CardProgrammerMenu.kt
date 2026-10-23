@@ -109,12 +109,11 @@ class CardProgrammerMenu(
             StorageCard.setFilterRules(stack, StorageCard.getFilterRules(template))
             StorageCard.setStackabilityFilter(stack, StorageCard.getStackabilityFilter(template))
             StorageCard.setNbtFilter(stack, StorageCard.getNbtFilter(template))
-        }
-        if (template.item is damien.nodeworks.card.TransferCard && stack.item is damien.nodeworks.card.TransferCard) {
-            damien.nodeworks.card.TransferCard.setMode(stack, damien.nodeworks.card.TransferCard.getMode(template))
-            damien.nodeworks.card.TransferCard.setFilterRules(stack, damien.nodeworks.card.TransferCard.getFilterRules(template))
-            damien.nodeworks.card.TransferCard.setRoundRobin(stack, damien.nodeworks.card.TransferCard.getRoundRobin(template))
-            damien.nodeworks.card.TransferCard.setTickInterval(stack, damien.nodeworks.card.TransferCard.getTickInterval(template))
+            StorageCard.setMode(stack, StorageCard.getMode(template))
+            StorageCard.setTickInterval(stack, StorageCard.getTickInterval(template))
+            StorageCard.setRoundRobin(stack, StorageCard.getRoundRobin(template))
+            StorageCard.setBatch(stack, StorageCard.getBatch(template))
+            StorageCard.setKeep(stack, StorageCard.getKeep(template))
         }
 
         // Copy the template's name verbatim when the toggle is on.

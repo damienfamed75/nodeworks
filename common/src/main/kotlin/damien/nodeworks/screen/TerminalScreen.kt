@@ -195,8 +195,43 @@ class TerminalScreen(
     private val scripts: MutableMap<String, String> = menu.getScripts().toMutableMap()
     private var activeTab: String = "main"
 
+    // Portable Scripting Terminal. No network, no runtime and no console: the draft lives
+    // on the item, Script items load from and save to the inventory, and the output panel
+    // lists problems instead.
+    private val portable: Boolean = menu.isPortable()
+    private var scriptName: String = menu.getScriptName()
+    private var loadedSlot: Int = menu.getLoadedSlot()
+    private var nameField: net.minecraft.client.gui.components.EditBox? = null
+    /** Tabs whose text the server draft does not have yet. */
+    private val draftDirtyTabs = LinkedHashSet<String>()
+    private var draftMetaDirty = false
+    private var draftIdleTicks = 0
+    private val draftSyncIdleTicks = 40
+    private var showLoadDrawer = false
+    private var loadConfirmSlot = -1
+    private var loadDrawerEntries: List<LoadEntry> = emptyList()
+    private var compileProblems: List<Problem> = emptyList()
+    private var compileChecked = false
+    private var problemsScrollOffset = 0
+    /** Bumped on tab switch and Check so the other tabs re-analyse against the live text. */
+    private var problemGeneration = 0
+    private val tabProblemCache = HashMap<String, Triple<String, Int, List<Problem>>>()
+    private var problemRows: List<Problem> = emptyList()
+    private var notice: String? = null
+    private var noticeUntil = 0L
+
+    private data class LoadEntry(val slot: Int, val program: damien.nodeworks.item.ScriptProgram)
+
+    /** One row of the Problems panel. An empty [tab] is a note with nowhere to jump. */
+    private data class Problem(
+        val tab: String,
+        val line: Int,
+        val severity: damien.nodeworks.script.diagnostics.Severity,
+        val message: String,
+    )
+
     // Layout constants
-    private val cardPanelWidth = 80
+    private val cardPanelWidth = if (menu.isPortable()) 0 else 80
     private val editorPadding = 4
     private val buttonHeight = 16
     private val topBarHeight = 24
@@ -580,7 +615,7 @@ class TerminalScreen(
         val instructionClustersSeen = mutableSetOf<net.minecraft.core.BlockPos>()
         val mc = net.minecraft.client.Minecraft.getInstance()
         val clientLevel = mc.level
-        if (clientLevel != null) {
+        if (clientLevel != null && !menu.isPortable()) {
             val termPos = menu.getTerminalPos()
             val termEntity = clientLevel.getBlockEntity(termPos)
             // Null networkId means no controller or a multi-controller conflict, the
@@ -633,7 +668,8 @@ class TerminalScreen(
                                             info.capability,
                                             info.alias,
                                             info.slotIndex,
-                                            info.channel
+                                            info.channel,
+                                            info.tags,
                                         )
                                     )
                                 }
@@ -894,32 +930,14 @@ class TerminalScreen(
 
         editor.value = rebuildWithText ?: scripts[activeTab] ?: ""
         rebuildWithText = null
-        editor.setCharacterLimit(32767)
+        editor.setCharacterLimit(if (portable) portableTabLimit() else 32767)
 
         // Wire diagnostics. We cache the analyzer's output keyed on the editor's full
         // text so the analyzer doesn't run on every render frame, only when the script
         // actually changes. The symbol table comes from the autocomplete's inference
         // (same source the hover-doc resolver uses) so typed-receiver checks for things
         // like `card:fnid()` resolve `card`'s type the same way completion would.
-        editor.diagnosticsProvider = {
-            val text = editor.value
-            if (text != cachedDiagnosticsText) {
-                cachedDiagnosticsText = text
-                val symbols = autocomplete.getSymbolTable(text, text)
-                // Pass sibling scripts so cross-script `local foo = require("foo")`
-                // lookups can resolve `foo.bar(...)` against the imported module's
-                // declared param types. The active tab's text is excluded since it's
-                // already in `text`, including it would trigger a useless self-import
-                // path if a player ever typed `require("<active tab name>")`.
-                val others = scripts.filterKeys { it != activeTab }
-                cachedDiagnostics =
-                    damien.nodeworks.script.diagnostics.LuaDiagnostics.analyze(
-                        text, symbols, others, ambiguousNetworkNames,
-                        processingApis = localApis,
-                    )
-            }
-            cachedDiagnostics
-        }
+        editor.diagnosticsProvider = { diagnosticsForActive(editor.value) }
 
         lastSavedText = editor.value
         editor.setValueListener { newText ->
@@ -929,6 +947,11 @@ class TerminalScreen(
                 if (undoStack.size > 50) undoStack.removeFirst()
                 redoStack.clear()
                 lastSavedText = newText
+            }
+            if (portable) {
+                draftDirtyTabs.add(activeTab)
+                draftIdleTicks = 0
+                if (compileProblems.any { it.tab == activeTab }) compileProblems = compileProblems.filter { it.tab != activeTab }
             }
             // Update autocomplete whenever text changes (unless suppressed during programmatic insertion)
             if (!suppressAutocomplete) {
@@ -985,6 +1008,7 @@ class TerminalScreen(
                 font, cards, itemTags, variables, localApiNames, craftableOutputs, localApis,
                 itemIds, fluidIds, fluidTags, blockIds,
                 breakerAliases, placerAliases, userAliases,
+                cardTags = menu.getKnownTags(),
             ) { scripts }
         // Position popups directly under the cursor's text row. Using yBottomOfLine
         // (instead of yTopOfLine of the next line) deliberately excludes any decoration
@@ -1000,7 +1024,7 @@ class TerminalScreen(
         val btnY = topPos + 5
         val stopX = leftPos + imageWidth - 44
         val runX = stopX - 44
-        val layoutX = runX - 24
+        val layoutX = if (portable) leftPos + imageWidth - 4 - (20 + 4 + 36 + 4 + 36 + 4 + 52) else runX - 24
 
         // Layout cycle button, shows current layout icon
         addRenderableWidget(
@@ -1009,41 +1033,50 @@ class TerminalScreen(
             ) { _ ->
                 val savedText = editor.value
                 currentLayout = TerminalLayout.entries[(currentLayout.ordinal + 1) % TerminalLayout.entries.size]
-                PlatformServices.clientNetworking.sendToServer(
-                    SetLayoutPayload(
-                        menu.getTerminalPos(),
-                        currentLayout.ordinal
+                if (portable) {
+                    draftMetaDirty = true
+                    sendDraft()
+                } else {
+                    PlatformServices.clientNetworking.sendToServer(
+                        SetLayoutPayload(
+                            menu.getTerminalPos(),
+                            currentLayout.ordinal
+                        )
                     )
-                )
+                }
                 rebuildWithText = savedText
                 rebind()
             })
 
-        // Run button, save current tab text first, then tell server to run
-        addRenderableWidget(
-            damien.nodeworks.screen.widget.SlicedButton.createColored(
-                runX, btnY, 40, buttonHeight, "Run",
-                0xFF55CC55.toInt(), 0xFF88FF88.toInt()
-            ) { _ ->
-                scripts[activeTab] = editor.value
-                PlatformServices.clientNetworking.sendToServer(
-                    SaveScriptPayload(
-                        menu.getTerminalPos(),
-                        activeTab,
-                        editor.value
+        if (portable) {
+            buildPortableControls(layoutX, btnY)
+        } else {
+            // Run button, save current tab text first, then tell server to run
+            addRenderableWidget(
+                damien.nodeworks.screen.widget.SlicedButton.createColored(
+                    runX, btnY, 40, buttonHeight, "Run",
+                    0xFF55CC55.toInt(), 0xFF88FF88.toInt()
+                ) { _ ->
+                    scripts[activeTab] = editor.value
+                    PlatformServices.clientNetworking.sendToServer(
+                        SaveScriptPayload(
+                            menu.getTerminalPos(),
+                            activeTab,
+                            editor.value
+                        )
                     )
-                )
-                PlatformServices.clientNetworking.sendToServer(RunScriptPayload(menu.getTerminalPos()))
-            })
+                    PlatformServices.clientNetworking.sendToServer(RunScriptPayload(menu.getTerminalPos()))
+                })
 
-        // Stop button
-        addRenderableWidget(
-            damien.nodeworks.screen.widget.SlicedButton.createColored(
-                stopX, btnY, 40, buttonHeight, "Stop",
-                0xFFCC5555.toInt(), 0xFFFF8888.toInt()
-            ) { _ ->
-                PlatformServices.clientNetworking.sendToServer(StopScriptPayload(menu.getTerminalPos()))
-            })
+            // Stop button
+            addRenderableWidget(
+                damien.nodeworks.screen.widget.SlicedButton.createColored(
+                    stopX, btnY, 40, buttonHeight, "Stop",
+                    0xFFCC5555.toInt(), 0xFFFF8888.toInt()
+                ) { _ ->
+                    PlatformServices.clientNetworking.sendToServer(StopScriptPayload(menu.getTerminalPos()))
+                })
+        }
 
         // Auto-run toggle is rendered manually in renderBg and handled in mouseClicked
     }
@@ -1052,7 +1085,7 @@ class TerminalScreen(
         super.extractBackground(graphics, mouseX, mouseY, partialTick)
         // Resolve network color once for the whole frame (gray if disconnected)
         val mcInst = net.minecraft.client.Minecraft.getInstance()
-        val reachable = damien.nodeworks.render.NodeConnectionRenderer.isReachable(menu.getTerminalPos())
+        val reachable = !portable && damien.nodeworks.render.NodeConnectionRenderer.isReachable(menu.getTerminalPos())
         val networkColor = if (reachable) {
             val termEntity =
                 mcInst.level?.getBlockEntity(menu.getTerminalPos()) as? damien.nodeworks.network.Connectable
@@ -1128,191 +1161,193 @@ class TerminalScreen(
             graphics.drawString(font, "+", tabX + 4, textY, 0xFF888888.toInt(), false)
         }
 
-        // Card & variable list header
-        val cardStartY = topPos + topBarHeight + 6
-        graphics.drawString(font, "Network:", leftPos + 8, cardStartY, 0xFFAAAAAA.toInt())
+        if (!portable) {
+            // Card & variable list header
+            val cardStartY = topPos + topBarHeight + 6
+            graphics.drawString(font, "Network:", leftPos + 8, cardStartY, 0xFFAAAAAA.toInt())
 
-        // Build combined sidebar entries: cards + variables
-        val entries = mutableListOf<SidebarEntry>()
-        for (card in cards) {
-            val type = card.capability.type
-            val iconU = when (type) {
-                "io" -> 0; "storage" -> 16; "redstone" -> 32; "observer" -> 64; else -> 0
+            // Build combined sidebar entries: cards + variables
+            val entries = mutableListOf<SidebarEntry>()
+            for (card in cards) {
+                val type = card.capability.type
+                val iconU = when (type) {
+                    "io" -> 0; "storage" -> 16; "redstone" -> 32; "observer" -> 64; else -> 0
+                }
+                val color = when (type) {
+                    "io" -> 0xFF83E086.toInt()
+                    "storage" -> 0xFFAA83E0.toInt()
+                    "redstone" -> 0xFFF53B68.toInt()
+                    "observer" -> 0xFFFFEB3B.toInt()
+                    "transfer" -> 0xFF4FA3FF.toInt()
+                    "energy" -> 0xFFFFD700.toInt()
+                    "fluid" -> 0xFF55AAFF.toInt()
+                    else -> 0xFFAAAAAA.toInt()
+                }
+                // Pass through the channel from the card snapshot. White renders as no pip
+                // (collapses to null) so default cards keep a clean row.
+                val ch = card.channel.takeIf { it != net.minecraft.world.item.DyeColor.WHITE }
+                entries.add(SidebarEntry(card.effectiveAlias, color, iconU, 16, "card", ch))
             }
-            val color = when (type) {
-                "io" -> 0xFF83E086.toInt()
-                "storage" -> 0xFFAA83E0.toInt()
-                "redstone" -> 0xFFF53B68.toInt()
-                "observer" -> 0xFFFFEB3B.toInt()
-                "transfer" -> 0xFF4FA3FF.toInt()
-                "energy" -> 0xFFFFD700.toInt()
-                "fluid" -> 0xFF55AAFF.toInt()
-                else -> 0xFFAAAAAA.toInt()
+            for ((name, typeOrd) in variables) {
+                // Same white→null collapse rule as cards so the default channel
+                // doesn't render a stripe.
+                val ch = variableChannels[name]?.takeIf { it != net.minecraft.world.item.DyeColor.WHITE }
+                entries.add(SidebarEntry(name, 0xFFFFAA33.toInt(), 48, 16, "var", ch))
             }
-            // Pass through the channel from the card snapshot. White renders as no pip
-            // (collapses to null) so default cards keep a clean row.
-            val ch = card.channel.takeIf { it != net.minecraft.world.item.DyeColor.WHITE }
-            entries.add(SidebarEntry(card.effectiveAlias, color, iconU, 16, "card", ch))
-        }
-        for ((name, typeOrd) in variables) {
-            // Same white→null collapse rule as cards so the default channel
-            // doesn't render a stripe.
-            val ch = variableChannels[name]?.takeIf { it != net.minecraft.world.item.DyeColor.WHITE }
-            entries.add(SidebarEntry(name, 0xFFFFAA33.toInt(), 48, 16, "var", ch))
-        }
-        // Devices: each gets its own iconU discriminator + name colour. Without
-        // this branch the connected breakers / placers exist on the network but
-        // never surface in the terminal sidebar, players can address them in
-        // scripts but can't see them.
-        for ((alias, channel) in breakerEntries) {
-            val ch = channel.takeIf { it != net.minecraft.world.item.DyeColor.WHITE }
-            entries.add(SidebarEntry(alias, 0xFFC97847.toInt(), 80, 16, "breaker", ch))
-        }
-        for ((alias, channel) in placerEntries) {
-            val ch = channel.takeIf { it != net.minecraft.world.item.DyeColor.WHITE }
-            entries.add(SidebarEntry(alias, 0xFF6BBCD0.toInt(), 96, 16, "placer", ch))
-        }
-        for ((alias, channel) in userEntries) {
-            val ch = channel.takeIf { it != net.minecraft.world.item.DyeColor.WHITE }
-            entries.add(SidebarEntry(alias, 0xFF79E324.toInt(), 112, 16, "user", ch))
-        }
-
-        // Sidebar entries (scrollable)
-        val cardListTop = cardStartY + 12
-        val cardListBottom = topPos + imageHeight - 70
-        val cardLineHeight = 11
-
-        sidebarEntries = entries
-
-        graphics.enableScissor(leftPos, cardListTop, leftPos + 75, cardListBottom)
-        for ((i, entry) in entries.withIndex()) {
-            val y = cardListTop + i * cardLineHeight - cardScrollOffset
-            if (y + cardLineHeight < cardListTop) continue
-            if (y > cardListBottom) break
-
-            // Hover highlight
-            val hovered = mouseX >= leftPos && mouseX < leftPos + 75 &&
-                    mouseY >= y && mouseY < y + cardLineHeight
-            if (hovered) {
-                graphics.fill(leftPos + 5, y, leftPos + 75, y + cardLineHeight, 0x30FFFFFF.toInt())
+            // Devices: each gets its own iconU discriminator + name colour. Without
+            // this branch the connected breakers / placers exist on the network but
+            // never surface in the terminal sidebar, players can address them in
+            // scripts but can't see them.
+            for ((alias, channel) in breakerEntries) {
+                val ch = channel.takeIf { it != net.minecraft.world.item.DyeColor.WHITE }
+                entries.add(SidebarEntry(alias, 0xFFC97847.toInt(), 80, 16, "breaker", ch))
+            }
+            for ((alias, channel) in placerEntries) {
+                val ch = channel.takeIf { it != net.minecraft.world.item.DyeColor.WHITE }
+                entries.add(SidebarEntry(alias, 0xFF6BBCD0.toInt(), 96, 16, "placer", ch))
+            }
+            for ((alias, channel) in userEntries) {
+                val ch = channel.takeIf { it != net.minecraft.world.item.DyeColor.WHITE }
+                entries.add(SidebarEntry(alias, 0xFF79E324.toInt(), 112, 16, "user", ch))
             }
 
-            // 8x8 icon cropped from center of 16x16 tile in atlas
-            val icon = when (entry.type) {
-                "card" -> when (entry.iconU) {
-                    0 -> Icons.IO_CARD
-                    16 -> Icons.STORAGE_CARD
-                    32 -> Icons.REDSTONE_CARD
-                    64 -> Icons.OBSERVER_CARD
+            // Sidebar entries (scrollable)
+            val cardListTop = cardStartY + 12
+            val cardListBottom = topPos + imageHeight - 70
+            val cardLineHeight = 11
+
+            sidebarEntries = entries
+
+            graphics.enableScissor(leftPos, cardListTop, leftPos + 75, cardListBottom)
+            for ((i, entry) in entries.withIndex()) {
+                val y = cardListTop + i * cardLineHeight - cardScrollOffset
+                if (y + cardLineHeight < cardListTop) continue
+                if (y > cardListBottom) break
+
+                // Hover highlight
+                val hovered = mouseX >= leftPos && mouseX < leftPos + 75 &&
+                        mouseY >= y && mouseY < y + cardLineHeight
+                if (hovered) {
+                    graphics.fill(leftPos + 5, y, leftPos + 75, y + cardLineHeight, 0x30FFFFFF.toInt())
+                }
+
+                // 8x8 icon cropped from center of 16x16 tile in atlas
+                val icon = when (entry.type) {
+                    "card" -> when (entry.iconU) {
+                        0 -> Icons.IO_CARD
+                        16 -> Icons.STORAGE_CARD
+                        32 -> Icons.REDSTONE_CARD
+                        64 -> Icons.OBSERVER_CARD
+                        else -> Icons.IO_CARD
+                    }
+
+                    "var" -> Icons.VARIABLE
+                    "breaker" -> Icons.BREAKER
+                    "placer" -> Icons.PLACER
+                    "user" -> Icons.USER
                     else -> Icons.IO_CARD
                 }
+                // Channel pip, 2×9 vertical stripe LEFT of the icon when the row is
+                // dyed off-white. Reads as "this row belongs to channel X" before your
+                // eye even reaches the icon, which matches how players already scan the
+                // sidebar (left-to-right). Always rendered in the same column regardless
+                // of whether a pip is visible, so icon positions stay stable.
+                entry.channel?.let { ch ->
+                    val rgb = ch.textureDiffuseColor or 0xFF000000.toInt()
+                    graphics.fill(leftPos + 5, y + 1, leftPos + 7, y + 10, rgb)
+                }
 
-                "var" -> Icons.VARIABLE
-                "breaker" -> Icons.BREAKER
-                "placer" -> Icons.PLACER
-                "user" -> Icons.USER
-                else -> Icons.IO_CARD
-            }
-            // Channel pip, 2×9 vertical stripe LEFT of the icon when the row is
-            // dyed off-white. Reads as "this row belongs to channel X" before your
-            // eye even reaches the icon, which matches how players already scan the
-            // sidebar (left-to-right). Always rendered in the same column regardless
-            // of whether a pip is visible, so icon positions stay stable.
-            entry.channel?.let { ch ->
-                val rgb = ch.textureDiffuseColor or 0xFF000000.toInt()
-                graphics.fill(leftPos + 5, y + 1, leftPos + 7, y + 10, rgb)
-            }
+                // Observer card art uses the full 16px width of its atlas cell, so the
+                // standard 8×8 small-render crops its outer columns. Draw a 10×8 slice
+                // (1px wider on each side) shifted left by 1px to keep it centred under
+                // the same anchor as the other 8-wide card icons.
+                if (entry.iconU == 64) icon.drawSmallWide(graphics, leftPos + 9, y + 1)
+                else icon.drawSmall(graphics, leftPos + 10, y + 1)
 
-            // Observer card art uses the full 16px width of its atlas cell, so the
-            // standard 8×8 small-render crops its outer columns. Draw a 10×8 slice
-            // (1px wider on each side) shifted left by 1px to keep it centred under
-            // the same anchor as the other 8-wide card icons.
-            if (entry.iconU == 64) icon.drawSmallWide(graphics, leftPos + 9, y + 1)
-            else icon.drawSmall(graphics, leftPos + 10, y + 1)
+                // Track hover state for scroll timing
+                if (hovered) {
+                    if (sidebarHoverIndex != i) {
+                        sidebarHoverIndex = i
+                        sidebarHoverStart = System.currentTimeMillis()
+                    }
+                }
 
-            // Track hover state for scroll timing
-            if (hovered) {
-                if (sidebarHoverIndex != i) {
-                    sidebarHoverIndex = i
-                    sidebarHoverStart = System.currentTimeMillis()
+                // Name, scroll if hovered and text is too long. Anchor shifted right by
+                // 3 px to follow the icon, since the channel pip now lives at the row's
+                // left edge (cols 5-6).
+                val nameX = leftPos + 21
+                val maxNameW = leftPos + 75 - nameX
+                val nameW = font.width(entry.name)
+                if (hovered && nameW > maxNameW) {
+                    val elapsed = System.currentTimeMillis() - sidebarHoverStart
+                    val pause = 500L
+                    val scrollSpeed = 20.0 // pixels per second
+                    val totalScroll = nameW - maxNameW + 10
+                    val scrollPx = if (elapsed < pause) 0
+                    else ((elapsed - pause) / 1000.0 * scrollSpeed).coerceAtMost(totalScroll.toDouble()).toInt()
+                    graphics.enableScissor(nameX, y, leftPos + 75, y + cardLineHeight)
+                    graphics.drawString(font, entry.name, nameX - scrollPx, y + 1, entry.color)
+                    graphics.disableScissor()
+                } else {
+                    graphics.drawString(font, entry.name, nameX, y + 1, entry.color)
                 }
             }
-
-            // Name, scroll if hovered and text is too long. Anchor shifted right by
-            // 3 px to follow the icon, since the channel pip now lives at the row's
-            // left edge (cols 5-6).
-            val nameX = leftPos + 21
-            val maxNameW = leftPos + 75 - nameX
-            val nameW = font.width(entry.name)
-            if (hovered && nameW > maxNameW) {
-                val elapsed = System.currentTimeMillis() - sidebarHoverStart
-                val pause = 500L
-                val scrollSpeed = 20.0 // pixels per second
-                val totalScroll = nameW - maxNameW + 10
-                val scrollPx = if (elapsed < pause) 0
-                else ((elapsed - pause) / 1000.0 * scrollSpeed).coerceAtMost(totalScroll.toDouble()).toInt()
-                graphics.enableScissor(nameX, y, leftPos + 75, y + cardLineHeight)
-                graphics.drawString(font, entry.name, nameX - scrollPx, y + 1, entry.color)
-                graphics.disableScissor()
-            } else {
-                graphics.drawString(font, entry.name, nameX, y + 1, entry.color)
+            // Reset hover if mouse left the sidebar
+            if (!(mouseX >= leftPos && mouseX < leftPos + 75 && mouseY >= cardListTop && mouseY < cardListBottom)) {
+                sidebarHoverIndex = -1
             }
+            graphics.disableScissor()
+
+            // Scrollbar
+            val scrollbarW = 6
+            val sbX = leftPos + 76
+            val maxVisibleCards = (cardListBottom - cardListTop) / cardLineHeight
+            if (entries.size > maxVisibleCards) {
+                val scrollbarHeight = cardListBottom - cardListTop
+                val thumbHeight = maxOf(12, scrollbarHeight * maxVisibleCards / entries.size)
+                val maxCardScroll = maxOf(1, (entries.size - maxVisibleCards) * cardLineHeight)
+                cardScrollOffset = cardScrollOffset.coerceIn(0, maxCardScroll)
+                val thumbY = cardListTop + (scrollbarHeight - thumbHeight) * cardScrollOffset / maxCardScroll
+                NineSlice.SCROLLBAR_TRACK.draw(graphics, sbX, cardListTop, scrollbarW, scrollbarHeight)
+                val thumbSlice =
+                    if (draggingSidebarScrollbar) NineSlice.SCROLLBAR_THUMB_HOVER else NineSlice.SCROLLBAR_THUMB
+                thumbSlice.draw(graphics, sbX, thumbY, scrollbarW, thumbHeight)
+            }
+
+            // Auto-run toggle, centered on sidebar
+            val sidebarW = cardPanelWidth + editorPadding - 3
+            val toggleW = 56
+            val toggleX = leftPos + (sidebarW - toggleW) / 2 + 3
+            val toggleY = topPos + imageHeight - 38
+            // Deepened background behind toggle area (expanded 3px each side, 2px taller)
+            val deepenH = font.lineHeight + 5 + 16 + 3 + 6 + 2
+            val recessX = toggleX - 3
+            val recessY = toggleY - font.lineHeight - 5 - 3
+            val recessW = toggleW + 6
+            NineSlice.WINDOW_RECESSED.draw(graphics, recessX, recessY, recessW, deepenH)
+
+            // Corner screws just outside the recessed area
+            val screwU = Icons.SMALL_SCREW.u + 5f
+            val screwV = Icons.SMALL_SCREW.v + 5f
+            val ss = 6 // screw size
+            val so = 1 // offset outside the recessed edge
+            graphics.blit(Icons.ATLAS, recessX - ss - so, recessY - ss - so, screwU, screwV, ss, ss, 256, 256)
+            graphics.blit(Icons.ATLAS, recessX + recessW + so, recessY - ss - so, screwU, screwV, ss, ss, 256, 256)
+            graphics.blit(Icons.ATLAS, recessX - ss - so, recessY + deepenH + so, screwU, screwV, ss, ss, 256, 256)
+            graphics.blit(Icons.ATLAS, recessX + recessW + so, recessY + deepenH + so, screwU, screwV, ss, ss, 256, 256)
+
+            val labelText = "Autorun"
+            graphics.drawString(
+                font,
+                labelText,
+                toggleX + (toggleW - font.width(labelText)) / 2,
+                toggleY - font.lineHeight,
+                0xFFAAAAAA.toInt()
+            )
+            val toggleU = if (autoRun) 72f else 120f
+            val toggleDrawX = toggleX + (toggleW - 48) / 2 - 1
+            graphics.blit(NineSlice.GUI_ATLAS, toggleDrawX, toggleY + 2, toggleU, 64f, 48, 16, 256, 256)
         }
-        // Reset hover if mouse left the sidebar
-        if (!(mouseX >= leftPos && mouseX < leftPos + 75 && mouseY >= cardListTop && mouseY < cardListBottom)) {
-            sidebarHoverIndex = -1
-        }
-        graphics.disableScissor()
-
-        // Scrollbar
-        val scrollbarW = 6
-        val sbX = leftPos + 76
-        val maxVisibleCards = (cardListBottom - cardListTop) / cardLineHeight
-        if (entries.size > maxVisibleCards) {
-            val scrollbarHeight = cardListBottom - cardListTop
-            val thumbHeight = maxOf(12, scrollbarHeight * maxVisibleCards / entries.size)
-            val maxCardScroll = maxOf(1, (entries.size - maxVisibleCards) * cardLineHeight)
-            cardScrollOffset = cardScrollOffset.coerceIn(0, maxCardScroll)
-            val thumbY = cardListTop + (scrollbarHeight - thumbHeight) * cardScrollOffset / maxCardScroll
-            NineSlice.SCROLLBAR_TRACK.draw(graphics, sbX, cardListTop, scrollbarW, scrollbarHeight)
-            val thumbSlice =
-                if (draggingSidebarScrollbar) NineSlice.SCROLLBAR_THUMB_HOVER else NineSlice.SCROLLBAR_THUMB
-            thumbSlice.draw(graphics, sbX, thumbY, scrollbarW, thumbHeight)
-        }
-
-        // Auto-run toggle, centered on sidebar
-        val sidebarW = cardPanelWidth + editorPadding - 3
-        val toggleW = 56
-        val toggleX = leftPos + (sidebarW - toggleW) / 2 + 3
-        val toggleY = topPos + imageHeight - 38
-        // Deepened background behind toggle area (expanded 3px each side, 2px taller)
-        val deepenH = font.lineHeight + 5 + 16 + 3 + 6 + 2
-        val recessX = toggleX - 3
-        val recessY = toggleY - font.lineHeight - 5 - 3
-        val recessW = toggleW + 6
-        NineSlice.WINDOW_RECESSED.draw(graphics, recessX, recessY, recessW, deepenH)
-
-        // Corner screws just outside the recessed area
-        val screwU = Icons.SMALL_SCREW.u + 5f
-        val screwV = Icons.SMALL_SCREW.v + 5f
-        val ss = 6 // screw size
-        val so = 1 // offset outside the recessed edge
-        graphics.blit(Icons.ATLAS, recessX - ss - so, recessY - ss - so, screwU, screwV, ss, ss, 256, 256)
-        graphics.blit(Icons.ATLAS, recessX + recessW + so, recessY - ss - so, screwU, screwV, ss, ss, 256, 256)
-        graphics.blit(Icons.ATLAS, recessX - ss - so, recessY + deepenH + so, screwU, screwV, ss, ss, 256, 256)
-        graphics.blit(Icons.ATLAS, recessX + recessW + so, recessY + deepenH + so, screwU, screwV, ss, ss, 256, 256)
-
-        val labelText = "Autorun"
-        graphics.drawString(
-            font,
-            labelText,
-            toggleX + (toggleW - font.width(labelText)) / 2,
-            toggleY - font.lineHeight,
-            0xFFAAAAAA.toInt()
-        )
-        val toggleU = if (autoRun) 72f else 120f
-        val toggleDrawX = toggleX + (toggleW - 48) / 2 - 1
-        graphics.blit(NineSlice.GUI_ATLAS, toggleDrawX, toggleY + 2, toggleU, 64f, 48, 16, 256, 256)
 
         // Log panel
         val effectiveLogHeight = if (logCollapsed) logCollapsedHeight else logPanelHeight
@@ -1355,7 +1390,7 @@ class TerminalScreen(
             }
             collapseIcon.draw(graphics, toggleBtnX - 3, toggleBtnY - 3)
         }
-        graphics.drawString(font, "Output", logX + 14, logY + 2, 0xFF888888.toInt())
+        graphics.drawString(font, if (portable) problemsTitle() else "Output", logX + 14, logY + 2, 0xFF888888.toInt())
 
         if (!logCollapsed) {
             // Output toolbar buttons (only when expanded)
@@ -1369,7 +1404,8 @@ class TerminalScreen(
             val clearIcon = when {
                 pressedButton == "clear" -> Icons.TRASH_PRESSED; clearHovered -> Icons.TRASH_HOVER; else -> Icons.TRASH_IDLE
             }
-            clearIcon.draw(graphics, clearBtnX - 3, clearBtnY - 3)
+            if (portable) drawCheckButton(graphics, mouseX, mouseY, logX, logY, logW)
+            else clearIcon.draw(graphics, clearBtnX - 3, clearBtnY - 3)
 
             // Copy button
             val copyBtnX = logX + logW - btnRenderSize - 3
@@ -1384,51 +1420,55 @@ class TerminalScreen(
             val logContentTop = logY + logCollapsedHeight
             val logContentBottom = logY + logPanelHeight - editorPadding
 
-            // Log entries with word wrapping
-            val logs = TerminalLogBuffer.getLogs(menu.getTerminalPos())
-            val logLineHeight = font.lineHeight + 1
-            val logTextAreaHeight = logContentBottom - logContentTop
-            val maxLogWidth = logW - 6
+            if (portable) {
+                renderProblems(graphics, mouseX, mouseY, logX, logContentTop, logW, logContentBottom)
+            } else {
+                // Log entries with word wrapping
+                val logs = TerminalLogBuffer.getLogs(menu.getTerminalPos())
+                val logLineHeight = font.lineHeight + 1
+                val logTextAreaHeight = logContentBottom - logContentTop
+                val maxLogWidth = logW - 6
 
-            val wrappedLines = mutableListOf<WrappedLine>()
-            for (entry in logs) {
-                val color = if (entry.isError) 0xFFFF5555.toInt() else 0xFF999999.toInt()
-                val fullText = "> " + entry.displayMessage
-                val hasLineRef = entry.isError && errorLinePattern.containsMatchIn(entry.message)
-                val split = font.splitter.splitLines(fullText, maxLogWidth, net.minecraft.network.chat.Style.EMPTY)
-                for ((j, line) in split.withIndex()) {
-                    val prefix = if (j == 0) "" else "  "
-                    wrappedLines.add(WrappedLine(prefix + line.string, color, hasLineRef && j == 0))
+                val wrappedLines = mutableListOf<WrappedLine>()
+                for (entry in logs) {
+                    val color = if (entry.isError) 0xFFFF5555.toInt() else 0xFF999999.toInt()
+                    val fullText = "> " + entry.displayMessage
+                    val hasLineRef = entry.isError && errorLinePattern.containsMatchIn(entry.message)
+                    val split = font.splitter.splitLines(fullText, maxLogWidth, net.minecraft.network.chat.Style.EMPTY)
+                    for ((j, line) in split.withIndex()) {
+                        val prefix = if (j == 0) "" else "  "
+                        wrappedLines.add(WrappedLine(prefix + line.string, color, hasLineRef && j == 0))
+                    }
                 }
-            }
 
-            val maxVisibleLines = logTextAreaHeight / logLineHeight
-            if (logAutoScroll && wrappedLines.isNotEmpty()) {
-                logScrollOffset = maxOf(0, wrappedLines.size - maxVisibleLines)
-            }
-
-            graphics.enableScissor(logX, logContentTop, logX + logW, logContentBottom)
-            for (i in 0 until maxVisibleLines) {
-                val lineIdx = logScrollOffset + i
-                if (lineIdx >= wrappedLines.size) break
-                val line = wrappedLines[lineIdx]
-                val entryY = logContentTop + i * logLineHeight
-                graphics.drawString(font, line.text, logX + 3, entryY, line.color)
-                // Underline clickable error lines when hovered
-                if (line.clickable && mouseY >= entryY && mouseY < entryY + logLineHeight &&
-                    mouseX >= logX && mouseX < logX + logW
-                ) {
-                    val textW = font.width(line.text)
-                    graphics.fill(
-                        logX + 3,
-                        entryY + font.lineHeight,
-                        logX + 3 + textW,
-                        entryY + font.lineHeight + 1,
-                        0xAAFF5555.toInt()
-                    )
+                val maxVisibleLines = logTextAreaHeight / logLineHeight
+                if (logAutoScroll && wrappedLines.isNotEmpty()) {
+                    logScrollOffset = maxOf(0, wrappedLines.size - maxVisibleLines)
                 }
+
+                graphics.enableScissor(logX, logContentTop, logX + logW, logContentBottom)
+                for (i in 0 until maxVisibleLines) {
+                    val lineIdx = logScrollOffset + i
+                    if (lineIdx >= wrappedLines.size) break
+                    val line = wrappedLines[lineIdx]
+                    val entryY = logContentTop + i * logLineHeight
+                    graphics.drawString(font, line.text, logX + 3, entryY, line.color)
+                    // Underline clickable error lines when hovered
+                    if (line.clickable && mouseY >= entryY && mouseY < entryY + logLineHeight &&
+                        mouseX >= logX && mouseX < logX + logW
+                    ) {
+                        val textW = font.width(line.text)
+                        graphics.fill(
+                            logX + 3,
+                            entryY + font.lineHeight,
+                            logX + 3 + textW,
+                            entryY + font.lineHeight + 1,
+                            0xAAFF5555.toInt()
+                        )
+                    }
+                }
+                graphics.disableScissor()
             }
-            graphics.disableScissor()
         }
 
         // Content border, overlays everything, extends 3px up into top bar
@@ -1456,18 +1496,20 @@ class TerminalScreen(
             networkColor
         )
 
-        // Status indicator on top of top bar
-        val statusX = leftPos + 4
-        val statusIconY = topPos + (topBarHeight - 16) / 2 + 1
-        if (scriptRunning) {
-            Icons.CRYSTAL_ACTIVE.draw(graphics, statusX, statusIconY)
-        } else {
-            Icons.CRYSTAL_INACTIVE.draw(graphics, statusX, statusIconY)
+        if (!portable) {
+            // Status indicator on top of top bar
+            val statusX = leftPos + 4
+            val statusIconY = topPos + (topBarHeight - 16) / 2 + 1
+            if (scriptRunning) {
+                Icons.CRYSTAL_ACTIVE.draw(graphics, statusX, statusIconY)
+            } else {
+                Icons.CRYSTAL_INACTIVE.draw(graphics, statusX, statusIconY)
+            }
+            val statusText = if (scriptRunning) "Running" else "Stopped"
+            val statusTextColor = if (scriptRunning) 0xFFD3FFFF.toInt() else 0xFF888888.toInt()
+            val statusTextY = topPos + (topBarHeight - font.lineHeight) / 2 + 2
+            graphics.drawString(font, statusText, statusX + 21, statusTextY, statusTextColor)
         }
-        val statusText = if (scriptRunning) "Running" else "Stopped"
-        val statusTextColor = if (scriptRunning) 0xFFD3FFFF.toInt() else 0xFF888888.toInt()
-        val statusTextY = topPos + (topBarHeight - font.lineHeight) / 2 + 2
-        graphics.drawString(font, statusText, statusX + 21, statusTextY, statusTextColor)
     }
 
     override fun extractRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
@@ -1484,7 +1526,7 @@ class TerminalScreen(
         if (editor.isOpenDocsHoldActive() && autocomplete.visible) {
             autocomplete.hide()
         }
-        if (!autocomplete.visible && !showNewTabInput) {
+        if (!autocomplete.visible && !showNewTabInput && !showLoadDrawer) {
             renderTypeTooltip(graphics, mouseX, mouseY)
         }
 
@@ -1513,6 +1555,8 @@ class TerminalScreen(
                 graphics.fill(cursorX, inputY + 4, cursorX + 1, inputY + inputH - 4, 0xFFFFFFFF.toInt())
             }
         }
+
+        if (showLoadDrawer) renderLoadDrawer(graphics, mouseX, mouseY)
 
         // 26.1: automatic tooltip via extractTooltip. renderTooltip(graphics, mouseX, mouseY)
     }
@@ -1809,6 +1853,24 @@ class TerminalScreen(
         val keyCode = event.keyCode
         val scanCode = event.scan
         val modifiers = event.modifierBits
+        if (showLoadDrawer) {
+            if (keyCode == InputConstants.KEY_ESCAPE) {
+                showLoadDrawer = false
+                loadConfirmSlot = -1
+            }
+            return true
+        }
+        nameField?.let { field ->
+            if (field.isFocused) {
+                if (keyCode == InputConstants.KEY_ESCAPE || keyCode == InputConstants.KEY_RETURN || keyCode == InputConstants.KEY_NUMPADENTER) {
+                    field.isFocused = false
+                    editor.isFocused = true
+                } else {
+                    field.keyPressed(event)
+                }
+                return true
+            }
+        }
         // Handle new tab name input
         if (showNewTabInput) {
             when (keyCode) {
@@ -1820,12 +1882,17 @@ class TerminalScreen(
                 InputConstants.KEY_RETURN -> {
                     if (newTabName.isNotEmpty() && newTabName !in scripts) {
                         scripts[newTabName] = ""
-                        PlatformServices.clientNetworking.sendToServer(
-                            CreateScriptTabPayload(
-                                menu.getTerminalPos(),
-                                newTabName
+                        if (portable) {
+                            draftMetaDirty = true
+                            draftDirtyTabs.add(newTabName)
+                        } else {
+                            PlatformServices.clientNetworking.sendToServer(
+                                CreateScriptTabPayload(
+                                    menu.getTerminalPos(),
+                                    newTabName
+                                )
                             )
-                        )
+                        }
                         showNewTabInput = false
                         switchTab(newTabName)
                         newTabName = ""
@@ -1855,6 +1922,12 @@ class TerminalScreen(
                     return true
                 }
                 return super.keyPressed(event)
+            }
+
+            // Ctrl+S saves the portable draft onto its Script item
+            if (portable && keyCode == InputConstants.KEY_S && (modifiers and 2) != 0) {
+                savePortable(asNew = false)
+                return true
             }
 
             // Ctrl+Z = undo
@@ -2073,11 +2146,18 @@ class TerminalScreen(
 
     override fun charTyped(event: CharacterEvent): Boolean {
         val codePoint = event.character
+        if (showLoadDrawer) return true
+        nameField?.let { field ->
+            if (field.isFocused) {
+                field.charTyped(event)
+                return true
+            }
+        }
         if (showNewTabInput) {
             val c = codePoint
             if (c.isLetterOrDigit() || c == '_') {
                 val candidate = newTabName + c.lowercaseChar()
-                if (candidate.length <= 20 && TerminalBlockEntity.SCRIPT_NAME_REGEX.matches(candidate)) {
+                if (candidate.length <= 20 && damien.nodeworks.item.ScriptProgram.TAB_NAME_REGEX.matches(candidate)) {
                     newTabName = candidate
                 }
             }
@@ -2144,12 +2224,25 @@ class TerminalScreen(
         val mx = mouseX.toInt()
         val my = mouseY.toInt()
 
+        if (showLoadDrawer) {
+            handleLoadDrawerClick(mx, my)
+            return true
+        }
+        nameField?.let { field ->
+            val inField = mx in field.x until field.x + field.width && my in field.y until field.y + field.height
+            if (inField) {
+                editor.isFocused = false
+                return super.mouseClicked(event, doubleClick)
+            }
+            if (field.isFocused) field.isFocused = false
+        }
+
         // Auto-run toggle click
         val sidebarW = cardPanelWidth + editorPadding - 3
         val toggleW = 56
         val toggleX = leftPos + (sidebarW - toggleW) / 2 + 3
         val toggleY = topPos + imageHeight - 38
-        if (mx >= toggleX && mx < toggleX + toggleW && my >= toggleY && my < toggleY + 16) {
+        if (!portable && mx >= toggleX && mx < toggleX + toggleW && my >= toggleY && my < toggleY + 16) {
             autoRun = !autoRun
             PlatformServices.clientNetworking.sendToServer(ToggleAutoRunPayload(menu.getTerminalPos(), autoRun))
             minecraft?.player?.playSound(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK.value(), 0.5f, 1.0f)
@@ -2175,13 +2268,13 @@ class TerminalScreen(
         val cardListBottom = topPos + imageHeight - 70
         val cardLineHeight = 11
         val sbX = leftPos + 76
-        if (mx >= sbX && mx < sbX + 6 && my >= cardListTop && my < cardListBottom) {
+        if (!portable && mx >= sbX && mx < sbX + 6 && my >= cardListTop && my < cardListBottom) {
             draggingSidebarScrollbar = true
             return true
         }
 
         // Check sidebar click, insert reference at top of file
-        if (mx >= leftPos && mx < leftPos + 75 && my >= cardListTop && my < cardListBottom) {
+        if (!portable && mx >= leftPos && mx < leftPos + 75 && my >= cardListTop && my < cardListBottom) {
             val clickedIndex = (my - cardListTop + cardScrollOffset) / cardLineHeight
             if (clickedIndex in sidebarEntries.indices) {
                 val entry = sidebarEntries[clickedIndex]
@@ -2236,7 +2329,12 @@ class TerminalScreen(
         // Clear button
         val clearBtnX = logX + logW - btnRenderSize * 2 - 6
         val clearBtnY = logY + 5
-        if (mx >= clearBtnX && mx < clearBtnX + btnRenderSize && my >= clearBtnY && my < clearBtnY + btnRenderSize) {
+        if (portable && !logCollapsed && checkButtonHit(mx, my, logX, logY, logW)) {
+            runCompileCheck()
+            minecraft?.player?.playSound(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK.value(), 0.5f, 1.0f)
+            return true
+        }
+        if (!portable && mx >= clearBtnX && mx < clearBtnX + btnRenderSize && my >= clearBtnY && my < clearBtnY + btnRenderSize) {
             pressedButton = "clear"
             TerminalLogBuffer.clear(menu.getTerminalPos())
             logScrollOffset = 0
@@ -2249,8 +2347,12 @@ class TerminalScreen(
         val copyBtnY = logY + 5
         if (mx >= copyBtnX && mx < copyBtnX + btnRenderSize && my >= copyBtnY && my < copyBtnY + btnRenderSize) {
             pressedButton = "copy"
-            val logs = TerminalLogBuffer.getLogs(menu.getTerminalPos())
-            val text = logs.joinToString("\n") { (if (it.isError) "[ERR] " else "") + it.displayMessage }
+            val text = if (portable) {
+                problemRows.joinToString("\n") { if (it.tab.isEmpty()) it.message else "${it.tab}:${it.line}: ${it.message}" }
+            } else {
+                TerminalLogBuffer.getLogs(menu.getTerminalPos())
+                    .joinToString("\n") { (if (it.isError) "[ERR] " else "") + it.displayMessage }
+            }
             if (text.isNotEmpty()) {
                 minecraft?.keyboardHandler?.clipboard = text
             }
@@ -2263,7 +2365,7 @@ class TerminalScreen(
             val logContentTop = logY + logCollapsedHeight
             val logContentBottom = logY + logPanelHeight - editorPadding
             if (mx >= logX && mx < logX + logW && my >= logContentTop && my < logContentBottom) {
-                val errorLoc = getClickedErrorLocation(my, logContentTop, logW)
+                val errorLoc = if (portable) clickedProblem(my, logContentTop) else getClickedErrorLocation(my, logContentTop, logW)
                 if (errorLoc != null) {
                     // Switch to the correct tab if error is from a different script
                     val targetTab = errorLoc.scriptName
@@ -2308,15 +2410,21 @@ class TerminalScreen(
             if (mx >= tabX && mx < tabX + tabWidth) {
                 if (name != "main" && mx >= tabX + tabWidth - 10) {
                     scripts[activeTab] = editor.value
-                    PlatformServices.clientNetworking.sendToServer(
-                        SaveScriptPayload(
-                            menu.getTerminalPos(),
-                            activeTab,
-                            editor.value
+                    if (!portable) {
+                        PlatformServices.clientNetworking.sendToServer(
+                            SaveScriptPayload(menu.getTerminalPos(), activeTab, editor.value)
                         )
-                    )
+                    }
                     scripts.remove(name)
-                    PlatformServices.clientNetworking.sendToServer(DeleteScriptTabPayload(menu.getTerminalPos(), name))
+                    if (portable) {
+                        draftDirtyTabs.remove(name)
+                        tabProblemCache.remove(name)
+                        compileProblems = compileProblems.filter { it.tab != name }
+                        draftMetaDirty = true
+                        sendDraft()
+                    } else {
+                        PlatformServices.clientNetworking.sendToServer(DeleteScriptTabPayload(menu.getTerminalPos(), name))
+                    }
                     if (activeTab == name) {
                         activeTab = "main"
                         rebuildWithText = scripts["main"] ?: ""
@@ -2394,15 +2502,16 @@ class TerminalScreen(
         if (name == activeTab) return
         // Save current tab
         scripts[activeTab] = editor.value
-        PlatformServices.clientNetworking.sendToServer(
-            SaveScriptPayload(
-                menu.getTerminalPos(),
-                activeTab,
-                editor.value
+        if (portable) {
+            sendDraft()
+        } else {
+            PlatformServices.clientNetworking.sendToServer(
+                SaveScriptPayload(menu.getTerminalPos(), activeTab, editor.value)
             )
-        )
+        }
         // Switch
         activeTab = name
+        problemGeneration++
         undoStack.clear()
         redoStack.clear()
         rebuildWithText = scripts[name] ?: ""
@@ -2411,7 +2520,7 @@ class TerminalScreen(
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {
         // Check if mouse is over the card panel
-        if (mouseX >= leftPos && mouseX <= leftPos + cardPanelWidth &&
+        if (!portable && mouseX >= leftPos && mouseX <= leftPos + cardPanelWidth &&
             mouseY >= topPos + topBarHeight && mouseY <= topPos + imageHeight - 28
         ) {
             val cardListTop = topPos + topBarHeight + 18
@@ -2433,6 +2542,13 @@ class TerminalScreen(
         val logY = topPos + imageHeight - logPanelHeight - 4
         val logW = imageWidth - cardPanelWidth - editorPadding * 2
         if (mouseX >= logX && mouseX <= logX + logW && mouseY >= logY && mouseY <= topPos + imageHeight - 4) {
+            if (portable) {
+                val rowH = font.lineHeight + 1
+                val maxVisible = (logPanelHeight - 14) / rowH
+                val maxScroll = maxOf(0, problemRows.size - maxVisible)
+                problemsScrollOffset = (problemsScrollOffset - scrollY.toInt()).coerceIn(0, maxScroll)
+                return true
+            }
             val logs = TerminalLogBuffer.getLogs(menu.getTerminalPos())
             val logLineHeight = font.lineHeight + 1
             val maxLogWidth = logW - 6
@@ -2463,13 +2579,13 @@ class TerminalScreen(
 
     override fun onClose() {
         scripts[activeTab] = editor.value
-        PlatformServices.clientNetworking.sendToServer(
-            SaveScriptPayload(
-                menu.getTerminalPos(),
-                activeTab,
-                editor.value
+        if (portable) {
+            sendDraft()
+        } else {
+            PlatformServices.clientNetworking.sendToServer(
+                SaveScriptPayload(menu.getTerminalPos(), activeTab, editor.value)
             )
-        )
+        }
         super.onClose()
     }
 
@@ -2491,6 +2607,348 @@ class TerminalScreen(
     private fun autoRunLabel(): Component {
         val state = if (autoRun) "\u00A7aON" else "\u00A77OFF"
         return Component.literal("Auto: $state")
+    }
+
+    override fun containerTick() {
+        super.containerTick()
+        if (!portable) return
+        draftIdleTicks++
+        if (draftIdleTicks >= draftSyncIdleTicks && (draftDirtyTabs.isNotEmpty() || draftMetaDirty)) sendDraft()
+    }
+
+    // ── Diagnostics shared by the editor squiggles and the Problems panel ──
+
+    private fun diagnosticsForActive(text: String): List<damien.nodeworks.script.diagnostics.Diagnostic> {
+        if (text != cachedDiagnosticsText) {
+            cachedDiagnosticsText = text
+            cachedDiagnostics = analyzeTab(activeTab, text)
+        }
+        return cachedDiagnostics
+    }
+
+    /** Pass sibling tabs so `require` lookups resolve, with the live text for the active tab. */
+    private fun analyzeTab(tab: String, text: String): List<damien.nodeworks.script.diagnostics.Diagnostic> {
+        val symbols = autocomplete.getSymbolTable(text, text)
+        val others = LinkedHashMap<String, String>()
+        for ((k, v) in scripts) if (k != tab) others[k] = if (k == activeTab) editor.value else v
+        return damien.nodeworks.script.diagnostics.LuaDiagnostics.analyze(
+            text, symbols, others, ambiguousNetworkNames,
+            processingApis = localApis,
+            knownCardTags = menu.getKnownTags().toSet(),
+        )
+    }
+
+    // ── Portable Scripting Terminal ──
+
+    /** The most this tab may hold without pushing the program past its limit. */
+    private fun portableTabLimit(): Int {
+        val others = scripts.entries.sumOf { if (it.key == activeTab) 0 else it.value.length }
+        return (damien.nodeworks.item.ScriptProgram.MAX_TOTAL_CHARS - others)
+            .coerceIn(0, damien.nodeworks.item.ScriptProgram.MAX_TAB_CHARS)
+    }
+
+    private fun buildPortableControls(layoutX: Int, btnY: Int) {
+        val loadX = layoutX + 24
+        val saveX = loadX + 40
+        val saveAsX = saveX + 40
+        addRenderableWidget(
+            damien.nodeworks.screen.widget.SlicedButton.create(loadX, btnY, 36, buttonHeight, "Load") { _ -> openLoadDrawer() },
+        )
+        addRenderableWidget(
+            damien.nodeworks.screen.widget.SlicedButton.createColored(
+                saveX, btnY, 36, buttonHeight, "Save", 0xFF55CC55.toInt(), 0xFF88FF88.toInt(),
+            ) { _ -> savePortable(asNew = false) },
+        )
+        addRenderableWidget(
+            damien.nodeworks.screen.widget.SlicedButton.create(saveAsX, btnY, 52, buttonHeight, "Save as") { _ -> savePortable(asNew = true) },
+        )
+        val fieldX = leftPos + 8
+        val fieldW = (layoutX - 8 - fieldX).coerceAtLeast(40)
+        val field = net.minecraft.client.gui.components.EditBox(
+            font, fieldX, btnY + 1, fieldW, buttonHeight - 2, Component.literal("Script name"),
+        ).also {
+            it.setMaxLength(damien.nodeworks.item.ScriptProgram.MAX_NAME_LENGTH)
+            it.setBordered(true)
+            it.setTextColor(0xFFFFFFFF.toInt())
+            it.setHint(Component.literal("script name").withStyle(net.minecraft.ChatFormatting.DARK_GRAY))
+            it.value = scriptName
+            it.setResponder { v ->
+                if (v != scriptName) {
+                    scriptName = v
+                    draftMetaDirty = true
+                    draftIdleTicks = 0
+                }
+            }
+            it.isFocused = false
+        }
+        nameField = field
+        addRenderableWidget(field)
+    }
+
+    /** Push the draft to the item: the tab list and name when they changed, then only the tabs that did. */
+    private fun sendDraft() {
+        if (!portable) return
+        scripts[activeTab] = editor.value
+        if (draftMetaDirty) {
+            PlatformServices.clientNetworking.sendToServer(
+                PortableDraftMetaPayload(menu.containerId, scriptName, loadedSlot, currentLayout.ordinal, scripts.keys.toList()),
+            )
+            draftMetaDirty = false
+        }
+        for (tab in draftDirtyTabs.toList()) {
+            val text = scripts[tab] ?: continue
+            PlatformServices.clientNetworking.sendToServer(PortableDraftTabPayload(menu.containerId, tab, text))
+        }
+        draftDirtyTabs.clear()
+        draftIdleTicks = 0
+    }
+
+    private fun validInventorySlot(slot: Int): Boolean =
+        slot in 0 until Inventory.INVENTORY_SIZE || slot == Inventory.SLOT_OFFHAND
+
+    private fun inventorySlots(): List<Int> = (0 until Inventory.INVENTORY_SIZE) + Inventory.SLOT_OFFHAND
+
+    private fun showNotice(message: String) {
+        notice = message
+        noticeUntil = net.minecraft.util.Util.getMillis() + 6000
+        if (logCollapsed) {
+            logCollapsed = false
+            savedLogCollapsed = false
+            rebuildWithText = editor.value
+            rebind()
+        }
+    }
+
+    /** Save onto the loaded Script, or onto a Blank Script when there is none or [asNew]. */
+    private fun savePortable(asNew: Boolean) {
+        scripts[activeTab] = editor.value
+        val name = scriptName.trim()
+        val problem = damien.nodeworks.item.ScriptProgram.problem(name, scripts)
+        if (problem != null) {
+            showNotice(problem)
+            return
+        }
+        val inv = minecraft?.player?.inventory ?: return
+        val loaded = if (validInventorySlot(loadedSlot)) inv.getItem(loadedSlot) else net.minecraft.world.item.ItemStack.EMPTY
+        val target = when {
+            !asNew && loadedSlot >= 0 && (damien.nodeworks.item.ScriptItem.program(loaded) != null || damien.nodeworks.item.ScriptItem.isBlank(loaded)) -> loadedSlot
+            else -> inventorySlots().firstOrNull { damien.nodeworks.item.ScriptItem.isBlank(inv.getItem(it)) } ?: -1
+        }
+        if (target < 0) {
+            showNotice("No Blank Script in your inventory to save onto.")
+            return
+        }
+        if (target != loadedSlot) {
+            loadedSlot = target
+            draftMetaDirty = true
+        }
+        sendDraft()
+        PlatformServices.clientNetworking.sendToServer(PortableScriptWritePayload(menu.containerId, target))
+        showNotice("Saving \"$name\"...")
+    }
+
+    /** Whether the editor differs from the Script it was loaded from, or holds text with no Script behind it. */
+    private fun isDraftDirty(): Boolean {
+        val inv = minecraft?.player?.inventory ?: return true
+        val live = LinkedHashMap(scripts).also { it[activeTab] = editor.value }
+        val program = if (validInventorySlot(loadedSlot)) damien.nodeworks.item.ScriptItem.program(inv.getItem(loadedSlot)) else null
+        return if (program == null) live.values.any { it.isNotBlank() }
+        else program.tabs != live || program.name != scriptName.trim()
+    }
+
+    private fun openLoadDrawer() {
+        val inv = minecraft?.player?.inventory ?: return
+        loadDrawerEntries = inventorySlots().mapNotNull { slot ->
+            damien.nodeworks.item.ScriptItem.program(inv.getItem(slot))?.let { LoadEntry(slot, it) }
+        }
+        loadConfirmSlot = -1
+        showLoadDrawer = true
+        autocomplete.hide()
+    }
+
+    private val loadRowHeight = 12
+
+    /** x, y, width, height of the drawer panel. */
+    private fun loadDrawerRect(): IntArray {
+        val rows = loadDrawerEntries.size.coerceIn(1, 10)
+        val w = 220
+        val h = 18 + rows * loadRowHeight + 16
+        return intArrayOf(leftPos + (imageWidth - w) / 2, topPos + (imageHeight - h) / 2, w, h)
+    }
+
+    private fun renderLoadDrawer(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
+        val r = loadDrawerRect()
+        graphics.fill(leftPos, topPos, leftPos + imageWidth, topPos + imageHeight, 0x90000000.toInt())
+        NineSlice.WINDOW_FRAME.draw(graphics, r[0], r[1], r[2], r[3])
+        graphics.drawString(font, "Load a Script", r[0] + 6, r[1] + 5, 0xFFCCCCCC.toInt())
+        val listY = r[1] + 18
+        if (loadDrawerEntries.isEmpty()) {
+            graphics.drawString(font, "No Script items in your inventory.", r[0] + 6, listY + 2, 0xFF777777.toInt())
+        }
+        for ((i, entry) in loadDrawerEntries.take(10).withIndex()) {
+            val y = listY + i * loadRowHeight
+            val hovered = mouseX in r[0] until r[0] + r[2] && mouseY in y until y + loadRowHeight
+            if (hovered) graphics.fill(r[0] + 3, y, r[0] + r[2] - 3, y + loadRowHeight, 0x30FFFFFF.toInt())
+            val tabs = entry.program.tabs.size
+            val by = if (entry.program.authorName.isEmpty()) "" else "  by ${entry.program.authorName}"
+            val label = "${entry.program.name}  00B7  $tabs ${if (tabs == 1) "tab" else "tabs"}$by"
+            val color = if (entry.slot == loadConfirmSlot) 0xFFFFCC55.toInt() else 0xFFEEEEEE.toInt()
+            graphics.drawString(font, font.plainSubstrByWidth(label, r[2] - 12), r[0] + 6, y + 2, color)
+        }
+        val footY = r[1] + r[3] - 12
+        val foot = if (loadConfirmSlot >= 0) "Unsaved changes here. Click again to replace them." else "Esc to cancel"
+        val footColor = if (loadConfirmSlot >= 0) 0xFFFFCC55.toInt() else 0xFF666666.toInt()
+        graphics.drawString(font, font.plainSubstrByWidth(foot, r[2] - 12), r[0] + 6, footY, footColor)
+    }
+
+    private fun handleLoadDrawerClick(mx: Int, my: Int) {
+        val r = loadDrawerRect()
+        if (mx < r[0] || mx >= r[0] + r[2] || my < r[1] || my >= r[1] + r[3]) {
+            showLoadDrawer = false
+            loadConfirmSlot = -1
+            return
+        }
+        val listY = r[1] + 18
+        val idx = (my - listY) / loadRowHeight
+        if (my < listY || idx !in loadDrawerEntries.indices || idx >= 10) return
+        val entry = loadDrawerEntries[idx]
+        if (isDraftDirty() && loadConfirmSlot != entry.slot) {
+            loadConfirmSlot = entry.slot
+            return
+        }
+        loadProgram(entry)
+    }
+
+    private fun loadProgram(entry: LoadEntry) {
+        scripts.clear()
+        for ((k, v) in entry.program.tabs) if (damien.nodeworks.item.ScriptProgram.isValidTabName(k)) scripts[k] = v
+        if (damien.nodeworks.item.ScriptProgram.MAIN_TAB !in scripts) scripts[damien.nodeworks.item.ScriptProgram.MAIN_TAB] = ""
+        scriptName = entry.program.name
+        loadedSlot = entry.slot
+        activeTab = damien.nodeworks.item.ScriptProgram.MAIN_TAB
+        undoStack.clear()
+        redoStack.clear()
+        tabProblemCache.clear()
+        compileProblems = emptyList()
+        compileChecked = false
+        problemGeneration++
+        draftMetaDirty = true
+        draftDirtyTabs.addAll(scripts.keys)
+        showLoadDrawer = false
+        loadConfirmSlot = -1
+        rebuildWithText = scripts[activeTab] ?: ""
+        rebind()
+        sendDraft()
+        minecraft?.player?.playSound(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK.value(), 0.5f, 1.0f)
+    }
+
+    private fun runCompileCheck() {
+        scripts[activeTab] = editor.value
+        compileProblems = damien.nodeworks.script.diagnostics.ScriptCompileCheck.check(scripts).map {
+            Problem(it.tab, it.line, damien.nodeworks.script.diagnostics.Severity.ERROR, it.message)
+        }
+        compileChecked = true
+        problemGeneration++
+        problemsScrollOffset = 0
+    }
+
+    private val checkButtonW = 36
+    private val checkButtonH = 10
+
+    private fun checkButtonRect(logX: Int, logY: Int, logW: Int): IntArray =
+        intArrayOf(logX + logW - 10 - 3 - 6 - checkButtonW, logY + 1, checkButtonW, checkButtonH)
+
+    private fun checkButtonHit(mx: Int, my: Int, logX: Int, logY: Int, logW: Int): Boolean {
+        val r = checkButtonRect(logX, logY, logW)
+        return mx in r[0] until r[0] + r[2] && my in r[1] until r[1] + r[3]
+    }
+
+    private fun drawCheckButton(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, logX: Int, logY: Int, logW: Int) {
+        val r = checkButtonRect(logX, logY, logW)
+        val hovered = checkButtonHit(mouseX, mouseY, logX, logY, logW)
+        (if (hovered) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(graphics, r[0], r[1], r[2], r[3])
+        val label = "Check"
+        val color = if (hovered) 0xFFFFFFFF.toInt() else 0xFFCCCCCC.toInt()
+        graphics.drawString(font, label, r[0] + (r[2] - font.width(label)) / 2, r[1] + 1, color, false)
+    }
+
+    private fun problemsTitle(): String {
+        val total = scripts.entries.sumOf { if (it.key == activeTab) editor.value.length else it.value.length }
+        val max = damien.nodeworks.item.ScriptProgram.MAX_TOTAL_CHARS
+        val count = problemRows.count { it.tab.isNotEmpty() }
+        val base = if (count == 0) "Problems" else "Problems ($count)"
+        return if (total * 5 >= max * 4) "$base  00B7  ${total / 1000}k / ${max / 1000}k" else base
+    }
+
+    private fun lineOf(text: String, offset: Int): Int {
+        val end = offset.coerceIn(0, text.length)
+        var line = 1
+        for (i in 0 until end) if (text[i] == '\n') line++
+        return line
+    }
+
+    private fun rebuildProblems() {
+        val rows = ArrayList<Problem>()
+        val now = net.minecraft.util.Util.getMillis()
+        notice?.let { if (now < noticeUntil) rows += Problem("", 0, damien.nodeworks.script.diagnostics.Severity.HINT, it) else notice = null }
+        for ((tab, stored) in scripts) {
+            val text = if (tab == activeTab) editor.value else stored
+            val gen = if (tab == activeTab) 0 else problemGeneration
+            val cached = tabProblemCache[tab]
+            val list = if (cached != null && cached.first == text && cached.second == gen) cached.third else {
+                val diags = if (tab == activeTab) diagnosticsForActive(text) else analyzeTab(tab, text)
+                val converted = diags.map { d -> Problem(tab, lineOf(text, d.range.start), d.severity, d.message) }
+                tabProblemCache[tab] = Triple(text, gen, converted)
+                converted
+            }
+            rows += list
+        }
+        rows += compileProblems
+        val live = LinkedHashMap(scripts).also { it[activeTab] = editor.value }
+        damien.nodeworks.item.ScriptProgram.problem(scriptName.trim(), live)?.let { msg ->
+            if (live.values.any { it.isNotBlank() }) rows += Problem("", 0, damien.nodeworks.script.diagnostics.Severity.WARNING, msg)
+        }
+        problemRows = rows.sortedWith(compareBy({ it.tab.isNotEmpty() }, { it.severity.ordinal }, { it.tab != activeTab }, { it.line }))
+    }
+
+    private fun renderProblems(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, logX: Int, top: Int, logW: Int, bottom: Int) {
+        rebuildProblems()
+        val rowH = font.lineHeight + 1
+        val maxVisible = maxOf(1, (bottom - top) / rowH)
+        problemsScrollOffset = problemsScrollOffset.coerceIn(0, maxOf(0, problemRows.size - maxVisible))
+        graphics.enableScissor(logX, top, logX + logW, bottom)
+        if (problemRows.isEmpty()) {
+            val msg = if (compileChecked) "No problems. Every tab compiles." else "No problems. Check compiles every tab."
+            graphics.drawString(font, msg, logX + 3, top, 0xFF777777.toInt())
+        }
+        for (i in 0 until maxVisible) {
+            val idx = problemsScrollOffset + i
+            if (idx >= problemRows.size) break
+            val p = problemRows[idx]
+            val y = top + i * rowH
+            val color = when (p.severity) {
+                damien.nodeworks.script.diagnostics.Severity.ERROR -> 0xFFFF5555.toInt()
+                damien.nodeworks.script.diagnostics.Severity.WARNING -> 0xFFFFCC55.toInt()
+                damien.nodeworks.script.diagnostics.Severity.HINT -> 0xFF88AAFF.toInt()
+            }
+            val prefix = if (p.tab.isEmpty()) "" else "${p.tab}:${p.line}  "
+            val text = font.plainSubstrByWidth(prefix + p.message, logW - 6)
+            graphics.drawString(font, text, logX + 3, y, color)
+            val hovered = p.tab.isNotEmpty() && mouseY >= y && mouseY < y + rowH && mouseX >= logX && mouseX < logX + logW
+            if (hovered) {
+                val w = font.width(text)
+                graphics.fill(logX + 3, y + font.lineHeight, logX + 3 + w, y + font.lineHeight + 1, (color and 0x00FFFFFF) or 0xAA000000.toInt())
+            }
+        }
+        graphics.disableScissor()
+    }
+
+    private fun clickedProblem(my: Int, top: Int): ErrorLocation? {
+        val rowH = font.lineHeight + 1
+        val idx = problemsScrollOffset + (my - top) / rowH
+        val p = problemRows.getOrNull(idx) ?: return null
+        if (p.tab.isEmpty()) return null
+        return ErrorLocation(p.tab, p.line)
     }
 
     override fun isPauseScreen(): Boolean = false

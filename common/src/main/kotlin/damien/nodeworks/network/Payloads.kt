@@ -1051,6 +1051,29 @@ data class SetExportChestFilterRulesPayload(val containerId: Int, val rules: Lis
  * menu's own `setCardName` helper, an empty string clears the name back to the
  * translated item name. Sent by both [StorageCardScreen] and [CardSettingsScreen].
  */
+/** C2S: the full tag list of the card a settings menu is open on. */
+data class SetCardTagsPayload(val containerId: Int, val tags: List<String>) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<SetCardTagsPayload> = CustomPacketPayload.Type(
+            Identifier.fromNamespaceAndPath("nodeworks", "set_card_tags")
+        )
+        val CODEC: StreamCodec<FriendlyByteBuf, SetCardTagsPayload> = CustomPacketPayload.codec(
+            { p, buf ->
+                buf.writeVarInt(p.containerId)
+                val tags = p.tags.take(damien.nodeworks.card.CardTags.MAX_TAGS)
+                buf.writeVarInt(tags.size)
+                for (t in tags) buf.writeUtf(t.take(damien.nodeworks.card.CardTags.MAX_TAG_LENGTH), damien.nodeworks.card.CardTags.MAX_TAG_LENGTH)
+            },
+            { buf ->
+                val containerId = buf.readVarInt()
+                val n = buf.readVarInt().coerceIn(0, damien.nodeworks.card.CardTags.MAX_TAGS)
+                SetCardTagsPayload(containerId, List(n) { buf.readUtf(damien.nodeworks.card.CardTags.MAX_TAG_LENGTH) })
+            }
+        )
+    }
+    override fun type() = TYPE
+}
+
 data class SetCardNamePayload(val containerId: Int, val name: String) : CustomPacketPayload {
     companion object {
         /** Mirrors [damien.nodeworks.screen.CardSettingsOpenData.MAX_NAME_LENGTH]. */
@@ -1481,6 +1504,92 @@ class GrappleReleasePayload : CustomPacketPayload {
         val CODEC: StreamCodec<FriendlyByteBuf, GrappleReleasePayload> = CustomPacketPayload.codec(
             { _, _ -> },
             { _ -> GrappleReleasePayload() }
+        )
+    }
+    override fun type() = TYPE
+}
+
+/**
+ * C2S: the Portable Scripting Terminal's draft metadata. [tabNames] is the full tab
+ * list, so tabs missing from it are dropped and new names start empty. Tab text travels
+ * separately in [PortableDraftTabPayload], one tab per packet, since a whole program
+ * can exceed the serverbound payload limit.
+ */
+data class PortableDraftMetaPayload(
+    val containerId: Int,
+    val name: String,
+    val loadedSlot: Int,
+    val layoutIndex: Int,
+    val tabNames: List<String>,
+) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<PortableDraftMetaPayload> = CustomPacketPayload.Type(
+            Identifier.fromNamespaceAndPath("nodeworks", "portable_draft_meta")
+        )
+        val CODEC: StreamCodec<FriendlyByteBuf, PortableDraftMetaPayload> = CustomPacketPayload.codec(
+            { p, buf ->
+                val maxName = damien.nodeworks.item.ScriptProgram.MAX_NAME_LENGTH
+                buf.writeVarInt(p.containerId)
+                buf.writeUtf(p.name.take(maxName), maxName)
+                buf.writeVarInt(p.loadedSlot)
+                buf.writeVarInt(p.layoutIndex)
+                val tabs = p.tabNames.take(damien.nodeworks.item.ScriptProgram.MAX_TABS)
+                buf.writeVarInt(tabs.size)
+                for (t in tabs) buf.writeUtf(t.take(damien.nodeworks.item.ScriptProgram.MAX_TAB_NAME_LENGTH), damien.nodeworks.item.ScriptProgram.MAX_TAB_NAME_LENGTH)
+            },
+            { buf ->
+                val maxName = damien.nodeworks.item.ScriptProgram.MAX_NAME_LENGTH
+                val containerId = buf.readVarInt()
+                val name = buf.readUtf(maxName)
+                val loadedSlot = buf.readVarInt()
+                val layoutIndex = buf.readVarInt()
+                val n = buf.readVarInt().coerceIn(0, damien.nodeworks.item.ScriptProgram.MAX_TABS)
+                val tabs = List(n) { buf.readUtf(damien.nodeworks.item.ScriptProgram.MAX_TAB_NAME_LENGTH) }
+                PortableDraftMetaPayload(containerId, name, loadedSlot, layoutIndex, tabs)
+            }
+        )
+    }
+    override fun type() = TYPE
+}
+
+/** C2S: one tab's text for the Portable Scripting Terminal's draft. */
+data class PortableDraftTabPayload(val containerId: Int, val tab: String, val text: String) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<PortableDraftTabPayload> = CustomPacketPayload.Type(
+            Identifier.fromNamespaceAndPath("nodeworks", "portable_draft_tab")
+        )
+        val CODEC: StreamCodec<FriendlyByteBuf, PortableDraftTabPayload> = CustomPacketPayload.codec(
+            { p, buf ->
+                buf.writeVarInt(p.containerId)
+                buf.writeUtf(p.tab.take(damien.nodeworks.item.ScriptProgram.MAX_TAB_NAME_LENGTH), damien.nodeworks.item.ScriptProgram.MAX_TAB_NAME_LENGTH)
+                buf.writeUtf(p.text.take(damien.nodeworks.item.ScriptProgram.MAX_TAB_CHARS), damien.nodeworks.item.ScriptProgram.MAX_TAB_CHARS)
+            },
+            { buf ->
+                PortableDraftTabPayload(
+                    buf.readVarInt(),
+                    buf.readUtf(damien.nodeworks.item.ScriptProgram.MAX_TAB_NAME_LENGTH),
+                    buf.readUtf(damien.nodeworks.item.ScriptProgram.MAX_TAB_CHARS),
+                )
+            }
+        )
+    }
+    override fun type() = TYPE
+}
+
+/**
+ * C2S: write the Portable Scripting Terminal's current draft onto the Script item in
+ * [targetSlot]. The server's copy of the draft is what gets written, the client syncs
+ * it first. A Blank Script always accepts, a written one only when it is the script
+ * the draft was loaded from.
+ */
+data class PortableScriptWritePayload(val containerId: Int, val targetSlot: Int) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<PortableScriptWritePayload> = CustomPacketPayload.Type(
+            Identifier.fromNamespaceAndPath("nodeworks", "portable_script_write")
+        )
+        val CODEC: StreamCodec<FriendlyByteBuf, PortableScriptWritePayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeVarInt(p.containerId); buf.writeVarInt(p.targetSlot) },
+            { buf -> PortableScriptWritePayload(buf.readVarInt(), buf.readVarInt()) }
         )
     }
     override fun type() = TYPE

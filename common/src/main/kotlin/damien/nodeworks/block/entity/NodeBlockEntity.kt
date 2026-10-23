@@ -151,6 +151,35 @@ open class NodeBlockEntity(
         return true
     }
 
+    /** A face holding a card is a tool pointed at the block it faces, never a connection.
+     *  A Node can then sit flush against another network's Interface or chest with a card
+     *  between them and the two networks stay apart. Networks join through lasers and
+     *  through card-less adjacency only. */
+    override fun adjacencyFaceAllowed(side: Direction, entryFace: Direction?): Boolean =
+        super.adjacencyFaceAllowed(side, entryFace) && !hasCardsOn(side)
+
+    private fun hasCardsOn(side: Direction): Boolean {
+        val offset = sideOffset(side)
+        for (i in 0 until SLOTS_PER_SIDE) if (!items[offset + i].isEmpty) return true
+        return false
+    }
+
+    /** One role per face. A side holds Storage mode cards or Export and Import cards,
+     *  never both, since a sink or source that is also storage would churn. Other card
+     *  kinds are not affected. */
+    fun acceptsCard(side: Direction, stack: ItemStack): Boolean {
+        if (stack.item !is damien.nodeworks.card.StorageCard) return true
+        val transfer = damien.nodeworks.card.StorageCard.getMode(stack) != damien.nodeworks.card.StorageCard.Companion.Mode.STORAGE
+        val offset = sideOffset(side)
+        for (i in 0 until SLOTS_PER_SIDE) {
+            val other = items[offset + i]
+            if (other.item !is damien.nodeworks.card.StorageCard) continue
+            val otherTransfer = damien.nodeworks.card.StorageCard.getMode(other) != damien.nodeworks.card.StorageCard.Companion.Mode.STORAGE
+            if (otherTransfer != transfer) return false
+        }
+        return true
+    }
+
     override fun forcedPipeBlocked(side: Direction): Boolean =
         (forcedPipeBlockedMask shr side.ordinal) and 1 != 0
 
@@ -223,6 +252,8 @@ open class NodeBlockEntity(
         // through-Node laser doesn't pierce a non-connecting neighbour.
         if (neighborConnectable != null
             && neighborConnectable.adjacencyFaceAllowed(side.opposite, null)
+            && canConnectAdjacentTo(neighborConnectable)
+            && neighborConnectable.canConnectAdjacentTo(this)
             && !forcedPipeBlocked(side)
             && !neighborConnectable.forcedPipeBlocked(side.opposite)
         ) return FaceRole.PIPE
@@ -242,17 +273,20 @@ open class NodeBlockEntity(
             val stack = items[sideOffset(side) + info.slotIndex]
             val capability = when (info.card) {
                 is damien.nodeworks.card.IOCard -> IOSideCapability(adjacentPos, accessFace)
-                is damien.nodeworks.card.TransferCard -> {
-                    val customSide = damien.nodeworks.card.TransferCard.getCustomSide(stack)
+                is damien.nodeworks.card.StorageCard -> if (damien.nodeworks.card.StorageCard.getMode(stack) != damien.nodeworks.card.StorageCard.Companion.Mode.STORAGE) {
+                    // Export and Import faces are moves, not storage. Discovery lists them
+                    // apart so the inventory is never counted or planned over.
+                    val customSide = damien.nodeworks.card.StorageCard.getCustomSide(stack)
                     damien.nodeworks.card.TransferSideCapability(
                         adjacentPos, customSide?.resolve(side) ?: accessFace,
-                        damien.nodeworks.card.TransferCard.getMode(stack),
-                        damien.nodeworks.card.TransferCard.getFilterRules(stack).filter { it.isNotBlank() },
-                        damien.nodeworks.card.TransferCard.getRoundRobin(stack),
-                        damien.nodeworks.card.TransferCard.getTickInterval(stack),
+                        damien.nodeworks.card.StorageCard.getMode(stack),
+                        damien.nodeworks.card.StorageCard.getFilterRules(stack).filter { it.isNotBlank() },
+                        damien.nodeworks.card.StorageCard.getRoundRobin(stack),
+                        damien.nodeworks.card.StorageCard.getTickInterval(stack),
+                        damien.nodeworks.card.StorageCard.getBatch(stack),
+                        damien.nodeworks.card.StorageCard.getKeep(stack),
                     )
-                }
-                is damien.nodeworks.card.StorageCard -> {
+                } else {
                     val priority = damien.nodeworks.card.StorageCard.getPriority(stack)
                     val filterMode = damien.nodeworks.card.StorageCard.getFilterMode(stack)
                     val filterRules = damien.nodeworks.card.StorageCard.getFilterRules(stack)
@@ -276,7 +310,7 @@ open class NodeBlockEntity(
             // pre-channel cards and any card the user hasn't dyed yet, the channel
             // helper reads directly from CUSTOM_DATA so untouched stacks return WHITE.
             val channel = damien.nodeworks.card.CardChannel.get(stack)
-            SideCapabilityInfo(capability ?: return@map null, info.alias, info.slotIndex, channel)
+            SideCapabilityInfo(capability ?: return@map null, info.alias, info.slotIndex, channel, damien.nodeworks.card.CardTags.get(stack))
         }.filterNotNull()
     }
 
@@ -286,6 +320,7 @@ open class NodeBlockEntity(
         val alias: String?,
         val slotIndex: Int,
         val channel: net.minecraft.world.item.DyeColor = net.minecraft.world.item.DyeColor.WHITE,
+        val tags: List<String> = emptyList(),
     )
 
     // --- Transfer Cards ---
@@ -299,15 +334,21 @@ open class NodeBlockEntity(
      *  the slot. A card cannot be edited while it sits in a Node, so reading it every
      *  tick would only copy the same tag thousands of times a second on a big server. */
     private class TransferConfig(
-        val mode: damien.nodeworks.card.TransferCard.Companion.Mode,
+        val mode: damien.nodeworks.card.StorageCard.Companion.Mode,
         val rules: List<String>,
         val roundRobin: Boolean,
         val interval: Int,
         val channel: damien.nodeworks.network.ChannelFilter,
         val face: damien.nodeworks.screen.widget.RelDir?,
+        val batch: Int,
+        val keep: Int,
     )
 
     private val transferConfigs = arrayOfNulls<TransferConfig>(TOTAL_SLOTS)
+
+    /** Item types an Import with keep set looks at per run, so a chest of many kinds is
+     *  covered over a few runs rather than scanned per type in one. */
+    private val MAX_KEEP_TYPES_PER_RUN = 16
 
     // Per-slot run state. Not persisted: after a reload a card's countdown starts over
     // and its round robin resumes at the first Storage Card, neither of which loses items.
@@ -337,7 +378,7 @@ open class NodeBlockEntity(
             val side = sideForSlot(slot).name.lowercase()
             val mode = config.mode.name.lowercase()
             val wait = (config.interval shl minOf(transferMisses[slot], MAX_IDLE_BACKOFF_SHIFT))
-                .coerceAtMost(damien.nodeworks.card.TransferCard.MAX_TICK_INTERVAL)
+                .coerceAtMost(damien.nodeworks.card.StorageCard.MAX_TICK_INTERVAL)
             val due = (wait - transferCountdown[slot]).coerceAtLeast(0)
             out.add("Transfer $mode, $side face")
             out.add(
@@ -371,17 +412,23 @@ open class NodeBlockEntity(
 
     private fun refreshTransferFlag() {
         var any = false
+        val now = level?.gameTime ?: 0L
         for (slot in 0 until TOTAL_SLOTS) {
             val stack = items[slot]
-            if (stack.item is damien.nodeworks.card.TransferCard) {
+            if (stack.item is NodeCard) damien.nodeworks.card.KnownCardTags.record(damien.nodeworks.card.CardTags.get(stack), now)
+            if (stack.item is damien.nodeworks.card.StorageCard &&
+                damien.nodeworks.card.StorageCard.getMode(stack) != damien.nodeworks.card.StorageCard.Companion.Mode.STORAGE
+            ) {
                 any = true
                 transferConfigs[slot] = TransferConfig(
-                    damien.nodeworks.card.TransferCard.getMode(stack),
-                    damien.nodeworks.card.TransferCard.getFilterRules(stack).filter { it.isNotBlank() },
-                    damien.nodeworks.card.TransferCard.getRoundRobin(stack),
-                    damien.nodeworks.card.TransferCard.getTickInterval(stack),
-                    damien.nodeworks.card.TransferCard.getChannelFilter(stack),
-                    damien.nodeworks.card.TransferCard.getCustomSide(stack),
+                    damien.nodeworks.card.StorageCard.getMode(stack),
+                    damien.nodeworks.card.StorageCard.getFilterRules(stack).filter { it.isNotBlank() },
+                    damien.nodeworks.card.StorageCard.getRoundRobin(stack),
+                    damien.nodeworks.card.StorageCard.getTickInterval(stack),
+                    damien.nodeworks.card.StorageCard.getChannelFilter(stack),
+                    damien.nodeworks.card.StorageCard.getCustomSide(stack),
+                    damien.nodeworks.card.StorageCard.getBatch(stack),
+                    damien.nodeworks.card.StorageCard.getKeep(stack),
                 )
             } else {
                 // A slot that lost its Transfer Card starts fresh if one is put back.
@@ -415,7 +462,7 @@ open class NodeBlockEntity(
         for (slot in 0 until TOTAL_SLOTS) {
             val config = transferConfigs[slot] ?: continue
             val wait = (config.interval shl minOf(transferMisses[slot], MAX_IDLE_BACKOFF_SHIFT))
-                .coerceAtMost(damien.nodeworks.card.TransferCard.MAX_TICK_INTERVAL)
+                .coerceAtMost(damien.nodeworks.card.StorageCard.MAX_TICK_INTERVAL)
             transferCountdown[slot] += elapsed
             if (transferCountdown[slot] >= wait) {
                 transferCountdown[slot] = 0
@@ -428,7 +475,7 @@ open class NodeBlockEntity(
                 }
             }
             val again = (config.interval shl minOf(transferMisses[slot], MAX_IDLE_BACKOFF_SHIFT))
-                .coerceAtMost(damien.nodeworks.card.TransferCard.MAX_TICK_INTERVAL)
+                .coerceAtMost(damien.nodeworks.card.StorageCard.MAX_TICK_INTERVAL)
             nextDue = minOf(nextDue, (again - transferCountdown[slot]).coerceAtLeast(1))
         }
         return nextDue
@@ -461,7 +508,7 @@ open class NodeBlockEntity(
         // A walk up to a second old is good enough to move items by, and a card at the
         // shortest interval then costs one walk a second rather than one a tick.
         val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(
-            level, worldPosition, damien.nodeworks.card.TransferCard.SNAPSHOT_MAX_AGE_TICKS,
+            level, worldPosition, damien.nodeworks.card.StorageCard.SNAPSHOT_MAX_AGE_TICKS,
         )
         // Time comes from the Transfer Cards' own budget, items from the network's shared cap.
         val budget = damien.nodeworks.script.NetworkRateLimits.forTransferCards(networkId)
@@ -505,14 +552,15 @@ open class NodeBlockEntity(
 
         if (itemTarget != null) {
             // Never moves more than nine stacks' worth in one run however much cap is left.
-            val maxItems = minOf(itemCap.availableItems(tick), damien.nodeworks.card.TransferCard.MAX_ITEMS_PER_RUN)
+            val maxItems = minOf(itemCap.availableItems(tick), damien.nodeworks.card.StorageCard.MAX_ITEMS_PER_RUN)
             if (maxItems > 0L) {
                 val moved = when (config.mode) {
-                    damien.nodeworks.card.TransferCard.Companion.Mode.IMPORT ->
+                    damien.nodeworks.card.StorageCard.Companion.Mode.IMPORT ->
                         if (config.roundRobin) importRoundRobin(level, snapshot, cache, counterpart, itemTarget, excluded, config, slot, maxItems, budget, tick)
                         else importFromTarget(level, snapshot, cache, counterpart, itemTarget, excluded, config, slot, maxItems, budget, tick)
-                    damien.nodeworks.card.TransferCard.Companion.Mode.EXPORT ->
+                    damien.nodeworks.card.StorageCard.Companion.Mode.EXPORT ->
                         exportToTarget(level, snapshot, cache, counterpart, itemTarget, excluded, config, slot, maxItems, budget, tick)
+                    damien.nodeworks.card.StorageCard.Companion.Mode.STORAGE -> 0L
                 }
                 if (moved > 0L) {
                     itemCap.noteItemsMoved(tick, moved)
@@ -522,10 +570,11 @@ open class NodeBlockEntity(
         }
         if (fluidTarget != null) {
             val movedFluid = when (config.mode) {
-                damien.nodeworks.card.TransferCard.Companion.Mode.IMPORT ->
+                damien.nodeworks.card.StorageCard.Companion.Mode.IMPORT ->
                     importFluidFromTarget(level, snapshot, fluidTarget, excluded, config, slot, budget, tick)
-                damien.nodeworks.card.TransferCard.Companion.Mode.EXPORT ->
+                damien.nodeworks.card.StorageCard.Companion.Mode.EXPORT ->
                     exportFluidToTarget(level, snapshot, fluidTarget, excluded, config, budget, tick)
+                damien.nodeworks.card.StorageCard.Companion.Mode.STORAGE -> 0L
             }
             if (movedFluid > 0L) movedAny = true
         }
@@ -609,19 +658,61 @@ open class NodeBlockEntity(
         val ruleMatch = ruleMatcher(config, registries)
         var remaining = maxItems
         var total = 0L
+        val allowances = keepAllowances(source, config)
         budget.timedMove(tick, atomic = false) {
-            for ((dest, storage) in transferDestinations(level)) {
-                if (remaining <= 0L || damien.nodeworks.platform.MoveDeadline.expired()) break
-                val cap = dest.capability as? StorageSideCapability ?: continue
-                val accept: (ItemStack) -> Boolean = { stack -> ruleMatch(stack) && cap.acceptsItem(stack, registries) }
-                val moved = damien.nodeworks.platform.PlatformServices.storage.moveItems(
-                    source, storage, { true }, remaining, scanCursor(slot, cap.adjacentPos), accept,
-                ) { stack, n -> noteMoved(cache, stack, n, dest.channel, intoNetwork = true, counterpart) }
-                remaining -= moved
-                total += moved
+            if (allowances == null) {
+                for ((dest, storage) in transferDestinations(level)) {
+                    if (remaining <= 0L || damien.nodeworks.platform.MoveDeadline.expired()) break
+                    val cap = dest.capability as? StorageSideCapability ?: continue
+                    val accept: (ItemStack) -> Boolean = { stack -> ruleMatch(stack) && cap.acceptsItem(stack, registries) }
+                    val moved = damien.nodeworks.platform.PlatformServices.storage.moveItems(
+                        source, storage, { true }, remaining, scanCursor(slot, cap.adjacentPos), accept,
+                    ) { stack, n -> noteMoved(cache, stack, n, dest.channel, intoNetwork = true, counterpart) }
+                    remaining -= moved
+                    total += moved
+                }
+            } else {
+                // Each item type moves only what is above the keep, so the move is run per
+                // type with that much as its cap.
+                for ((id, allowance) in allowances) {
+                    if (remaining <= 0L || damien.nodeworks.platform.MoveDeadline.expired()) break
+                    var left = minOf(allowance, remaining)
+                    for ((dest, storage) in transferDestinations(level)) {
+                        if (left <= 0L || damien.nodeworks.platform.MoveDeadline.expired()) break
+                        val cap = dest.capability as? StorageSideCapability ?: continue
+                        val accept: (ItemStack) -> Boolean = { stack -> ruleMatch(stack) && cap.acceptsItem(stack, registries) }
+                        val moved = damien.nodeworks.platform.PlatformServices.storage.moveItems(
+                            source, storage, { it == id }, left, scanCursor(slot, cap.adjacentPos), accept,
+                        ) { stack, n -> noteMoved(cache, stack, n, dest.channel, intoNetwork = true, counterpart) }
+                        left -= moved
+                        remaining -= moved
+                        total += moved
+                    }
+                }
             }
         }
         return total
+    }
+
+    /** With keep set, how much of each item type the faced inventory may give up this
+     *  run: its count less the keep, by item id with variants summed. Null when the card
+     *  keeps nothing, so the plain move runs. Reads the inventory once. */
+    private fun keepAllowances(
+        source: damien.nodeworks.platform.ItemStorageHandle,
+        config: TransferConfig,
+    ): List<Pair<String, Long>>? {
+        if (config.keep <= 0) return null
+        val counts = LinkedHashMap<String, Long>()
+        for (info in damien.nodeworks.platform.PlatformServices.storage.findAllItemInfo(source) { true }) {
+            counts.merge(info.itemId, info.count, Long::plus)
+        }
+        val out = ArrayList<Pair<String, Long>>()
+        for ((id, count) in counts) {
+            val allowance = count - config.keep
+            if (allowance > 0L) out.add(id to allowance)
+            if (out.size >= MAX_KEEP_TYPES_PER_RUN) break
+        }
+        return out
     }
 
     /** Round robin: each stack is split evenly over a window of Storage Cards, so 32 logs
@@ -660,15 +751,34 @@ open class NodeBlockEntity(
         }
         val rr = transferCursors[slot] ?: damien.nodeworks.script.NetworkTransfer.RoundRobinCursor().also { transferCursors[slot] = it }
         var moved = 0L
+        val allowances = keepAllowances(source, config)
         budget.timedMove(tick, atomic = false) {
-            val result = damien.nodeworks.platform.PlatformServices.storage.moveItemsRoundRobin(
-                source, cards.size, targetAt, ruleMatch, maxItems, scanCursor(slot, worldPosition), rr.index,
-                damien.nodeworks.card.TransferCard.ROUND_ROBIN_WINDOW,
-            ) { target, stack, n ->
-                noteMoved(cache, stack, n, (target.tag as damien.nodeworks.network.CardSnapshot).channel, intoNetwork = true, counterpart)
+            if (allowances == null) {
+                val result = damien.nodeworks.platform.PlatformServices.storage.moveItemsRoundRobin(
+                    source, cards.size, targetAt, ruleMatch, maxItems, scanCursor(slot, worldPosition), rr.index,
+                    damien.nodeworks.card.StorageCard.ROUND_ROBIN_WINDOW,
+                ) { target, stack, n ->
+                    noteMoved(cache, stack, n, (target.tag as damien.nodeworks.network.CardSnapshot).channel, intoNetwork = true, counterpart)
+                }
+                moved = result.moved
+                rr.index = result.nextIndex
+            } else {
+                var remaining = maxItems
+                for ((id, allowance) in allowances) {
+                    if (remaining <= 0L || damien.nodeworks.platform.MoveDeadline.expired()) break
+                    val result = damien.nodeworks.platform.PlatformServices.storage.moveItemsRoundRobin(
+                        source, cards.size, targetAt,
+                        { stack -> ruleMatch(stack) && net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item)?.toString() == id },
+                        minOf(allowance, remaining), scanCursor(slot, worldPosition), rr.index,
+                        damien.nodeworks.card.StorageCard.ROUND_ROBIN_WINDOW,
+                    ) { target, stack, n ->
+                        noteMoved(cache, stack, n, (target.tag as damien.nodeworks.network.CardSnapshot).channel, intoNetwork = true, counterpart)
+                    }
+                    moved += result.moved
+                    remaining -= result.moved
+                    rr.index = result.nextIndex
+                }
             }
-            moved = result.moved
-            rr.index = result.nextIndex
         }
         return moved
     }
@@ -693,6 +803,11 @@ open class NodeBlockEntity(
         val registries = level.registryAccess()
         val ruleMatch = ruleMatcher(config, registries)
         var remaining = maxItems
+        // A batch waits until a full one is in storage, then moves at most one.
+        if (config.batch > 0) {
+            if (exportAvailable(level, cache, config, ruleMatch) < config.batch) return 0L
+            remaining = minOf(remaining, config.batch.toLong())
+        }
         var total = 0L
         budget.timedMove(tick, atomic = false) {
             for ((card, source) in transferDestinations(level)) {
@@ -704,6 +819,34 @@ open class NodeBlockEntity(
                 remaining -= moved
                 total += moved
             }
+        }
+        return total
+    }
+
+    /** How many rule-matched items the Storage Cards hold, up to the batch, since more
+     *  than that changes nothing. An open terminal's cache answers in one lookup per
+     *  rule. Without one the cards are counted in turn and the count stops as soon as a
+     *  batch is reached, and the idle backoff spaces out the runs that find too few. */
+    private fun exportAvailable(
+        level: net.minecraft.server.level.ServerLevel,
+        cache: damien.nodeworks.script.NetworkInventoryCache?,
+        config: TransferConfig,
+        ruleMatch: (ItemStack) -> Boolean,
+    ): Long {
+        val need = config.batch.toLong()
+        if (cache != null) {
+            var total = 0L
+            for (rule in config.rules) {
+                total += cache.count(rule)
+                if (total >= need) return total
+            }
+            return total
+        }
+        var total = 0L
+        for (card in runCards) {
+            val storage = damien.nodeworks.script.NetworkStorageHelper.getStorage(level, card) ?: continue
+            total += damien.nodeworks.platform.PlatformServices.storage.countStacksByPredicate(storage, ruleMatch)
+            if (total >= need) return total
         }
         return total
     }
@@ -738,18 +881,18 @@ open class NodeBlockEntity(
         }
         val destinations = runCards
         if (destinations.isEmpty()) return 0L
-        var remaining = damien.nodeworks.card.TransferCard.MAX_FLUID_PER_RUN
+        var remaining = damien.nodeworks.card.StorageCard.MAX_FLUID_PER_RUN
         // The move fills the destination in simulation before draining anything, so a
         // tank nothing wants is never touched.
         budget.timedMove(tick, atomic = false) {
             for (dest in transferOrder(destinations, slot, config.roundRobin)) {
                 if (remaining <= 0L || damien.nodeworks.platform.MoveDeadline.expired()) break
                 val storage = damien.nodeworks.script.NetworkStorageHelper.getFluidStorage(level, dest) ?: continue
-                val allowance = if (config.roundRobin) minOf(remaining, damien.nodeworks.card.TransferCard.BUCKET_MB) else remaining
+                val allowance = if (config.roundRobin) minOf(remaining, damien.nodeworks.card.StorageCard.BUCKET_MB) else remaining
                 remaining -= damien.nodeworks.platform.PlatformServices.storage.moveFluid(source, storage, matches, allowance)
             }
         }
-        return damien.nodeworks.card.TransferCard.MAX_FLUID_PER_RUN - remaining
+        return damien.nodeworks.card.StorageCard.MAX_FLUID_PER_RUN - remaining
     }
 
     private fun exportFluidToTarget(
@@ -766,7 +909,7 @@ open class NodeBlockEntity(
         val matches: (String) -> Boolean = { fluidId ->
             config.rules.any { damien.nodeworks.script.CardHandle.matchesFilter(fluidId, damien.nodeworks.platform.ResourceKind.FLUID, it) }
         }
-        var remaining = damien.nodeworks.card.TransferCard.MAX_FLUID_PER_RUN
+        var remaining = damien.nodeworks.card.StorageCard.MAX_FLUID_PER_RUN
         budget.timedMove(tick, atomic = false) {
             for (card in runCards) {
                 if (remaining <= 0L || damien.nodeworks.platform.MoveDeadline.expired()) break
@@ -774,7 +917,7 @@ open class NodeBlockEntity(
                 remaining -= damien.nodeworks.platform.PlatformServices.storage.moveFluid(source, dest, matches, remaining)
             }
         }
-        return damien.nodeworks.card.TransferCard.MAX_FLUID_PER_RUN - remaining
+        return damien.nodeworks.card.StorageCard.MAX_FLUID_PER_RUN - remaining
     }
 
     // --- Side-aware access ---

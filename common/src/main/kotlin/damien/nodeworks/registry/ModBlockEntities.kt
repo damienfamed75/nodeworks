@@ -2,6 +2,7 @@ package damien.nodeworks.registry
 
 import damien.nodeworks.block.entity.FocusNodeBlockEntity
 import damien.nodeworks.block.entity.InstructionStorageBlockEntity
+import damien.nodeworks.block.entity.InterfaceBlockEntity
 import damien.nodeworks.block.entity.InventoryTerminalBlockEntity
 import damien.nodeworks.block.entity.MonitorBlockEntity
 import damien.nodeworks.block.entity.CraftRequesterBlockEntity
@@ -156,6 +157,11 @@ object ModBlockEntities {
     val IMPORT_CHEST: BlockEntityType<ImportChestBlockEntity> = register(
         "import_chest",
         PlatformServices.blockEntity.createBlockEntityType(::ImportChestBlockEntity, ModBlocks.IMPORT_CHEST)
+    )
+
+    val INTERFACE: BlockEntityType<InterfaceBlockEntity> = register(
+        "interface",
+        PlatformServices.blockEntity.createBlockEntityType(::InterfaceBlockEntity, ModBlocks.INTERFACE)
     )
 
     val EXPORT_CHEST: BlockEntityType<ExportChestBlockEntity> = register(

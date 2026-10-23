@@ -24,86 +24,110 @@ object NeoForgeTerminalPackets {
 
     private val logger = LoggerFactory.getLogger("nodeworks-packets")
 
-    // --- Active script engines per terminal (keyed by dimension + position) ---
+    // --- Active script engines, one per Script Runner slot ---
 
-    private val activeEngines = mutableMapOf<GlobalPos, ScriptEngine>()
+    data class EngineKey(val pos: GlobalPos, val slot: Int)
 
+    private val activeEngines = mutableMapOf<EngineKey, ScriptEngine>()
+
+    private fun key(dimKey: ResourceKey<Level>, pos: BlockPos, slot: Int) = EngineKey(GlobalPos.of(dimKey, pos), slot)
+
+    /** Every engine hosted by the Runner at [pos], running or not. */
+    fun enginesAt(dimKey: ResourceKey<Level>, pos: BlockPos): List<ScriptEngine> {
+        val gp = GlobalPos.of(dimKey, pos)
+        return (0 until TerminalBlockEntity.SLOT_COUNT).mapNotNull { activeEngines[EngineKey(gp, it)] }
+    }
+
+    fun enginesAt(level: ServerLevel, pos: BlockPos): List<ScriptEngine> = enginesAt(level.dimension(), pos)
+
+    /** The first running engine at [pos], for callers that want one representative. */
     fun getEngine(level: ServerLevel, pos: BlockPos): ScriptEngine? =
-        activeEngines[GlobalPos.of(level.dimension(), pos)]
+        enginesAt(level.dimension(), pos).firstOrNull { it.isRunning() }
 
     fun getEngine(dimKey: ResourceKey<Level>, pos: BlockPos): ScriptEngine? =
-        activeEngines[GlobalPos.of(dimKey, pos)]
+        enginesAt(dimKey, pos).firstOrNull { it.isRunning() }
 
+    fun getSlotEngine(level: ServerLevel, pos: BlockPos, slot: Int): ScriptEngine? =
+        activeEngines[key(level.dimension(), pos, slot)]
+
+    fun isSlotRunning(level: ServerLevel, pos: BlockPos, slot: Int): Boolean =
+        getSlotEngine(level, pos, slot)?.isRunning() == true
+
+    fun stopSlot(level: ServerLevel, pos: BlockPos, slot: Int) {
+        activeEngines.remove(key(level.dimension(), pos, slot))?.stop()
+    }
+
+    /** Stop every slot of the Runner at [pos]. */
     fun stopEngine(level: ServerLevel, pos: BlockPos) {
-        val gp = GlobalPos.of(level.dimension(), pos)
-        activeEngines.remove(gp)?.stop()
+        for (slot in 0 until TerminalBlockEntity.SLOT_COUNT) stopSlot(level, pos, slot)
     }
 
     /**
-     * Start (or restart) a terminal's script engine. Used by the packet handler when the
-     * player clicks Run in the Terminal GUI, by the redstone-pulse toggle on the Terminal
-     * block, and by the auto-run scheduler on chunk load. Returns true if the engine
-     * actually started, false if the terminal is missing, has no network entry, or the
-     * script failed to compile.
-     *
-     * Any previously running engine for this position is stopped first, so this is safe
-     * to call regardless of current state.
+     * Start every slot the Runner at [pos] would start on its own: enabled, holding a
+     * program, without a recorded fault. Used by the redstone pulse and by auto-run on
+     * chunk load. True when at least one slot started.
      */
     fun startEngine(level: ServerLevel, pos: BlockPos): Boolean {
-        val terminal = level.getBlockEntity(pos) as? TerminalBlockEntity ?: return false
-        // Refuse to start a script that previously hit a wall-clock soft-abort.
-        // A redstone clock pointed at a misbehaving terminal would otherwise re-
-        // trigger the bad script every cycle, eating per-tick budget repeatedly.
-        // The player has to actually edit the script (which clears [lastError]
-        // in [TerminalBlockEntity.setScript]) before it's eligible to run again.
-        if (terminal.lastError != null) {
-            val msg = TerminalLogPayload(
-                pos,
-                "Cannot run, this terminal's script previously timed out: ${terminal.lastError}. Edit the script to re-enable.",
-                true,
-            )
-            for (p in level.players()) {
-                if (p.distanceToSqr(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5) <= 64.0 * 64.0) {
-                    PacketDistributor.sendToPlayer(p, msg)
-                }
-            }
+        val runner = level.getBlockEntity(pos) as? TerminalBlockEntity ?: return false
+        var any = false
+        for (slot in runner.autoStartSlots()) if (startSlot(level, pos, slot)) any = true
+        return any
+    }
+
+    /**
+     * Start (or restart) one slot. False when the Runner is missing, the slot holds no
+     * program, the slot carries a timeout fault, the Runner has no network entry, or the
+     * script failed to compile. Any engine already in the slot is stopped first.
+     */
+    fun startSlot(level: ServerLevel, pos: BlockPos, slot: Int): Boolean {
+        val runner = level.getBlockEntity(pos) as? TerminalBlockEntity ?: return false
+        val program = runner.programAt(slot) ?: return false
+        val label = program.name
+        val fault = runner.lastError(slot)
+        if (fault != null) {
+            sendLog(level, pos, "[$label] Cannot run, this script previously timed out: $fault. Enable the slot again or swap the Script.", true)
             return false
         }
-        val nodePos = terminal.getNetworkStartPos() ?: return false
-        val gp = GlobalPos.of(level.dimension(), pos)
-        activeEngines.remove(gp)?.stop()
-
-        val engine = ScriptEngine(level, nodePos, pos) { message, isError ->
-            if (isError) damien.nodeworks.script.NetworkErrorBuffer.addError(pos, message, level.server.tickCount.toLong())
-            // Cap script-originated print output so a single absurd log line can't blow past
-            // the network string length and disconnect the player. Truncation happens here
-            // (once, at the send site) rather than in the codec, so the original message is
-            // still available to NetworkErrorBuffer above for in-world diagnostic display.
-            val safeMessage = if (message.length > TerminalLogPayload.MAX_LOG_CHARS) {
-                message.take(TerminalLogPayload.MAX_LOG_CHARS) +
-                    "\n…(truncated, ${message.length - TerminalLogPayload.MAX_LOG_CHARS} more chars)"
-            } else message
-            val logPayload = TerminalLogPayload(pos, safeMessage, isError)
-            for (p in level.players()) {
-                if (p.distanceToSqr(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5) <= 64.0 * 64.0) {
-                    PacketDistributor.sendToPlayer(p, logPayload)
-                } else if (isError && p.containerMenu is damien.nodeworks.screen.DiagnosticMenu) {
-                    val diagMenu = p.containerMenu as damien.nodeworks.screen.DiagnosticMenu
-                    if (diagMenu.topology.terminalInfos.any { it.pos == pos }) {
-                        PacketDistributor.sendToPlayer(p, logPayload)
-                    }
-                }
-            }
-            // Terminal errors surface to the player via the TerminalLogPayload above and
-            // to the Diagnostic Tool's Jobs tab via NetworkErrorBuffer, they don't
-            // belong in the server console.
+        val nodePos = runner.getNetworkStartPos()
+        if (nodePos == null) {
+            sendLog(level, pos, "[$label] The Runner is not connected to a network.", true)
+            return false
         }
-        activeEngines[gp] = engine
-        if (!engine.start(terminal.getScriptsCopy())) {
-            activeEngines.remove(gp)
+        val k = key(level.dimension(), pos, slot)
+        activeEngines.remove(k)?.stop()
+
+        val engine = ScriptEngine(level, nodePos, pos, runner.host(slot)) { message, isError ->
+            val tagged = "[$label] $message"
+            if (isError) damien.nodeworks.script.NetworkErrorBuffer.addError(pos, tagged, level.server.tickCount.toLong())
+            sendLog(level, pos, tagged, isError)
+        }
+        activeEngines[k] = engine
+        if (!engine.start(program.tabs)) {
+            activeEngines.remove(k)
             return false
         }
         return true
+    }
+
+    /** A Runner log line goes to players near the block and to anyone watching it in a
+     *  Diagnostic Tool. Print output is capped here so one absurd line cannot blow past
+     *  the network string limit and disconnect the player. */
+    private fun sendLog(level: ServerLevel, pos: BlockPos, message: String, isError: Boolean) {
+        val safeMessage = if (message.length > TerminalLogPayload.MAX_LOG_CHARS) {
+            message.take(TerminalLogPayload.MAX_LOG_CHARS) +
+                "\n…(truncated, ${message.length - TerminalLogPayload.MAX_LOG_CHARS} more chars)"
+        } else message
+        val logPayload = TerminalLogPayload(pos, safeMessage, isError)
+        for (p in level.players()) {
+            if (p.distanceToSqr(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5) <= 64.0 * 64.0) {
+                PacketDistributor.sendToPlayer(p, logPayload)
+            } else if (isError && p.containerMenu is damien.nodeworks.screen.DiagnosticMenu) {
+                val diagMenu = p.containerMenu as damien.nodeworks.screen.DiagnosticMenu
+                if (diagMenu.topology.terminalInfos.any { it.pos == pos }) {
+                    PacketDistributor.sendToPlayer(p, logPayload)
+                }
+            }
+        }
     }
 
     fun findAnyEngine(
@@ -113,15 +137,14 @@ object NeoForgeTerminalPackets {
     ): ScriptEngine? {
         val dimKey = overrideDimension ?: level.dimension()
         for (pos in terminalPositions) {
-            val engine = activeEngines[GlobalPos.of(dimKey, pos)] ?: continue
-            if (engine.isRunning()) return engine
+            for (engine in enginesAt(dimKey, pos)) if (engine.isRunning()) return engine
         }
         return null
     }
 
     /** Find the first active engine on the given network that has a processing handler for the given card name.
      *  [overrideDimension] lets callers search a different dimension than `level.dimension()`, required when
-     *  the terminal positions come from a cross-dimensional Receiver Antenna. */
+     *  the Runner positions come from a cross-dimensional Receiver Antenna. */
     fun findEngineWithHandler(
         level: ServerLevel,
         terminalPositions: List<BlockPos>,
@@ -131,17 +154,17 @@ object NeoForgeTerminalPackets {
     ): ScriptEngine? {
         val dimKey = overrideDimension ?: level.dimension()
         for (pos in terminalPositions) {
-            val engine = activeEngines[GlobalPos.of(dimKey, pos)] ?: continue
-            if (engine.isRunning() && engine.processingHandlers.containsKey(cardName)) {
-                return engine
+            for (engine in enginesAt(dimKey, pos)) {
+                if (engine.isRunning() && engine.processingHandlers.containsKey(cardName)) return engine
             }
         }
-        // Rules only after every terminal had its say, an exact handler on any of them
+        // Rules only after every Runner had its say, an exact handler on any of them
         // beats a rule on another.
         if (api == null) return null
         for (pos in terminalPositions) {
-            val engine = activeEngines[GlobalPos.of(dimKey, pos)] ?: continue
-            if (engine.isRunning() && engine.handlerFor(cardName, api) != null) return engine
+            for (engine in enginesAt(dimKey, pos)) {
+                if (engine.isRunning() && engine.handlerFor(cardName, api) != null) return engine
+            }
         }
         return null
     }
@@ -155,56 +178,6 @@ object NeoForgeTerminalPackets {
 
     private fun inReach(player: net.minecraft.world.entity.player.Player, pos: BlockPos): Boolean =
         player.distanceToSqr(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5) <= MAX_PACKET_DISTANCE_SQ
-
-    fun handleRunScript(payload: RunScriptPayload, context: IPayloadContext) {
-        context.enqueueWork {
-            val player = context.player()
-            if (!inReach(player, payload.terminalPos)) return@enqueueWork
-            val level = player.level() as? ServerLevel ?: return@enqueueWork
-            startEngine(level, payload.terminalPos)
-        }
-    }
-
-    fun handleStopScript(payload: StopScriptPayload, context: IPayloadContext) {
-        context.enqueueWork {
-            val player = context.player()
-            if (!inReach(player, payload.terminalPos)) return@enqueueWork
-            val level = player.level() as? ServerLevel ?: return@enqueueWork
-            val gp = GlobalPos.of(level.dimension(), payload.terminalPos)
-            activeEngines.remove(gp)?.stop()
-            logger.info("[Terminal {}] Script stopped", payload.terminalPos)
-        }
-    }
-
-    fun handleSaveScript(payload: SaveScriptPayload, context: IPayloadContext) {
-        context.enqueueWork {
-            val player = context.player()
-            if (!inReach(player, payload.terminalPos)) return@enqueueWork
-            val level = player.level() as? ServerLevel ?: return@enqueueWork
-            val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@enqueueWork
-            terminal.setScript(payload.scriptName, payload.scriptText)
-        }
-    }
-
-    fun handleCreateScriptTab(payload: CreateScriptTabPayload, context: IPayloadContext) {
-        context.enqueueWork {
-            val player = context.player()
-            if (!inReach(player, payload.terminalPos)) return@enqueueWork
-            val level = player.level() as? ServerLevel ?: return@enqueueWork
-            val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@enqueueWork
-            terminal.createScript(payload.scriptName)
-        }
-    }
-
-    fun handleDeleteScriptTab(payload: DeleteScriptTabPayload, context: IPayloadContext) {
-        context.enqueueWork {
-            val player = context.player()
-            if (!inReach(player, payload.terminalPos)) return@enqueueWork
-            val level = player.level() as? ServerLevel ?: return@enqueueWork
-            val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@enqueueWork
-            terminal.deleteScript(payload.scriptName)
-        }
-    }
 
     fun handleOpenInstructionSet(payload: OpenInstructionSetPayload, context: IPayloadContext) {
         context.enqueueWork {
@@ -238,23 +211,11 @@ object NeoForgeTerminalPackets {
             val level = player.level() as? ServerLevel ?: return@enqueueWork
             val entity = level.getBlockEntity(payload.terminalPos)
             when (entity) {
-                is TerminalBlockEntity -> entity.setLayoutIndex(payload.layoutIndex)
                 is damien.nodeworks.block.entity.InventoryTerminalBlockEntity -> {
                     entity.layoutIndex = payload.layoutIndex
                     entity.setChanged()
                 }
             }
-        }
-    }
-
-    fun handleToggleAutoRun(payload: ToggleAutoRunPayload, context: IPayloadContext) {
-        context.enqueueWork {
-            val player = context.player()
-            if (!inReach(player, payload.terminalPos)) return@enqueueWork
-            val level = player.level() as? ServerLevel ?: return@enqueueWork
-            val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@enqueueWork
-            terminal.setAutoRun(payload.enabled)
-            logger.info("[Terminal {}] Auto-run {}", payload.terminalPos, if (payload.enabled) "enabled" else "disabled")
         }
     }
 
@@ -287,10 +248,11 @@ object NeoForgeTerminalPackets {
             val level = server.getLevel(gp.dimension()) ?: continue
             val pos = gp.pos()
             if (!level.isLoaded(pos)) continue
-            val terminal = level.getBlockEntity(pos) as? TerminalBlockEntity ?: continue
-            if (!terminal.autoRun || terminal.scriptText.isBlank()) continue
-            if (activeEngines.containsKey(gp)) continue
-            if (startEngine(level, pos)) logger.info("[Terminal {}] Auto-run started", pos)
+            val runner = level.getBlockEntity(pos) as? TerminalBlockEntity ?: continue
+            for (slot in runner.autoStartSlots()) {
+                if (isSlotRunning(level, pos, slot)) continue
+                if (startSlot(level, pos, slot)) logger.info("[Runner {}] Auto-run started slot {}", pos, slot + 1)
+            }
         }
     }
 
@@ -312,7 +274,7 @@ object NeoForgeTerminalPackets {
     /** Snapshot of the live engine table for the admin command suite. Returns a
      *  list copy so callers can iterate without ConcurrentModification when a
      *  reentrant tick edits [activeEngines]. */
-    fun activeEnginesSnapshot(): List<Pair<GlobalPos, ScriptEngine>> =
+    fun activeEnginesSnapshot(): List<Pair<EngineKey, ScriptEngine>> =
         activeEngines.entries.map { it.key to it.value }
 
     fun tickAll(server: MinecraftServer, tickCount: Long) {
@@ -347,7 +309,7 @@ object NeoForgeTerminalPackets {
         totalLuaCostNsRing[ringSlot] = 0L
         for (e in activeEngines.values) e.resetTickCostSlot(tickCount)
 
-        val toRemove = mutableListOf<GlobalPos>()
+        val toRemove = mutableListOf<EngineKey>()
         val snapshot = activeEngines.entries
             .toList()
             .sortedBy { it.value.vruntimeNs }
@@ -383,6 +345,125 @@ object NeoForgeTerminalPackets {
             if (!engine.isRunning() || !engine.hasWork()) {
                 activeEngines.remove(gp)?.stop()
             }
+        }
+    }
+
+    // --- Portable Scripting Terminal ---
+
+    /** The portable menu behind [containerId] and the terminal stack it edits, or null. */
+    private fun portableTerminal(
+        player: net.minecraft.world.entity.player.Player,
+        containerId: Int,
+    ): Pair<damien.nodeworks.screen.TerminalScreenHandler, net.minecraft.world.item.ItemStack>? {
+        val menu = player.containerMenu as? damien.nodeworks.screen.TerminalScreenHandler ?: return null
+        if (menu.containerId != containerId || !menu.isPortable()) return null
+        val stack = damien.nodeworks.item.PortableScriptingTerminalItem.stackIn(player, menu.getPortableSlot()) ?: return null
+        return menu to stack
+    }
+
+    fun handlePortableDraftMeta(payload: PortableDraftMetaPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            val player = context.player()
+            val (_, stack) = portableTerminal(player, payload.containerId) ?: return@enqueueWork
+            val old = damien.nodeworks.item.PortableScriptingTerminalItem.draft(stack)
+            val loadedName = if (payload.loadedSlot == old.loadedSlot) old.loadedName else {
+                val slot = payload.loadedSlot
+                val valid = slot in 0 until net.minecraft.world.entity.player.Inventory.INVENTORY_SIZE ||
+                    slot == net.minecraft.world.entity.player.Inventory.SLOT_OFFHAND
+                if (valid) damien.nodeworks.item.ScriptItem.program(player.inventory.getItem(slot))?.name ?: "" else ""
+            }
+            val names = payload.tabNames
+                .filter { damien.nodeworks.item.ScriptProgram.isValidTabName(it) }
+                .distinct()
+                .take(damien.nodeworks.item.ScriptProgram.MAX_TABS)
+            val tabs = LinkedHashMap<String, String>()
+            tabs[damien.nodeworks.item.ScriptProgram.MAIN_TAB] = old.tabs[damien.nodeworks.item.ScriptProgram.MAIN_TAB] ?: ""
+            for (n in names) if (tabs.size < damien.nodeworks.item.ScriptProgram.MAX_TABS) tabs[n] = old.tabs[n] ?: ""
+            stack.set(
+                damien.nodeworks.registry.ModDataComponents.SCRIPT_DRAFT,
+                damien.nodeworks.item.ScriptDraft(
+                    payload.name.take(damien.nodeworks.item.ScriptProgram.MAX_NAME_LENGTH),
+                    tabs,
+                    payload.loadedSlot,
+                    loadedName,
+                    payload.layoutIndex.coerceIn(0, 3),
+                ),
+            )
+        }
+    }
+
+    fun handlePortableDraftTab(payload: PortableDraftTabPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            val player = context.player()
+            val (_, stack) = portableTerminal(player, payload.containerId) ?: return@enqueueWork
+            if (!damien.nodeworks.item.ScriptProgram.isValidTabName(payload.tab)) return@enqueueWork
+            val old = damien.nodeworks.item.PortableScriptingTerminalItem.draft(stack)
+            if (payload.tab !in old.tabs && old.tabs.size >= damien.nodeworks.item.ScriptProgram.MAX_TABS) return@enqueueWork
+            val others = old.tabs.entries.sumOf { if (it.key == payload.tab) 0 else it.value.length }
+            // The editor caps typing at the program limit, so a larger payload is not a player action.
+            if (others + payload.text.length > damien.nodeworks.item.ScriptProgram.MAX_TOTAL_CHARS) return@enqueueWork
+            val tabs = LinkedHashMap(old.tabs)
+            tabs[payload.tab] = payload.text
+            stack.set(damien.nodeworks.registry.ModDataComponents.SCRIPT_DRAFT, old.copy(tabs = tabs))
+        }
+    }
+
+    fun handlePortableScriptWrite(payload: PortableScriptWritePayload, context: IPayloadContext) {
+        context.enqueueWork {
+            val player = context.player()
+            val (_, terminal) = portableTerminal(player, payload.containerId) ?: return@enqueueWork
+            val slot = payload.targetSlot
+            val inv = player.inventory
+            if (slot !in 0 until net.minecraft.world.entity.player.Inventory.INVENTORY_SIZE &&
+                slot != net.minecraft.world.entity.player.Inventory.SLOT_OFFHAND
+            ) return@enqueueWork
+            val target = inv.getItem(slot)
+            if (target.item !is damien.nodeworks.item.ScriptItem) {
+                player.sendOverlayMessage(Component.translatable("message.nodeworks.script_target_missing"))
+                return@enqueueWork
+            }
+            val draft = damien.nodeworks.item.PortableScriptingTerminalItem.draft(terminal)
+            val existing = damien.nodeworks.item.ScriptItem.program(target)
+            if (existing != null && (slot != draft.loadedSlot || existing.name != draft.loadedName)) {
+                player.sendOverlayMessage(Component.translatable("message.nodeworks.script_target_taken", existing.name))
+                return@enqueueWork
+            }
+            val name = draft.name.trim()
+            val problem = damien.nodeworks.item.ScriptProgram.problem(name, draft.tabs)
+            if (problem != null) {
+                player.sendOverlayMessage(Component.literal(problem))
+                return@enqueueWork
+            }
+            if (target.count > 1) {
+                // A stack of blanks: write one and leave the rest blank.
+                val one = target.split(1)
+                one.set(
+                    damien.nodeworks.registry.ModDataComponents.SCRIPT_PROGRAM,
+                    damien.nodeworks.item.ScriptProgram(name, LinkedHashMap(draft.tabs), player.uuid, player.name.string),
+                )
+                val written = one.copy()
+                if (!inv.add(one)) player.drop(written, false)
+                // Point the draft at wherever the written copy landed so Save updates it next time.
+                val landed = ((0 until net.minecraft.world.entity.player.Inventory.INVENTORY_SIZE) + net.minecraft.world.entity.player.Inventory.SLOT_OFFHAND)
+                    .firstOrNull { net.minecraft.world.item.ItemStack.isSameItemSameComponents(inv.getItem(it), written) }
+                if (landed != null) {
+                    terminal.set(
+                        damien.nodeworks.registry.ModDataComponents.SCRIPT_DRAFT,
+                        draft.copy(loadedSlot = landed, loadedName = name),
+                    )
+                }
+                player.sendOverlayMessage(Component.translatable("message.nodeworks.script_saved_split", name))
+                return@enqueueWork
+            }
+            target.set(
+                damien.nodeworks.registry.ModDataComponents.SCRIPT_PROGRAM,
+                damien.nodeworks.item.ScriptProgram(name, LinkedHashMap(draft.tabs), player.uuid, player.name.string),
+            )
+            terminal.set(
+                damien.nodeworks.registry.ModDataComponents.SCRIPT_DRAFT,
+                draft.copy(loadedSlot = slot, loadedName = name),
+            )
+            player.sendOverlayMessage(Component.translatable("message.nodeworks.script_saved", name))
         }
     }
 }

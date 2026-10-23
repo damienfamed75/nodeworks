@@ -114,17 +114,18 @@ object NodeworksCommand {
         // what an admin chasing latency cares about.
         val sorted = engines.sortedByDescending { it.second.recentTickCostSumNs() }
         val out = buildString {
-            appendLine("Active terminals (${sorted.size}):")
-            for ((gp, engine) in sorted) {
+            appendLine("Active scripts (${sorted.size}):")
+            for ((key, engine) in sorted) {
                 val recentNs = engine.recentTickCostSumNs()
                 val pct = if (perEngineBudgetNs > 0) (recentNs * 100.0 / perEngineBudgetNs).coerceAtMost(999.9) else 0.0
-                val pos = gp.pos()
-                val dim = dimName(gp.dimension())
-                val level = server.getLevel(gp.dimension())
-                val terminal = level?.getBlockEntity(pos) as? TerminalBlockEntity
-                val owner = ownerLabel(server, terminal?.ownerUuid)
-                val autoRun = if (terminal?.autoRun == true) "on" else "off"
-                appendLine("  [${pos.x},${pos.y},${pos.z}] $dim owner=$owner %tick=${"%.1f".format(pct)}% vrt=${formatMs(engine.vruntimeNs)} autoRun=$autoRun")
+                val pos = key.pos.pos()
+                val dim = dimName(key.pos.dimension())
+                val level = server.getLevel(key.pos.dimension())
+                val runner = level?.getBlockEntity(pos) as? TerminalBlockEntity
+                val owner = ownerLabel(server, runner?.ownerUuid)
+                val label = runner?.slotLabel(key.slot) ?: "slot ${key.slot + 1}"
+                val enabled = if (runner?.isEnabled(key.slot) == true) "on" else "off"
+                appendLine("  [${pos.x},${pos.y},${pos.z}] $dim #${key.slot + 1} $label owner=$owner %tick=${"%.1f".format(pct)}% vrt=${formatMs(engine.vruntimeNs)} enabled=$enabled")
             }
         }.trimEnd()
         ctx.source.sendSuccess({ Component.literal(out) }, false)
@@ -139,26 +140,32 @@ object NodeworksCommand {
             ctx.source.sendFailure(Component.literal("No terminal block at [${pos.x},${pos.y},${pos.z}] in ${dimName(level.dimension())}."))
             return 0
         }
-        val engine = NeoForgeTerminalPackets.getEngine(level, pos)
         val s = ServerPolicy.current
         val perEngineBudgetNs = 20L * s.localTickBudgetMs * 1_000_000L
         val server = ctx.source.server
         val owner = ownerLabel(server, terminal.ownerUuid)
         val out = buildString {
-            appendLine("Terminal [${pos.x},${pos.y},${pos.z}] in ${dimName(level.dimension())}:")
+            appendLine("Script Runner [${pos.x},${pos.y},${pos.z}] in ${dimName(level.dimension())}:")
             appendLine("  Owner: $owner")
-            appendLine("  Auto-run: ${if (terminal.autoRun) "on" else "off"}")
-            appendLine("  Last error: ${terminal.lastError ?: "(none)"}")
-            if (engine == null) {
-                appendLine("  Engine: not running")
-            } else {
-                val recentNs = engine.recentTickCostSumNs()
-                val pct = if (perEngineBudgetNs > 0) (recentNs * 100.0 / perEngineBudgetNs).coerceAtMost(999.9) else 0.0
-                appendLine("  Engine: ${if (engine.isRunning()) "running" else "stopped"}")
-                appendLine("  Last tick cost: ${formatMs(engine.lastTickCostNs)}")
-                appendLine("  Recent (1s) cost: ${formatMs(recentNs)} (${"%.1f".format(pct)}% of local budget)")
-                appendLine("  Total vruntime: ${formatMs(engine.vruntimeNs)}")
+            var any = false
+            for (slot in 0 until TerminalBlockEntity.SLOT_COUNT) {
+                val program = terminal.programAt(slot) ?: continue
+                any = true
+                val engine = NeoForgeTerminalPackets.getSlotEngine(level, pos, slot)
+                appendLine("  Slot ${slot + 1}: ${program.name} (${program.tabs.size} tabs) enabled=${if (terminal.isEnabled(slot)) "on" else "off"}")
+                appendLine("    Last error: ${terminal.lastError(slot) ?: "(none)"}")
+                if (engine == null) {
+                    appendLine("    Engine: not running")
+                } else {
+                    val recentNs = engine.recentTickCostSumNs()
+                    val pct = if (perEngineBudgetNs > 0) (recentNs * 100.0 / perEngineBudgetNs).coerceAtMost(999.9) else 0.0
+                    appendLine("    Engine: ${if (engine.isRunning()) "running" else "stopped"}")
+                    appendLine("    Last tick cost: ${formatMs(engine.lastTickCostNs)}")
+                    appendLine("    Recent (1s) cost: ${formatMs(recentNs)} (${"%.1f".format(pct)}% of local budget)")
+                    appendLine("    Total vruntime: ${formatMs(engine.vruntimeNs)}")
+                }
             }
+            if (!any) appendLine("  No Scripts in its slots.")
         }.trimEnd()
         ctx.source.sendSuccess({ Component.literal(out) }, false)
         return 1
@@ -172,11 +179,10 @@ object NodeworksCommand {
             ctx.source.sendFailure(Component.literal("No active engine at [${pos.x},${pos.y},${pos.z}]."))
             return 0
         }
-        // Leaves autoRun untouched, the script will re-launch on next chunk
-        // load unless the admin also flips it off in the GUI. Default chosen
-        // so kill-then-inspect doesn't permanently break the player's setup.
+        // Slot toggles stay as they are, so the scripts relaunch on the next chunk load
+        // unless the admin also switches them off in the GUI.
         NeoForgeTerminalPackets.stopEngine(level, pos)
-        ctx.source.sendSuccess({ Component.literal("Stopped engine at [${pos.x},${pos.y},${pos.z}]. (autoRun unchanged, edit script to prevent re-launch.)") }, true)
+        ctx.source.sendSuccess({ Component.literal("Stopped every script at [${pos.x},${pos.y},${pos.z}]. Slot toggles unchanged.") }, true)
         return 1
     }
 

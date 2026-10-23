@@ -6,7 +6,6 @@ import damien.nodeworks.card.ObserverCard
 import damien.nodeworks.card.ProcessingSet
 import damien.nodeworks.card.RedstoneCard
 import damien.nodeworks.card.StorageCard
-import damien.nodeworks.card.TransferCard
 import damien.nodeworks.item.DiagnosticToolItem
 import damien.nodeworks.item.LinkCrystalItem
 import damien.nodeworks.item.MilkySoulBallItem
@@ -37,12 +36,6 @@ object ModItems {
     val STORAGE_CARD: Item = register(
         "storage_card",
         ::StorageCard,
-        Item.Properties().stacksTo(1)
-    )
-
-    val TRANSFER_CARD: Item = register(
-        "transfer_card",
-        ::TransferCard,
         Item.Properties().stacksTo(1)
     )
 
@@ -161,6 +154,20 @@ object ModItems {
     val PORTABLE_INVENTORY_TERMINAL: Item = register(
         "portable_inventory_terminal",
         ::PortableInventoryTerminalItem,
+        Item.Properties()
+            .stacksTo(1)
+            .rarity(net.minecraft.world.item.Rarity.RARE),
+    )
+
+    val SCRIPT: Item = register(
+        "script",
+        { props -> damien.nodeworks.item.ScriptItem(props) },
+        Item.Properties().stacksTo(16),
+    )
+
+    val PORTABLE_SCRIPTING_TERMINAL: Item = register(
+        "portable_scripting_terminal",
+        { props -> damien.nodeworks.item.PortableScriptingTerminalItem(props) },
         Item.Properties()
             .stacksTo(1)
             .rarity(net.minecraft.world.item.Rarity.RARE),

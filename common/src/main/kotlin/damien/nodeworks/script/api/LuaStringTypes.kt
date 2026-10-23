@@ -75,6 +75,14 @@ val TagId: LuaType.StringDomain = LuaType.StringDomain(
     sourceKey = "tag-id",
 )
 
+/** A tag a player put on a card. Tags name roles, so a script asking for one runs on
+ *  any network tagged the same way. The source is the tags the server has seen. */
+val CardTag: LuaType.StringDomain = LuaType.StringDomain(
+    name = "CardTag",
+    description = "Tag on a card, such as `ore` or `smelter-in`. Lowercase, dashes for spaces.",
+    sourceKey = "card-tag",
+)
+
 /** Card alias as configured in the Card Programmer for the current network. Used
  *  by `network:get(alias)`, `network:getAll(alias)`, and any place that takes a
  *  card name. The source pulls from the network the script is attached to. */
@@ -224,6 +232,7 @@ internal val ALL_STRING_TYPES: List<LuaType> = listOf(
     UserMode,
     VariableName,
     DyeColor,
+    CardTag,
     NetworkAccessorType,
     NetworkName,
     Filter,

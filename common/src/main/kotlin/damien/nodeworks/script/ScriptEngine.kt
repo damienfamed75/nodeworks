@@ -28,17 +28,17 @@ private const val DATA_CACHE_TICKS = 20L
  * (card, scheduler, print) and gates each Lua entry point with a wall-clock
  * soft-abort budget via [LuaExecGate].
  *
- * [terminalPos] is the position of the [damien.nodeworks.block.entity.TerminalBlockEntity]
- * that owns this engine, separate from [networkEntryNode] because a terminal can
- * connect to the network either directly (laser link, entry == terminal) or via
- * an adjacent NodeBlockEntity (entry != terminal). The engine needs both: entry
- * to discover the network, terminalPos to mark the BE on top-level timeout
- * (clearing autoRun so a `while true do end` script doesn't re-fire on world load).
+ * [terminalPos] is the position of the Script Runner that owns this engine, separate from
+ * [networkEntryNode] because a Runner can connect to the network either directly (laser
+ * link, entry == runner) or via an adjacent NodeBlockEntity (entry != runner). The engine
+ * needs entry to discover the network. Faults go to [host], the Runner slot, which records
+ * them so a `while true do end` script does not re-fire on world load.
  */
 class ScriptEngine(
     internal val level: ServerLevel,
     private val networkEntryNode: BlockPos,
     private val terminalPos: BlockPos,
+    private val host: ScriptHost,
     rawLogCallback: (String, Boolean) -> Unit, // (message, isError), raw sink. See [logCallback].
 ) {
 
@@ -437,7 +437,7 @@ class ScriptEngine(
             logCallback("Script started.", false)
             gate.runTopLevel("main") { chunk.call() }
             // A clean run wipes any persisted timeout error from a prior failed start.
-            (level.getBlockEntity(terminalPos) as? damien.nodeworks.block.entity.TerminalBlockEntity)?.clearLastError()
+            host.clearLastError()
             true
         } catch (e: LuaError) {
             when {
@@ -455,11 +455,9 @@ class ScriptEngine(
                     // autoRun so a `while true do end` at chunk level doesn't pin
                     // the server tick on every world load.
                     logCallback("Script took too long to run and was stopped.", true)
-                    val terminal = level.getBlockEntity(terminalPos) as? damien.nodeworks.block.entity.TerminalBlockEntity
-                    terminal?.markTimedOut("Top-level script timed out.")
-                    if (terminal?.autoRun == false) {
-                        logCallback("Auto-run disabled until you edit the script.", true)
-                    }
+                    val wasEnabled = host.autoRestarts
+                    host.markTimedOut("Top-level script timed out.")
+                    if (wasEnabled) logCallback("Slot disabled until you enable it again or swap the Script.", true)
                 }
                 else -> {
                     // Regular script-level error. Surfaces through the player-facing
@@ -522,10 +520,9 @@ class ScriptEngine(
      *  rate-limited error path. */
     private fun handleFatalScriptFault(reason: String) {
         logCallback(reason, true)
-        val terminal = level.getBlockEntity(terminalPos) as? damien.nodeworks.block.entity.TerminalBlockEntity
-        val wasAutoRun = terminal?.autoRun == true
-        terminal?.markTimedOut(reason)
-        if (wasAutoRun) logCallback("Auto-run disabled until you edit the script.", true)
+        val wasEnabled = host.autoRestarts
+        host.markTimedOut(reason)
+        if (wasEnabled) logCallback("Slot disabled until you enable it again or swap the Script.", true)
         stop()
     }
 
@@ -581,16 +578,12 @@ class ScriptEngine(
         }
     }
 
-    /** Persist a callback-timeout reason to the terminal BE and clear autoRun.
-     *  Reads autoRun before clearing so we only emit the user-facing log line if
-     *  there was actually anything to disable. */
+    /** Record a callback timeout on the host. The log line only fires when the host was
+     *  going to restart the script, since that is what changes. */
     private fun markCallbackTimedOut(label: String) {
-        val terminal = level.getBlockEntity(terminalPos) as? damien.nodeworks.block.entity.TerminalBlockEntity ?: return
-        val wasAutoRun = terminal.autoRun
-        terminal.markTimedOut("Callback '$label' timed out.")
-        if (wasAutoRun) {
-            logCallback("Auto-run disabled until you edit the script.", true)
-        }
+        val wasEnabled = host.autoRestarts
+        host.markTimedOut("Callback '$label' timed out.")
+        if (wasEnabled) logCallback("Slot disabled until you enable it again or swap the Script.", true)
     }
 
     /** Whether this engine should stay alive, has scheduler tasks, handlers, or routing. */
@@ -1147,19 +1140,106 @@ class ScriptEngine(
      * lookups return the same typed tables the global accessors do, no method
      * surface is lost by going through a channel.
      */
-    private fun createChannelTable(
-        color: net.minecraft.world.item.DyeColor,
-    ): LuaTable {
-        fun snapshot(): NetworkSnapshot = currentNetworkSnapshot()
-        val t = LuaTable()
-        val selfRef = this
-
+    private fun createChannelTable(color: net.minecraft.world.item.DyeColor): LuaTable = createScopeTable(
+        label = "${color.name.lowercase()} channel",
+        poolColor = color,
+        scopeFilter = damien.nodeworks.network.ChannelFilter.Color(color),
+        snapshotProvider = { currentNetworkSnapshot() },
+        inScope = { channel, _ -> channel == color },
+    ) { t ->
         // Marker fields so [CardRefs.fromLua] can recognise this table as a channel
         // pool reference when passed to `importer:from(channel)` / `:to(channel)` /
         // `stocker:from(channel)` / `:to(channel)`. The color id round-trips back to
         // a DyeColor on the Kotlin side.
         t.set("_isChannelRef", LuaValue.TRUE)
         t.set("_channelColorId", LuaValue.valueOf(color.id))
+    }
+
+    /** `network:tagged(tag, ...)` and `:side(name)` on it. The same surface as a channel
+     *  over the cards carrying every tag in [tags], touching [side] of their block when
+     *  given. Devices carry no tags, so none are in scope. Storage queries run over a copy
+     *  of the snapshot that holds only those cards, so every helper that takes a channel
+     *  filter works unchanged with [ChannelFilter.All]. */
+    private fun createTagScopeTable(tags: List<String>, side: net.minecraft.core.Direction?): LuaTable = createScopeTable(
+        label = "tag " + tags.joinToString(" + ") { "'$it'" } + (side?.let { " ${sideName(it)} side" } ?: ""),
+        poolColor = null,
+        scopeFilter = damien.nodeworks.network.ChannelFilter.All,
+        snapshotProvider = { scopedByTag(currentNetworkSnapshot(), tags, side) },
+        inScope = { _, cardTags -> tags.all { it in cardTags } },
+    ) { t ->
+        t.set("_isTagRef", LuaValue.TRUE)
+        val tagTable = LuaTable()
+        for ((i, tag) in tags.withIndex()) tagTable.set(i + 1, LuaValue.valueOf(tag))
+        t.set("_tags", tagTable)
+        if (side != null) t.set("_side", LuaValue.valueOf(sideName(side)))
+        // :side(name), the tagged cards touching that side of their block. A card sits on
+        // a Node face and touches the opposite side of the block in front of it.
+        t.set("side", object : TwoArgFunction() {
+            override fun call(selfArg: LuaValue, nameArg: LuaValue): LuaValue {
+                val name = nameArg.checkjstring()
+                val dir = parseSide(name)
+                    ?: throw LuaError("Unknown side '$name', use top, bottom, north, south, east or west")
+                return createTagScopeTable(tags, dir)
+            }
+        })
+    }
+
+    private fun parseSide(name: String): net.minecraft.core.Direction? = when (name.lowercase()) {
+        "top", "up" -> net.minecraft.core.Direction.UP
+        "bottom", "down" -> net.minecraft.core.Direction.DOWN
+        "north" -> net.minecraft.core.Direction.NORTH
+        "south" -> net.minecraft.core.Direction.SOUTH
+        "east" -> net.minecraft.core.Direction.EAST
+        "west" -> net.minecraft.core.Direction.WEST
+        else -> null
+    }
+
+    private fun sideName(dir: net.minecraft.core.Direction): String = when (dir) {
+        net.minecraft.core.Direction.UP -> "top"
+        net.minecraft.core.Direction.DOWN -> "bottom"
+        else -> dir.name.lowercase()
+    }
+
+    /** Snapshot copies per tag set and side, rebuilt only when the network walk they came from changes. */
+    private var tagScopeBase: NetworkSnapshot? = null
+    private val tagScopes = HashMap<String, NetworkSnapshot>()
+
+    private fun scopedByTag(base: NetworkSnapshot, tags: List<String>, side: net.minecraft.core.Direction?): NetworkSnapshot {
+        if (tagScopeBase !== base) {
+            tagScopeBase = base
+            tagScopes.clear()
+        }
+        val key = tags.joinToString(",") + "|" + (side?.name ?: "")
+        return tagScopes.getOrPut(key) {
+            val nodes = base.nodes.mapNotNull { node ->
+                val sides = node.sides
+                    .filterKeys { face -> side == null || face.opposite == side }
+                    .mapValues { (_, cards) -> cards.filter { card -> tags.all { it in card.tags } } }
+                    .filterValues { it.isNotEmpty() }
+                if (sides.isEmpty()) null else damien.nodeworks.network.NodeSnapshot(node.pos, sides)
+            }
+            base.copy(nodes = nodes, variables = emptyList(), breakers = emptyList(), placers = emptyList(), users = emptyList())
+        }
+    }
+
+    /**
+     * A scoped view of the network: channel colour today, tag as well. [inScope] decides
+     * membership from a member's channel and tags, [scopeFilter] narrows the storage
+     * helpers, [snapshotProvider] supplies the snapshot the scope reads, and [markers]
+     * stamps the fields other APIs use to recognise the table.
+     */
+    private fun createScopeTable(
+        label: String,
+        poolColor: net.minecraft.world.item.DyeColor?,
+        scopeFilter: damien.nodeworks.network.ChannelFilter,
+        snapshotProvider: () -> NetworkSnapshot,
+        inScope: (net.minecraft.world.item.DyeColor, List<String>) -> Boolean,
+        markers: (LuaTable) -> Unit,
+    ): LuaTable {
+        fun snapshot(): NetworkSnapshot = snapshotProvider()
+        val t = LuaTable()
+        val selfRef = this
+        markers(t)
 
         // :getFirst(type), first card or variable matching [type] AND this channel,
         // or nil. Renamed from `:first` to keep every "fetch" method in the API on
@@ -1168,23 +1248,23 @@ class ScriptEngine(
             override fun call(selfArg: LuaValue, typeArg: LuaValue): LuaValue {
                 val type = typeArg.checkjstring()
                 if (type == "variable") {
-                    val v = snapshot().variables.firstOrNull { it.channel == color } ?: return LuaValue.NIL
+                    val v = snapshot().variables.firstOrNull { inScope(it.channel, emptyList()) } ?: return LuaValue.NIL
                     return createVariableTable(v)
                 }
                 if (type == "breaker") {
-                    val b = snapshot().breakers.firstOrNull { it.channel == color } ?: return LuaValue.NIL
+                    val b = snapshot().breakers.firstOrNull { inScope(it.channel, emptyList()) } ?: return LuaValue.NIL
                     return BreakerHandle.create(b, level)
                 }
                 if (type == "placer") {
-                    val p = snapshot().placers.firstOrNull { it.channel == color } ?: return LuaValue.NIL
+                    val p = snapshot().placers.firstOrNull { inScope(it.channel, emptyList()) } ?: return LuaValue.NIL
                     return createPlacerTable(p)
                 }
                 if (type == "user") {
-                    val u = snapshot().users.firstOrNull { it.channel == color } ?: return LuaValue.NIL
+                    val u = snapshot().users.firstOrNull { inScope(it.channel, emptyList()) } ?: return LuaValue.NIL
                     return createUserTable(u)
                 }
                 val card = snapshot().allCards().firstOrNull {
-                    it.channel == color && it.capability.type == type
+                    inScope(it.channel, it.tags) && it.capability.type == type
                 } ?: return LuaValue.NIL
                 return selfRef.createCardTable(card, card.effectiveAlias)
             }
@@ -1205,31 +1285,31 @@ class ScriptEngine(
                 // then cards, which roughly matches sidebar ordering.
                 if (type == null || type == "variable") {
                     for (v in snapshot().variables) {
-                        if (v.channel != color) continue
+                        if (!inScope(v.channel, emptyList())) continue
                         members.add(createVariableTable(v))
                     }
                 }
                 if (type == null || type == "breaker") {
                     for (b in snapshot().breakers) {
-                        if (b.channel != color) continue
+                        if (!inScope(b.channel, emptyList())) continue
                         members.add(BreakerHandle.create(b, level))
                     }
                 }
                 if (type == null || type == "placer") {
                     for (p in snapshot().placers) {
-                        if (p.channel != color) continue
+                        if (!inScope(p.channel, emptyList())) continue
                         members.add(createPlacerTable(p))
                     }
                 }
                 if (type == null || type == "user") {
                     for (u in snapshot().users) {
-                        if (u.channel != color) continue
+                        if (!inScope(u.channel, emptyList())) continue
                         members.add(createUserTable(u))
                     }
                 }
                 if (type != "variable" && type != "breaker" && type != "placer" && type != "user") {
                     for (card in snapshot().allCards()) {
-                        if (card.channel != color) continue
+                        if (!inScope(card.channel, card.tags)) continue
                         if (type != null && card.capability.type != type) continue
                         members.add(selfRef.createCardTable(card, card.effectiveAlias))
                     }
@@ -1247,18 +1327,18 @@ class ScriptEngine(
             override fun call(selfArg: LuaValue, aliasArg: LuaValue): LuaValue {
                 val alias = aliasArg.checkjstring()
                 val card = snapshot().allCards().firstOrNull {
-                    it.channel == color && it.effectiveAlias == alias
+                    inScope(it.channel, it.tags) && it.effectiveAlias == alias
                 }
                 if (card != null) return selfRef.createCardTable(card, card.effectiveAlias)
-                val v = snapshot().variables.firstOrNull { it.channel == color && it.name == alias }
+                val v = snapshot().variables.firstOrNull { inScope(it.channel, emptyList()) && it.name == alias }
                 if (v != null) return createVariableTable(v)
-                val b = snapshot().breakers.firstOrNull { it.channel == color && it.effectiveAlias == alias }
+                val b = snapshot().breakers.firstOrNull { inScope(it.channel, emptyList()) && it.effectiveAlias == alias }
                 if (b != null) return BreakerHandle.create(b, level)
-                val p = snapshot().placers.firstOrNull { it.channel == color && it.effectiveAlias == alias }
+                val p = snapshot().placers.firstOrNull { inScope(it.channel, emptyList()) && it.effectiveAlias == alias }
                 if (p != null) return createPlacerTable(p)
-                val u = snapshot().users.firstOrNull { it.channel == color && it.effectiveAlias == alias }
+                val u = snapshot().users.firstOrNull { inScope(it.channel, emptyList()) && it.effectiveAlias == alias }
                 if (u != null) return createUserTable(u)
-                throw LuaError("No member named '$alias' on the ${color.name.lowercase()} channel")
+                throw LuaError("No member named '$alias' on the $label")
             }
         })
 
@@ -1267,7 +1347,7 @@ class ScriptEngine(
         // channel's storage cards. All five route through the same helpers Network
         // uses, just with a non-default [ChannelFilter.Color] argument so non-matching
         // cards are skipped during scan/insert.
-        val channelFilter = damien.nodeworks.network.ChannelFilter.Color(color)
+        val channelFilter = scopeFilter
 
         t.set("count", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
@@ -1300,7 +1380,7 @@ class ScriptEngine(
                                     } else null
                                 }
                         }
-                        return ItemsHandle.toLuaTable(ItemsHandle.fromItemInfo(aggregated, filter, sourceStorage, level, ItemsHandle.Origin.Pool(color)))
+                        return ItemsHandle.toLuaTable(ItemsHandle.fromItemInfo(aggregated, filter, sourceStorage, level, ItemsHandle.Origin.Pool(poolColor)))
                     }
                 }
                 if (kindGate == null || kindGate == damien.nodeworks.platform.ResourceKind.FLUID) {
@@ -1320,7 +1400,7 @@ class ScriptEngine(
                                     } else null
                                 }
                         }
-                        return ItemsHandle.toLuaTable(ItemsHandle.fromFluidInfo(aggregated, filter, fluidSource, level, ItemsHandle.Origin.Pool(color)))
+                        return ItemsHandle.toLuaTable(ItemsHandle.fromFluidInfo(aggregated, filter, fluidSource, level, ItemsHandle.Origin.Pool(poolColor)))
                     }
                 }
                 return LuaValue.NIL
@@ -1337,7 +1417,7 @@ class ScriptEngine(
                     val allItems = NetworkStorageHelper.findAllItemInfoAcrossNetwork(level, snapshot(), filter, channelFilter)
                     if (allItems.size > MAX_FINDEACH_RESULTS) {
                         throw LuaError(
-                            "Channel('${color.name.lowercase()}'):findEach('$filter') matched ${allItems.size} distinct items, " +
+                            "${label}:findEach('$filter') matched ${allItems.size} distinct items, " +
                             "above the $MAX_FINDEACH_RESULTS cap. Narrow the filter or use :count(filter) for an aggregate."
                         )
                     }
@@ -1353,7 +1433,7 @@ class ScriptEngine(
                                     } else null
                                 }
                         }
-                        val handle = ItemsHandle.fromItemInfo(info, info.itemId, sourceStorage, level, ItemsHandle.Origin.Pool(color))
+                        val handle = ItemsHandle.fromItemInfo(info, info.itemId, sourceStorage, level, ItemsHandle.Origin.Pool(poolColor))
                         result.set(idx++, ItemsHandle.toLuaTable(handle))
                     }
                 }
@@ -1361,7 +1441,7 @@ class ScriptEngine(
                     val allFluids = NetworkStorageHelper.findAllFluidInfoAcrossNetwork(level, snapshot(), filter, channelFilter)
                     if (idx - 1 + allFluids.size > MAX_FINDEACH_RESULTS) {
                         throw LuaError(
-                            "Channel('${color.name.lowercase()}'):findEach('$filter') matched ${idx - 1 + allFluids.size} distinct resources, " +
+                            "${label}:findEach('$filter') matched ${idx - 1 + allFluids.size} distinct resources, " +
                             "above the $MAX_FINDEACH_RESULTS cap. Narrow the filter or use :count(filter)."
                         )
                     }
@@ -1377,7 +1457,7 @@ class ScriptEngine(
                                     } else null
                                 }
                         }
-                        val handle = ItemsHandle.fromFluidInfo(info, "\$fluid:${info.fluidId}", fluidSource, level, ItemsHandle.Origin.Pool(color))
+                        val handle = ItemsHandle.fromFluidInfo(info, "\$fluid:${info.fluidId}", fluidSource, level, ItemsHandle.Origin.Pool(poolColor))
                         result.set(idx++, ItemsHandle.toLuaTable(handle))
                     }
                 }
@@ -1951,6 +2031,32 @@ class ScriptEngine(
                 for ((i, color) in seen.withIndex()) {
                     result.set(i + 1, LuaValue.valueOf(color.name.lowercase()))
                 }
+                return result
+            }
+        })
+
+        // network:tagged(tag, ...) → the same scope a channel gives, over the cards carrying
+        // every tag. Tags travel with the layout, so a script that asks for them runs on any
+        // network whose owner tagged its cards the same way.
+        networkTable.setGuarded("Network", "tagged", object : VarArgFunction() {
+            override fun invoke(args: Varargs): Varargs {
+                val tags = ArrayList<String>()
+                for (i in 2..args.narg()) {
+                    val tag = damien.nodeworks.card.CardTags.normalize(args.checkjstring(i)) ?: throw LuaError("Empty tag")
+                    if (tag !in tags) tags.add(tag)
+                }
+                if (tags.isEmpty()) throw LuaError("network:tagged needs at least one tag")
+                return createTagScopeTable(tags, null)
+            }
+        })
+
+        // network:tags() → { string } of every tag on a card of this network, sorted.
+        networkTable.setGuarded("Network", "tags", object : OneArgFunction() {
+            override fun call(selfArg: LuaValue): LuaValue {
+                val seen = sortedSetOf<String>()
+                snapshot().allCards().forEach { seen.addAll(it.tags) }
+                val result = LuaTable()
+                for ((i, tag) in seen.withIndex()) result.set(i + 1, LuaValue.valueOf(tag))
                 return result
             }
         })

@@ -733,8 +733,18 @@ interface ModStateService {
      *  pulse toggle on the Terminal block, no network round-trip, no open GUI required. */
     fun startScript(level: ServerLevel, pos: BlockPos)
 
-    /** Register a terminal for auto-run on world startup. */
+    /** Register a Script Runner for auto-run on world startup. */
     fun registerPendingAutoRun(level: ServerLevel, pos: BlockPos)
+
+    /** Start one Runner slot, as the Runner GUI toggle does. */
+    fun startScriptSlot(level: ServerLevel, pos: BlockPos, slot: Int) {}
+
+    fun stopScriptSlot(level: ServerLevel, pos: BlockPos, slot: Int) {}
+
+    fun isScriptSlotRunning(level: ServerLevel, pos: BlockPos, slot: Int): Boolean = false
+
+    /** Every engine hosted by the Runner at [pos], running or not. */
+    fun getScriptEngines(level: ServerLevel, pos: BlockPos): List<Any> = emptyList()
 
     /**
      * Find the ScriptEngine that has a processing handler for the given card name,

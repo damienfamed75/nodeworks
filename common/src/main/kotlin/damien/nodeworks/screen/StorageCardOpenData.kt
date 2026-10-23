@@ -6,7 +6,7 @@ import net.minecraft.network.codec.StreamCodec
 /**
  * Open-time payload for the Storage Card menu. Carries the held-hand ordinal
  * (so the client can recover the held card) plus the snapshot of the card's
- * filter state at open time. Filter rules are sent verbatim, the rule list is
+ * state at open time. Filter rules are sent verbatim, the rule list is
  * small in practice (handful of expressions) so a full-list payload stays well
  * under the packet size ceiling.
  */
@@ -26,6 +26,15 @@ data class StorageCardOpenData(
     /** Player-chosen side override. -1 = no override (use default face),
      *  0..5 = [damien.nodeworks.screen.widget.RelDir] ordinal. */
     val customSideOrdinal: Int = -1,
+    /** [damien.nodeworks.card.StorageCard.Companion.Mode] ordinal. */
+    val mode: Int = 0,
+    val tickInterval: Int = damien.nodeworks.card.StorageCard.DEFAULT_TICK_INTERVAL,
+    val roundRobin: Boolean = false,
+    val batch: Int = 0,
+    val keep: Int = 0,
+    val tags: List<String> = emptyList(),
+    /** Tags the server has seen on cards, for the GUI to offer. */
+    val knownTags: List<String> = emptyList(),
 ) {
     companion object {
         /** Per-rule string cap. The filter syntax (`*`, `#tag`, `/regex/`,
@@ -53,7 +62,14 @@ data class StorageCardOpenData(
                     for (i in 0 until count) rules.add(buf.readUtf(MAX_RULE_LENGTH))
                     val name = buf.readUtf(MAX_NAME_LENGTH)
                     val side = buf.readVarInt()
-                    return StorageCardOpenData(hand, mode, stack, nbt, rules, name, side)
+                    val cardMode = buf.readVarInt()
+                    val interval = buf.readVarInt()
+                    val roundRobin = buf.readBoolean()
+                    val batch = buf.readVarInt()
+                    val keep = buf.readVarInt()
+                    val tags = readTags(buf, damien.nodeworks.card.CardTags.MAX_TAGS)
+                    val known = readTags(buf, damien.nodeworks.card.KnownCardTags.MAX_OFFERED)
+                    return StorageCardOpenData(hand, mode, stack, nbt, rules, name, side, cardMode, interval, roundRobin, batch, keep, tags, known)
                 }
 
                 override fun encode(buf: FriendlyByteBuf, data: StorageCardOpenData) {
@@ -66,7 +82,25 @@ data class StorageCardOpenData(
                     for (rule in cropped) buf.writeUtf(rule.take(MAX_RULE_LENGTH), MAX_RULE_LENGTH)
                     buf.writeUtf(data.cardName.take(MAX_NAME_LENGTH), MAX_NAME_LENGTH)
                     buf.writeVarInt(data.customSideOrdinal)
+                    buf.writeVarInt(data.mode)
+                    buf.writeVarInt(data.tickInterval)
+                    buf.writeBoolean(data.roundRobin)
+                    buf.writeVarInt(data.batch)
+                    buf.writeVarInt(data.keep)
+                    writeTags(buf, data.tags, damien.nodeworks.card.CardTags.MAX_TAGS)
+                    writeTags(buf, data.knownTags, damien.nodeworks.card.KnownCardTags.MAX_OFFERED)
                 }
             }
+
+        fun writeTags(buf: FriendlyByteBuf, tags: List<String>, max: Int) {
+            val cropped = tags.take(max)
+            buf.writeVarInt(cropped.size)
+            for (t in cropped) buf.writeUtf(t.take(damien.nodeworks.card.CardTags.MAX_TAG_LENGTH), damien.nodeworks.card.CardTags.MAX_TAG_LENGTH)
+        }
+
+        fun readTags(buf: FriendlyByteBuf, max: Int): List<String> {
+            val n = buf.readVarInt().coerceIn(0, max)
+            return List(n) { buf.readUtf(damien.nodeworks.card.CardTags.MAX_TAG_LENGTH) }
+        }
     }
 }

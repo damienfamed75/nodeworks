@@ -25,7 +25,17 @@ data class TerminalOpenData(
      * fix the script before unlocking.
      */
     val lastError: String? = null,
+    /** Tags the server has seen on cards, for completion of `network:tagged`. */
+    val knownTags: List<String> = emptyList(),
+    /** Inventory slot of the Portable Scripting Terminal this menu edits, -1 for the block. */
+    val portableSlot: Int = -1,
+    /** Portable only: the name in the field, and which Script item the draft came from. */
+    val scriptName: String = "",
+    val loadedSlot: Int = -1,
+    val loadedName: String = "",
 ) {
+    val portable: Boolean get() = portableSlot >= 0
+
     companion object {
         private fun writeApi(buf: FriendlyByteBuf, api: ProcessingStorageBlockEntity.ProcessingApiInfo) {
             // Terminal sidebar autocomplete only consumes recipe NAMES + itemId
@@ -98,7 +108,16 @@ data class TerminalOpenData(
                 val remoteApis = ArrayList<ProcessingStorageBlockEntity.ProcessingApiInfo>(apiCount)
                 repeat(apiCount) { remoteApis.add(readApi(buf)) }
                 val lastError = if (buf.readBoolean()) buf.readUtf(512) else null
-                return TerminalOpenData(pos, scripts, running, autoRun, layoutIndex, remoteApis, lastError)
+                val tagCount = buf.readVarInt().coerceIn(0, damien.nodeworks.card.KnownCardTags.MAX_OFFERED)
+                val knownTags = List(tagCount) { buf.readUtf(damien.nodeworks.card.CardTags.MAX_TAG_LENGTH) }
+                val portableSlot = buf.readVarInt()
+                val scriptName = buf.readUtf(damien.nodeworks.item.ScriptProgram.MAX_NAME_LENGTH)
+                val loadedSlot = buf.readVarInt()
+                val loadedName = buf.readUtf(damien.nodeworks.item.ScriptProgram.MAX_NAME_LENGTH)
+                return TerminalOpenData(
+                    pos, scripts, running, autoRun, layoutIndex, remoteApis, lastError, knownTags,
+                    portableSlot, scriptName, loadedSlot, loadedName,
+                )
             }
 
             override fun encode(buf: FriendlyByteBuf, data: TerminalOpenData) {
@@ -115,6 +134,13 @@ data class TerminalOpenData(
                 for (api in data.remoteApis) writeApi(buf, api)
                 buf.writeBoolean(data.lastError != null)
                 data.lastError?.let { buf.writeUtf(it, 512) }
+                val tags = data.knownTags.take(damien.nodeworks.card.KnownCardTags.MAX_OFFERED)
+                buf.writeVarInt(tags.size)
+                for (t in tags) buf.writeUtf(t.take(damien.nodeworks.card.CardTags.MAX_TAG_LENGTH), damien.nodeworks.card.CardTags.MAX_TAG_LENGTH)
+                buf.writeVarInt(data.portableSlot)
+                buf.writeUtf(data.scriptName.take(damien.nodeworks.item.ScriptProgram.MAX_NAME_LENGTH), damien.nodeworks.item.ScriptProgram.MAX_NAME_LENGTH)
+                buf.writeVarInt(data.loadedSlot)
+                buf.writeUtf(data.loadedName.take(damien.nodeworks.item.ScriptProgram.MAX_NAME_LENGTH), damien.nodeworks.item.ScriptProgram.MAX_NAME_LENGTH)
             }
         }
     }

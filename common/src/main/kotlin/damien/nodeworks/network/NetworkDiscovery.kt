@@ -2,6 +2,7 @@ package damien.nodeworks.network
 
 import damien.nodeworks.block.entity.ProcessingStorageBlockEntity
 import damien.nodeworks.block.entity.InstructionStorageBlockEntity
+import damien.nodeworks.block.entity.InterfaceBlockEntity
 import damien.nodeworks.block.entity.NetworkControllerBlockEntity
 import damien.nodeworks.block.entity.NodeBlockEntity
 import damien.nodeworks.block.entity.CraftingCoreBlockEntity
@@ -325,12 +326,21 @@ object NetworkDiscovery {
     private fun snapshotNode(entity: NodeBlockEntity): NodeSnapshot {
         val sides = mutableMapOf<Direction, List<CardSnapshot>>()
 
+        val level = entity.level
         for (dir in Direction.entries) {
             val capabilities = entity.getSideCapabilities(dir)
             if (capabilities.isEmpty()) continue
-            sides[dir] = capabilities.map { info ->
-                CardSnapshot(info.capability, info.alias, info.slotIndex, info.channel)
+            val cards = capabilities.mapNotNull { info ->
+                // A card on this network facing this network's own Interface would read
+                // or feed the network through itself. It counts for nothing.
+                if (level != null) {
+                    val target = level.getBlockEntity(info.capability.adjacentPos)
+                    if (target is InterfaceBlockEntity && target.networkId != null && target.networkId == entity.networkId) return@mapNotNull null
+                }
+                CardSnapshot(info.capability, info.alias, info.slotIndex, info.channel, info.tags)
             }
+            if (cards.isEmpty()) continue
+            sides[dir] = cards
         }
 
         return NodeSnapshot(entity.blockPos, sides)
@@ -661,6 +671,9 @@ data class CardSnapshot(
      *  [damien.nodeworks.card.CardChannel.get]. Scripts use this to scope lookups
      *  through `network:channel(color)`. */
     val channel: net.minecraft.world.item.DyeColor = net.minecraft.world.item.DyeColor.WHITE,
+    /** Tags the player put on the card, see [damien.nodeworks.card.CardTags]. Scripts
+     *  scope lookups through `network:tagged(tag)`. */
+    val tags: List<String> = emptyList(),
 ) {
     /** Auto-generated alias. Set by [NetworkDiscovery.assignAutoAliases] for any
      *  card that needs disambiguation: every unnamed card (`io_1`, `storage_2`,

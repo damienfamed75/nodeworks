@@ -292,14 +292,6 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                     damien.nodeworks.screen.StorageCardMenu.clientFactory(syncId, inv, data)
                 }
             )
-            ModScreenHandlers.TRANSFER_CARD = Registry.register(
-                BuiltInRegistries.MENU,
-                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "transfer_card")),
-                IMenuTypeExtension.create { syncId, inv, buf ->
-                    val data = damien.nodeworks.screen.TransferCardOpenData.STREAM_CODEC.decode(buf)
-                    damien.nodeworks.screen.TransferCardMenu.clientFactory(syncId, inv, data)
-                }
-            )
             ModScreenHandlers.CARD_SETTINGS = Registry.register(
                 BuiltInRegistries.MENU,
                 ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "card_settings")),
@@ -330,6 +322,22 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                 IMenuTypeExtension.create { syncId, inv, buf ->
                     val data = damien.nodeworks.screen.ImportChestOpenData.STREAM_CODEC.decode(buf)
                     damien.nodeworks.screen.ImportChestMenu.clientFactory(syncId, inv, data)
+                }
+            )
+            ModScreenHandlers.SCRIPT_RUNNER = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "script_runner")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = damien.nodeworks.screen.ScriptRunnerOpenData.STREAM_CODEC.decode(buf)
+                    damien.nodeworks.screen.ScriptRunnerMenu.clientFactory(syncId, inv, data)
+                }
+            )
+            ModScreenHandlers.INTERFACE = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "interface")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = damien.nodeworks.screen.InterfaceOpenData.STREAM_CODEC.decode(buf)
+                    damien.nodeworks.screen.InterfaceMenu.clientFactory(syncId, inv, data)
                 }
             )
             ModScreenHandlers.EXPORT_CHEST = Registry.register(
@@ -397,19 +405,21 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
         event.registerBlockEntity(itemBlock, ModBlockEntities.EXPORT_CHEST) { be, _ ->
             net.neoforged.neoforge.transfer.item.VanillaContainerWrapper.of(be)
         }
+        // Hoppers and other mods see the Interface's buffer. Nodeworks cards facing it get
+        // the network behind it through the storage service instead.
+        event.registerBlockEntity(itemBlock, ModBlockEntities.INTERFACE) { be, _ ->
+            net.neoforged.neoforge.transfer.item.VanillaContainerWrapper.of(be)
+        }
     }
 
     private fun registerPayloads(event: RegisterPayloadHandlersEvent) {
         val registrar = event.registrar("nodeworks")
 
         // C2S payloads
-        registrar.playToServer(RunScriptPayload.TYPE, RunScriptPayload.CODEC, NeoForgeTerminalPackets::handleRunScript)
-        registrar.playToServer(StopScriptPayload.TYPE, StopScriptPayload.CODEC, NeoForgeTerminalPackets::handleStopScript)
-        registrar.playToServer(SaveScriptPayload.TYPE, SaveScriptPayload.CODEC, NeoForgeTerminalPackets::handleSaveScript)
-        registrar.playToServer(CreateScriptTabPayload.TYPE, CreateScriptTabPayload.CODEC, NeoForgeTerminalPackets::handleCreateScriptTab)
-        registrar.playToServer(DeleteScriptTabPayload.TYPE, DeleteScriptTabPayload.CODEC, NeoForgeTerminalPackets::handleDeleteScriptTab)
-        registrar.playToServer(ToggleAutoRunPayload.TYPE, ToggleAutoRunPayload.CODEC, NeoForgeTerminalPackets::handleToggleAutoRun)
         registrar.playToServer(SetLayoutPayload.TYPE, SetLayoutPayload.CODEC, NeoForgeTerminalPackets::handleSetLayout)
+        registrar.playToServer(PortableDraftMetaPayload.TYPE, PortableDraftMetaPayload.CODEC, NeoForgeTerminalPackets::handlePortableDraftMeta)
+        registrar.playToServer(PortableDraftTabPayload.TYPE, PortableDraftTabPayload.CODEC, NeoForgeTerminalPackets::handlePortableDraftTab)
+        registrar.playToServer(PortableScriptWritePayload.TYPE, PortableScriptWritePayload.CODEC, NeoForgeTerminalPackets::handlePortableScriptWrite)
         registrar.playToServer(SwitchNodeSidePayload.TYPE, SwitchNodeSidePayload.CODEC) { payload, context ->
             context.enqueueWork {
                 val player = context.player()
@@ -837,6 +847,18 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
             }
         }
 
+        registrar.playToServer(SetCardTagsPayload.TYPE, SetCardTagsPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                when (val menu = player.containerMenu) {
+                    is damien.nodeworks.screen.StorageCardMenu ->
+                        if (menu.containerId == payload.containerId) menu.setCardTags(player, payload.tags)
+                    is damien.nodeworks.screen.CardSettingsMenu ->
+                        if (menu.containerId == payload.containerId) menu.setCardTags(player, payload.tags)
+                }
+            }
+        }
+
         registrar.playToServer(SetCardNamePayload.TYPE, SetCardNamePayload.CODEC) { payload, context ->
             context.enqueueWork {
                 val player = context.player()
@@ -844,8 +866,6 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                     is damien.nodeworks.screen.StorageCardMenu ->
                         if (menu.containerId == payload.containerId) menu.setCardName(player, payload.name)
                     is damien.nodeworks.screen.CardSettingsMenu ->
-                        if (menu.containerId == payload.containerId) menu.setCardName(player, payload.name)
-                    is damien.nodeworks.screen.TransferCardMenu ->
                         if (menu.containerId == payload.containerId) menu.setCardName(player, payload.name)
                 }
             }
@@ -1272,6 +1292,7 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
         damien.nodeworks.script.NetworkRateLimits.clearAll()
         damien.nodeworks.network.NetworkIds.clearRetired()
         damien.nodeworks.block.entity.TransferCardTicker.clear()
+        damien.nodeworks.card.KnownCardTags.clear()
     }
 
     private fun onPlayerDisconnect(event: net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedOutEvent) {
@@ -1419,6 +1440,20 @@ class NeoForgeModStateService : ModStateService {
     override fun registerPendingAutoRun(level: ServerLevel, pos: BlockPos) {
         NeoForgeTerminalPackets.registerPendingAutoRun(level, pos)
     }
+
+    override fun startScriptSlot(level: ServerLevel, pos: BlockPos, slot: Int) {
+        NeoForgeTerminalPackets.startSlot(level, pos, slot)
+    }
+
+    override fun stopScriptSlot(level: ServerLevel, pos: BlockPos, slot: Int) {
+        NeoForgeTerminalPackets.stopSlot(level, pos, slot)
+    }
+
+    override fun isScriptSlotRunning(level: ServerLevel, pos: BlockPos, slot: Int): Boolean =
+        NeoForgeTerminalPackets.isSlotRunning(level, pos, slot)
+
+    override fun getScriptEngines(level: ServerLevel, pos: BlockPos): List<Any> =
+        NeoForgeTerminalPackets.enginesAt(level, pos)
 
     override fun findAnyEngine(
         level: ServerLevel,

@@ -128,7 +128,11 @@ class NodeSideScreenHandler(
     }
 
     private class CardOnlySlot(container: Container, index: Int, x: Int, y: Int) : Slot(container, index, x, y) {
-        override fun mayPlace(stack: ItemStack): Boolean = stack.item is NodeCard
+        override fun mayPlace(stack: ItemStack): Boolean {
+            if (stack.item !is NodeCard) return false
+            val node = container as? NodeBlockEntity ?: return true
+            return node.acceptsCard(Direction.entries[index / NodeBlockEntity.SLOTS_PER_SIDE], stack)
+        }
     }
 
     fun getSide(): Direction = activeSide
