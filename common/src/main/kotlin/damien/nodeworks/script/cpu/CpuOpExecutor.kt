@@ -78,6 +78,14 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
      *  added/removed each retry cycle so the cap is on TOTAL attempts for the op. */
     private val processRetries = mutableMapOf<Int, Int>()
 
+    /** Tick of the first counted retry in the op's current series, see [scheduleRetry]. */
+    private val processRetrySince = mutableMapOf<Int, Long>()
+
+    private fun clearRetries(opId: Int) {
+        processRetries.remove(opId)
+        processRetrySince.remove(opId)
+    }
+
     /** Seconds between handler retries when inputs went unmoved. One second feels like
      *  "the CPU is waiting for something" without being laggy. */
     private val RETRY_BACKOFF_TICKS = 20L
@@ -92,6 +100,26 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         val lvl = cpu.level ?: return 50
         return damien.nodeworks.render.NodeConnectionRenderer
             .findController(lvl, cpu.blockPos)?.handlerRetryLimit ?: 50
+    }
+
+    /** Handler identities for [HandlerActivity]. A block handler is its block, a Lua
+     *  handler is the engine running it paired with the recipe name. */
+    private fun blockHandlerKey(handlerBE: damien.nodeworks.block.entity.ProcessingHandlerBlockEntity): Any? =
+        (handlerBE.level as? ServerLevel)?.dimension()?.let { it to handlerBE.blockPos }
+
+    private fun luaHandlerKey(state: ProcessState, apiName: String): Any = state.scheduler to apiName
+
+    /** The handler block a resumed poll's items sit in, when the recipe has one. */
+    private fun resumeHandlerKey(
+        op: Operation.Process,
+        lvl: ServerLevel,
+        snapshot: damien.nodeworks.network.NetworkSnapshot,
+    ): Any? {
+        val apiMatch = snapshot.findProcessingApiByName(op.processingApiName)
+        val handlerNetworkId = apiMatch?.apiStorage?.remoteNetworkId ?: snapshot.networkId
+        val handlerLevel = apiMatch?.apiStorage?.remoteDimension?.let { lvl.server.getLevel(it) } ?: lvl
+        val pos = BlockHandlerRegistry.find(handlerNetworkId, op.processingApiName) ?: return null
+        return handlerLevel.dimension() to pos
     }
 
     /** Caller-supplied completion listeners. Not persisted, on world reload resumed
@@ -894,13 +922,13 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
                 val ok = existing.pending.success
                 processState.remove(op.id)
                 if (!ok) {
-                    processRetries.remove(op.id)
+                    clearRetries(op.id)
                     processBatchProgress.remove(op.id)
                     return CraftScheduler.OpResult.Failed("Processing handler failed: ${op.processingApiName}")
                 }
                 // One batch done. Advance progress, if more batches remain, start the next one.
                 if (finishBatch(op, processBatchProgress[op.id])) {
-                    processRetries.remove(op.id)
+                    clearRetries(op.id)
                     processBatchProgress.remove(op.id)
                     return CraftScheduler.OpResult.Completed
                 }
@@ -1077,24 +1105,32 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             .mapValues { (_, pairs) -> pairs.sumOf { it.second } }
         if (apiMatch.api.serial) {
             val result = invokeHandlerAndAnalyze(op, state, perBatchInputMap, apiMatch.api.name, apiMatch.api.outputsAsPairs)
-            reserveWhileInFlight(exclusiveRule, op, state)
+            reserveWhileInFlight(exclusiveRule, op, state, apiMatch.api.name)
             // Outputs already waiting finish the batch on the spot, that is one batch, not the op.
             if (result !is CraftScheduler.OpResult.Completed) return result
             if (!finishBatch(op, progress)) return CraftScheduler.OpResult.InProgress
-            processRetries.remove(op.id)
+            clearRetries(op.id)
             processBatchProgress.remove(op.id)
             return result
         }
         val result = invokeLuaChunk(op, state, perBatchInputMap, apiMatch, progress)
-        reserveWhileInFlight(exclusiveRule, op, state)
+        reserveWhileInFlight(exclusiveRule, op, state, apiMatch.api.name)
         return result
     }
 
-    /** Holds [rule] for this op while its job waits on outputs. Only a job that is
-     *  really in flight reserves, one that finished at once or failed leaves the rule
-     *  free, and the reservation ends by itself when the job's pulls complete. */
-    private fun reserveWhileInFlight(rule: damien.nodeworks.script.RecipeHandlerRule?, op: Operation.Process, state: ProcessState) {
-        if (rule == null || processState[op.id] !== state || state.pending.isComplete) return
+    /** Notes the job as in flight on its handler, and holds [rule] for this op while the
+     *  job waits on outputs. Only a job that is really in flight counts, one that finished
+     *  at once or failed leaves the handler free, and both end by themselves when the
+     *  job's pulls complete. */
+    private fun reserveWhileInFlight(
+        rule: damien.nodeworks.script.RecipeHandlerRule?,
+        op: Operation.Process,
+        state: ProcessState,
+        apiName: String,
+    ) {
+        if (processState[op.id] !== state || state.pending.isComplete) return
+        HandlerActivity.track(luaHandlerKey(state, apiName), state.pending, (cpu.level as? ServerLevel)?.gameTime ?: 0L)
+        if (rule == null) return
         HandlerReservations.reserve(rule, HandlerReservations.Holder(cpu.blockPos, op.id, state.pending))
     }
 
@@ -1124,7 +1160,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         if (result is CraftScheduler.OpResult.Completed) {
             cpu.setChunkProgress(op.id, chunk.copy(inFlight = tried, fit = grown))
             if (!finishBatch(op, progress)) return CraftScheduler.OpResult.InProgress
-            processRetries.remove(op.id)
+            clearRetries(op.id)
             processBatchProgress.remove(op.id)
             return result
         }
@@ -1134,7 +1170,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             cpu.setChunkProgress(op.id, chunk.copy(fit = tried / 2L))
             // Rebuilt on the next dispatch at the smaller size.
             processBatchProgress.remove(op.id)
-            if (retriesBefore == null) processRetries.remove(op.id) else processRetries[op.id] = retriesBefore
+            if (retriesBefore == null) clearRetries(op.id) else processRetries[op.id] = retriesBefore
         }
         return result
     }
@@ -1180,7 +1216,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         // Explicit false return → immediate retry (handler opted into deferral)
         if (!result.isnil() && result.isboolean() && !result.toboolean()) {
             cancelInvocationPulls(state)
-            return scheduleRetry(op, state, "handler returned false")
+            return scheduleRetry(op, state, "handler returned false", luaHandlerKey(state, apiName))
         }
 
         // Conservation check, diff buffer vs pre-invocation
@@ -1241,7 +1277,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
                     "job:pull to collect outputs."
                 )
             }
-            return scheduleRetry(op, state, "destination unavailable")
+            return scheduleRetry(op, state, "destination unavailable", luaHandlerKey(state, apiName))
         }
 
         // All inputs consumed. Handler must have registered at least one pull, otherwise
@@ -1323,6 +1359,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         }
         return when (invokeResult) {
             is BlockProcessingHandler.InvokeResult.InProgress -> {
+                blockHandlerKey(handlerBE)?.let { HandlerActivity.track(it, invokeResult.pending, lvl.gameTime) }
                 if (handlerBE.exclusiveUse && handlerLevel != null) {
                     HandlerReservations.reserve(
                         handlerLevel.dimension(), handlerBE.blockPos,
@@ -1343,7 +1380,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
                 if (invokeResult.pending.success) {
                     // One batch done. Match the Lua path's batch advancement.
                     if (finishBatch(op, progress)) {
-                        processRetries.remove(op.id)
+                        clearRetries(op.id)
                         processBatchProgress.remove(op.id)
                         CraftScheduler.OpResult.Completed
                     } else {
@@ -1358,10 +1395,10 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
                 // block path guarantees no buffer mutation on routing failure
                 // (its atomic route + rollback) so no ProcessState exists to
                 // clear - pass null.
-                scheduleRetry(op, null, invokeResult.reason)
+                scheduleRetry(op, null, invokeResult.reason, blockHandlerKey(handlerBE))
             }
             is BlockProcessingHandler.InvokeResult.Failed -> {
-                processRetries.remove(op.id)
+                clearRetries(op.id)
                 processBatchProgress.remove(op.id)
                 CraftScheduler.OpResult.Failed("Block handler '${apiMatch.api.name}' failed: ${invokeResult.reason}")
             }
@@ -1424,7 +1461,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             }
             cpu.setChunkProgress(op.id, chunk.copy(done = done, inFlight = 0L))
             processBatchProgress.remove(op.id)
-            processRetries.remove(op.id)
+            clearRetries(op.id)
             return false
         }
         if (progress == null) return false
@@ -1483,6 +1520,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         }
         val scheduler = damien.nodeworks.script.ResumeScheduler.scheduler
         val pending = CraftingHelper.PendingHandlerJob()
+        resumeHandlerKey(op, lvl, snapshot)?.let { HandlerActivity.track(it, pending, lvl.gameTime) }
         // The machine still holds this op's items, so its handler stays this op's until
         // they are out, the same as it would have been had the world not reloaded.
         exclusiveHandlerFor(op, lvl, snapshot)?.let { (handlerLevel, handler) ->
@@ -1564,7 +1602,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         processRetries[op.id] = count
         val cap = maxHandlerRetries()
         if (count > cap) {
-            processRetries.remove(op.id)
+            clearRetries(op.id)
             processBatchProgress.remove(op.id)
             return CraftScheduler.OpResult.Failed(
                 "Handler '${op.processingApiName}' never appeared after $cap retries ($reason). " +
@@ -1581,24 +1619,44 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
      *  block-handler couldn't route through the micro-network). [state] is
      *  non-null for the Lua path (where a [ProcessState] was registered and
      *  needs clearing) and null for the block path (which fails before
-     *  registering state). */
+     *  registering state).
+     *
+     *  The retry cap is for a machine that can never take the inputs. A machine that is
+     *  busy with a job from another op, another CPU or an earlier chunk will free up, so
+     *  while [handlerKey] has a job in flight the wait is not counted, and a job finishing
+     *  on it since this op started waiting restarts the count. Only waits with the machine
+     *  idle and still refusing use up retries. */
     private fun scheduleRetry(
         op: Operation.Process,
         state: ProcessState?,
         reason: String,
+        handlerKey: Any?,
     ): CraftScheduler.OpResult {
-        val count = (processRetries[op.id] ?: 0) + 1
-        processRetries[op.id] = count
-        val cap = maxHandlerRetries()
-        if (count > cap) {
-            processRetries.remove(op.id)
-            processBatchProgress.remove(op.id)
-            return CraftScheduler.OpResult.Failed(
-                "Processing handler '${op.processingApiName}' couldn't progress for " +
-                "$cap retries ($reason). Destinations may be permanently unavailable."
-            )
-        }
         val now = (cpu.level as? ServerLevel)?.gameTime ?: 0L
+        var counted = true
+        if (handlerKey != null) {
+            if (HandlerActivity.busy(handlerKey, now)) {
+                counted = false
+            } else {
+                val since = processRetrySince[op.id]
+                if (since != null && HandlerActivity.lastProgressTick(handlerKey, now) >= since) clearRetries(op.id)
+            }
+        }
+        if (counted) {
+            val count = (processRetries[op.id] ?: 0) + 1
+            processRetries[op.id] = count
+            processRetrySince.getOrPut(op.id) { now }
+            val cap = maxHandlerRetries()
+            if (count > cap) {
+                clearRetries(op.id)
+                processBatchProgress.remove(op.id)
+                return CraftScheduler.OpResult.Failed(
+                    "Processing handler '${op.processingApiName}' couldn't progress for " +
+                    "$cap retries ($reason) with no job running in the machine. " +
+                    "Its input or output cards may be full, missing or filtered."
+                )
+            }
+        }
         op.readyAt = now + RETRY_BACKOFF_TICKS
         // Drop the registered state so the next dispatch re-invokes the
         // handler fresh instead of polling a never-completing pending.
@@ -1631,6 +1689,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         processState.keys.retainAll { it !in planOpIds }
         processBatchProgress.keys.retainAll { it !in planOpIds }
         processRetries.keys.retainAll { it !in planOpIds }
+        processRetrySince.keys.retainAll { it !in planOpIds }
 
         // Invalidate any still-registered resume polls on the global ResumeScheduler so
         // they stop trying to pour items into this (now-idle) CPU's buffer. Their next
@@ -1671,6 +1730,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         processState.keys.retainAll { it !in planOpIds }
         processBatchProgress.keys.retainAll { it !in planOpIds }
         processRetries.keys.retainAll { it !in planOpIds }
+        processRetrySince.keys.retainAll { it !in planOpIds }
 
         // Same rationale as onPlanCompleted, kill any still-active resume polls so they
         // don't keep dumping items into an idle CPU's buffer.
