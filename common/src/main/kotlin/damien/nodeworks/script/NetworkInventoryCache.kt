@@ -328,6 +328,12 @@ class NetworkInventoryCache(
         }
 
         fun getAll(): Collection<NetworkInventoryCache> = caches.values
+
+        /** Drops every cache. Each one holds its ServerLevel, so one kept across an integrated
+         *  server quit+rejoin would poll the stopped level and block the tick forever. */
+        fun clearAll() {
+            caches.clear()
+        }
     }
 
     init {

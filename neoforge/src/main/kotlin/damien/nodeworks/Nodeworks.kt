@@ -1278,6 +1278,8 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
         // Drop per-network rate-limit budgets so a quit-and-rejoin doesn't carry
         // stale tick counters into the new session.
         damien.nodeworks.script.NetworkRateLimits.clearAll()
+        // Inventory caches hold their ServerLevel, so they must not outlive the server.
+        damien.nodeworks.script.NetworkInventoryCache.clearAll()
         damien.nodeworks.network.NetworkIds.clearRetired()
         damien.nodeworks.block.entity.TransferCardTicker.clear()
     }
