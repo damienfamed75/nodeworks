@@ -1269,6 +1269,7 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
         // is the right starting state for the next world load.
         damien.nodeworks.script.cpu.BlockHandlerRegistry.reset()
         damien.nodeworks.script.cpu.HandlerReservations.reset()
+        damien.nodeworks.script.cpu.HandlerActivity.reset()
         // Drop cached SavedData handles, a restart in the same JVM (integrated server quit+rejoin)
         // must re-resolve them against the freshly loaded level.dataStorage.
         damien.nodeworks.network.NodeConnectionHelper.clearServerCaches()
